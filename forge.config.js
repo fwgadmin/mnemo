@@ -1,7 +1,11 @@
+const path = require('path');
+
 module.exports = {
   packagerConfig: {
     asar: true,
     name: 'Mnemo',
+    // Platform-specific icon: .ico (Windows), .icns (macOS), .png (Linux)
+    icon: path.join(__dirname, 'src', 'assets', 'icon'),
     // macOS: registers CFBundleDocumentTypes so Finder shows "Open with Mnemo" for these extensions
     fileAssociations: [
       {
@@ -22,7 +26,10 @@ module.exports = {
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
-      config: {},
+      config: {
+        iconUrl: 'file://' + path.join(__dirname, 'src', 'assets', 'icon.ico').replace(/\\/g, '/'),
+        setupIcon: path.join(__dirname, 'src', 'assets', 'icon.ico'),
+      },
     },
     {
       name: '@electron-forge/maker-zip',

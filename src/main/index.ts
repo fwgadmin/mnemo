@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, dialog, nativeImage } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawnSync } from 'child_process';
@@ -104,12 +104,17 @@ async function initStore(): Promise<void> {
 }
 
 function createWindow(): BrowserWindow {
+  const iconPath = path.join(__dirname, '..', '..', 'src', 'assets',
+    process.platform === 'win32' ? 'icon.ico' : 'icon.png');
+  const appIcon = nativeImage.createFromPath(iconPath);
+
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 500,
     title: 'Mnemo',
+    icon: appIcon.isEmpty() ? undefined : appIcon,
     backgroundColor: '#0f0f0f',
     autoHideMenuBar: true,
     webPreferences: {
