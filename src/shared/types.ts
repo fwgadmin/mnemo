@@ -67,4 +67,9 @@ export const IPC = {
   NOTE_GRAPH: 'note:graph',
   NOTE_UPDATE_LINKS: 'note:updateLinks',
   NOTE_RESOLVE_TITLE: 'note:resolveTitle',
+  // File operations
+  FILE_SAVE_AS: 'file:saveAs',
+  FILE_OPEN: 'file:open',
+  // Menu → renderer commands
+  MENU_COMMAND: 'menu:command',
 } as const;

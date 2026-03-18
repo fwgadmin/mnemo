@@ -1,13 +1,23 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
 import BacklinksPanel from './components/BacklinksPanel';
 import GraphView from './components/GraphView';
 import CommandPalette from './components/CommandPalette';
+import HelpView from './components/HelpView';
 import { extractWikilinks } from './components/wikilinkPlugin';
 import type { Note, NoteListItem } from '../shared/types';
 
 type RightPanel = 'none' | 'graph';
+type ActiveTab = 'note' | 'help';
+
+function loadPref(key: string, def: boolean): boolean {
+  const v = localStorage.getItem(`mnemo.${key}`);
+  return v === null ? def : v === 'true';
+}
+function savePref(key: string, val: boolean): void {
+  localStorage.setItem(`mnemo.${key}`, String(val));
+}
 
 export default function App() {
   const [notes, setNotes] = useState<NoteListItem[]>([]);
@@ -15,6 +25,18 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [rightPanel, setRightPanel] = useState<RightPanel>('none');
   const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(() => loadPref('showSidebar', true));
+  const [showNoteHeader, setShowNoteHeader] = useState(() => loadPref('showNoteHeader', true));
+  const [activeTab, setActiveTab] = useState<ActiveTab>('note');
+  const [saveSignal, setSaveSignal] = useState(0);
+
+  // Keep a stable ref to activeNote for use in callbacks/effects
+  const activeNoteRef = useRef<Note | null>(null);
+  useEffect(() => { activeNoteRef.current = activeNote; }, [activeNote]);
+
+  // Persist UI prefs
+  useEffect(() => { savePref('showSidebar', showSidebar); }, [showSidebar]);
+  useEffect(() => { savePref('showNoteHeader', showNoteHeader); }, [showNoteHeader]);
 
   const loadNotes = useCallback(async () => {
     const list = await window.mnemo.notes.list();
@@ -28,24 +50,68 @@ export default function App() {
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+P: command palette (note search)
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault();
         setShowCommandPalette(true);
       }
-      // Ctrl+G: toggle graph view
       if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
         e.preventDefault();
         setRightPanel(p => p === 'graph' ? 'none' : 'graph');
       }
-      // Ctrl+N: new note
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault();
         handleCreateNote();
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        setShowSidebar(s => !s);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Native menu commands from main process
+  useEffect(() => {
+    const unsubscribe = window.mnemo.onMenuCommand(async (command) => {
+      const note = activeNoteRef.current;
+      switch (command) {
+        case 'new-note':
+          handleCreateNote();
+          break;
+        case 'save':
+          setSaveSignal(s => s + 1);
+          break;
+        case 'save-as':
+          if (note) {
+            await window.mnemo.file.saveAs({ title: note.title, body: note.body });
+          }
+          break;
+        case 'open': {
+          const files = await window.mnemo.file.open();
+          if (files && files.length > 0) {
+            for (const f of files) {
+              await window.mnemo.notes.create({ title: f.title, body: f.body, tags: [] });
+            }
+            await loadNotes();
+          }
+          break;
+        }
+        case 'toggle-sidebar':
+          setShowSidebar(s => !s);
+          break;
+        case 'toggle-header':
+          setShowNoteHeader(h => !h);
+          break;
+        case 'toggle-graph':
+          setRightPanel(p => p === 'graph' ? 'none' : 'graph');
+          break;
+        case 'show-help':
+          setActiveTab('help');
+          break;
+      }
+    });
+    return () => unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectNote = useCallback(async (id: string) => {
@@ -90,6 +156,15 @@ export default function App() {
     await loadNotes();
   }, [activeNote, loadNotes]);
 
+  const handleSetCategory = useCallback(async (id: string, category: string) => {
+    const noteItem = notes.find(n => n.id === id);
+    const oldTags = noteItem?.tags ?? [];
+    const otherTags = oldTags.slice(1);
+    const newTags = category ? [category, ...otherTags] : otherTags;
+    await window.mnemo.notes.update({ id, tags: newTags });
+    await loadNotes();
+  }, [notes, loadNotes]);
+
   const handleSearch = useCallback(async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
@@ -121,24 +196,44 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen bg-[#0f0f0f] text-[#e4e4e7]">
-      <Sidebar
-        notes={notes}
-        activeNoteId={activeNote?.id ?? null}
-        searchQuery={searchQuery}
-        onSelectNote={handleSelectNote}
-        onCreateNote={handleCreateNote}
-        onDeleteNote={handleDeleteNote}
-        onSearch={handleSearch}
-      />
+      {/* Sidebar */}
+      {showSidebar && (
+        <Sidebar
+          notes={notes}
+          activeNoteId={activeNote?.id ?? null}
+          searchQuery={searchQuery}
+          onSelectNote={handleSelectNote}
+          onCreateNote={handleCreateNote}
+          onDeleteNote={handleDeleteNote}
+          onSearch={handleSearch}
+          onSetCategory={handleSetCategory}
+          onHide={() => setShowSidebar(false)}
+        />
+      )}
+
+      {/* Re-open strip when sidebar is hidden */}
+      {!showSidebar && (
+        <button
+          onClick={() => setShowSidebar(true)}
+          title="Show Sidebar (Ctrl+B)"
+          className="w-2 hover:w-5 h-full bg-[#1a1a1a] hover:bg-[#252525] transition-all flex items-center justify-center group shrink-0 cursor-pointer border-r border-[#1e1e1e]"
+        >
+          <span className="opacity-0 group-hover:opacity-100 text-[#555] text-[10px] transition-opacity">›</span>
+        </button>
+      )}
 
       {/* Editor + backlinks */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {activeNote ? (
+      <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {activeTab === 'help' ? (
+          <HelpView onClose={() => setActiveTab('note')} />
+        ) : activeNote ? (
           <>
             <Editor
               note={activeNote}
               onUpdate={handleUpdateNote}
               onNavigate={handleNavigateToTitle}
+              showHeader={showNoteHeader}
+              saveSignal={saveSignal}
             />
             <BacklinksPanel
               noteId={activeNote.id}

@@ -15,6 +15,8 @@ interface EditorProps {
   note: Note;
   onUpdate: (id: string, title: string, body: string) => void;
   onNavigate: (title: string) => void;
+  showHeader?: boolean;
+  saveSignal?: number;
 }
 
 /** Custom dark theme matching Mnemo's aesthetic */
@@ -77,20 +79,37 @@ const mnemoTheme = EditorView.theme({
   },
 }, { dark: true });
 
-export default function Editor({ note, onUpdate, onNavigate }: EditorProps) {
+export default function Editor({ note, onUpdate, onNavigate, showHeader = true, saveSignal }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const noteIdRef = useRef(note.id);
   const titleValueRef = useRef(note.title);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onUpdateRef = useRef(onUpdate);
+  useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
+
+  const saveNow = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    onUpdateRef.current(
+      noteIdRef.current,
+      titleValueRef.current,
+      viewRef.current?.state.doc.toString() ?? note.body,
+    );
+  }, [note.body]);
+
+  // External save signal (e.g. File › Save menu command)
+  useEffect(() => {
+    if (saveSignal === undefined || saveSignal === 0) return;
+    saveNow();
+  }, [saveSignal, saveNow]);
 
   const debouncedSave = useCallback((title: string, body: string) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      onUpdate(noteIdRef.current, title, body);
+      onUpdateRef.current(noteIdRef.current, title, body);
     }, 500);
-  }, [onUpdate]);
+  }, []);
 
   const handleClick = useCallback((_e: MouseEvent, _view: EditorView) => {
     const target = _e.target as HTMLElement;
@@ -137,6 +156,7 @@ export default function Editor({ note, onUpdate, onNavigate }: EditorProps) {
         mnemoTheme,
         oneDark,
         keymap.of([
+          { key: 'Mod-s', run: () => { saveNow(); return true; } },
           ...defaultKeymap,
           ...historyKeymap,
           ...searchKeymap,
@@ -156,7 +176,8 @@ export default function Editor({ note, onUpdate, onNavigate }: EditorProps) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       viewRef.current?.destroy();
     };
-  }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.id]);
 
   const handleTitleChange = (newTitle: string) => {
     titleValueRef.current = newTitle;
@@ -164,39 +185,44 @@ export default function Editor({ note, onUpdate, onNavigate }: EditorProps) {
   };
 
   const wordCount = note.body.trim() ? note.body.trim().split(/\s+/).length : 0;
+  const editorPx = showHeader ? 'px-8' : 'px-6';
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-8 pt-6 pb-2">
-        <input
-          ref={titleRef}
-          type="text"
-          defaultValue={note.title}
-          key={note.id}
-          onChange={(e) => handleTitleChange(e.target.value)}
-          className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-[#e4e4e7] placeholder-[#444]"
-          placeholder="Untitled"
-        />
-        <div className="flex items-center gap-3 mt-2 text-[10px] text-[#555]">
-          <span>{new Date(note.modified).toLocaleDateString()}</span>
-          <span>·</span>
-          <span>{wordCount} word{wordCount !== 1 ? 's' : ''}</span>
-          {note.tags.length > 0 && (
-            <>
+      {showHeader && (
+        <>
+          <div className="px-8 pt-6 pb-2">
+            <input
+              ref={titleRef}
+              type="text"
+              defaultValue={note.title}
+              key={note.id}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-[#e4e4e7] placeholder-[#444]"
+              placeholder="Untitled"
+            />
+            <div className="flex items-center gap-3 mt-2 text-[10px] text-[#555]">
+              <span>{new Date(note.modified).toLocaleDateString()}</span>
               <span>·</span>
-              <span>{note.tags.join(', ')}</span>
-            </>
-          )}
-          {note.links.length > 0 && (
-            <>
-              <span>·</span>
-              <span>{note.links.length} link{note.links.length !== 1 ? 's' : ''}</span>
-            </>
-          )}
-        </div>
-      </div>
-      <div className="mx-8 border-t border-[#1a1a1a] my-2" />
-      <div ref={containerRef} className="flex-1 overflow-hidden px-8 pb-6" />
+              <span>{wordCount} word{wordCount !== 1 ? 's' : ''}</span>
+              {note.tags.length > 0 && (
+                <>
+                  <span>·</span>
+                  <span>{note.tags.join(', ')}</span>
+                </>
+              )}
+              {note.links.length > 0 && (
+                <>
+                  <span>·</span>
+                  <span>{note.links.length} link{note.links.length !== 1 ? 's' : ''}</span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="mx-8 border-t border-[#1a1a1a] my-2" />
+        </>
+      )}
+      <div ref={containerRef} className={`flex-1 overflow-hidden ${editorPx} ${showHeader ? 'pb-6' : 'py-5'}`} />
     </div>
   );
 }

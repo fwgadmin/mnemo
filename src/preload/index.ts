@@ -15,6 +15,11 @@ export interface MnemoAPI {
     updateLinks(sourceId: string, targetIds: string[]): Promise<void>;
     resolveTitle(title: string, tenantId?: string): Promise<string | null>;
   };
+  file: {
+    saveAs(data: { title: string; body: string }): Promise<{ saved: boolean; filePath?: string }>;
+    open(): Promise<Array<{ title: string; body: string }> | null>;
+  };
+  onMenuCommand(callback: (command: string) => void): () => void;
 }
 
 const api: MnemoAPI = {
@@ -29,6 +34,15 @@ const api: MnemoAPI = {
     getGraph: (tenantId) => ipcRenderer.invoke(IPC.NOTE_GRAPH, tenantId),
     updateLinks: (sourceId, targetIds) => ipcRenderer.invoke(IPC.NOTE_UPDATE_LINKS, sourceId, targetIds),
     resolveTitle: (title, tenantId) => ipcRenderer.invoke(IPC.NOTE_RESOLVE_TITLE, title, tenantId),
+  },
+  file: {
+    saveAs: (data) => ipcRenderer.invoke(IPC.FILE_SAVE_AS, data),
+    open: () => ipcRenderer.invoke(IPC.FILE_OPEN),
+  },
+  onMenuCommand: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, command: string) => callback(command);
+    ipcRenderer.on(IPC.MENU_COMMAND, handler);
+    return () => ipcRenderer.off(IPC.MENU_COMMAND, handler);
   },
 };
 
