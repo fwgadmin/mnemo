@@ -20,6 +20,7 @@ export interface MnemoAPI {
     open(): Promise<Array<{ title: string; body: string }> | null>;
   };
   onMenuCommand(callback: (command: string) => void): () => void;
+  onFileOpenedExternally(callback: (data: { title: string; body: string }) => void): () => void;
 }
 
 const api: MnemoAPI = {
@@ -43,6 +44,11 @@ const api: MnemoAPI = {
     const handler = (_event: Electron.IpcRendererEvent, command: string) => callback(command);
     ipcRenderer.on(IPC.MENU_COMMAND, handler);
     return () => ipcRenderer.off(IPC.MENU_COMMAND, handler);
+  },
+  onFileOpenedExternally: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { title: string; body: string }) => callback(data);
+    ipcRenderer.on(IPC.FILE_OPENED_EXTERNALLY, handler);
+    return () => ipcRenderer.off(IPC.FILE_OPENED_EXTERNALLY, handler);
   },
 };
 

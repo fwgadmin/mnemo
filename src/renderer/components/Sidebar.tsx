@@ -220,7 +220,7 @@ export default function Sidebar({
             </div>
           ))
         ) : (
-          notes.map(renderNoteItem)
+          notes.map(note => renderNoteItem(note))
         )}
       </div>
 

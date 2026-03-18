@@ -146,6 +146,16 @@ export default function App() {
     return () => unsubscribe();
   }, [handleMenuCommand]);
 
+  // Files opened via OS shell right-click or "Open with" (Windows registry / macOS CFBundleDocumentTypes)
+  useEffect(() => {
+    const unsubscribe = window.mnemo.onFileOpenedExternally(async ({ title, body }) => {
+      const note = await window.mnemo.notes.create({ title, body, tags: [] });
+      await loadNotes();
+      setActiveNote(note);
+    });
+    return () => unsubscribe();
+  }, [loadNotes]);
+
   const handleUpdateNote = useCallback(async (id: string, title: string, body: string) => {
     // Extract wikilinks and resolve to note IDs
     const wikilinkTitles = extractWikilinks(body);

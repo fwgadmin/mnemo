@@ -85,6 +85,7 @@ export const IPC = {
   // File operations
   FILE_SAVE_AS: 'file:saveAs',
   FILE_OPEN: 'file:open',
+  FILE_OPENED_EXTERNALLY: 'file:openedExternally',
   // Menu → renderer commands
   MENU_COMMAND: 'menu:command',
 } as const;

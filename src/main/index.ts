@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { spawnSync } from 'child_process';
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
 import type { INoteStore } from '../shared/types';
@@ -11,10 +12,75 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const matter = require('gray-matter');
 
+// ─── Windows shell registration (Squirrel install/uninstall hooks) ─────────────
+
+function registerShellAssociations(exePath: string): void {
+  for (const ext of ['.md', '.txt']) {
+    const key = `HKCU\\Software\\Classes\\${ext}\\shell\\Open in Mnemo`;
+    spawnSync('reg', ['add', key, '/ve', '/d', 'Open in Mnemo', '/f']);
+    spawnSync('reg', ['add', `${key}\\command`, '/ve', '/d', `"${exePath}" "%1"`, '/f']);
+  }
+}
+
+function deregisterShellAssociations(): void {
+  for (const ext of ['.md', '.txt']) {
+    spawnSync('reg', ['delete', `HKCU\\Software\\Classes\\${ext}\\shell\\Open in Mnemo`, '/f']);
+  }
+}
+
+// Run shell registration BEFORE electron-squirrel-startup handles events (and quits)
+if (process.platform === 'win32') {
+  const squirrelEvent = process.argv[1];
+  if (squirrelEvent === '--squirrel-install' || squirrelEvent === '--squirrel-updated') {
+    registerShellAssociations(process.execPath);
+  } else if (squirrelEvent === '--squirrel-uninstall') {
+    deregisterShellAssociations();
+  }
+}
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
   app.quit();
 }
+
+// ─── External file handling ────────────────────────────────────────────────────
+
+/** File path queued before the window finishes loading (macOS open-file, fast Windows launch) */
+let pendingExternalFile: string | null = null;
+
+/** Parse a markdown/text file and send it to the renderer as a new note import. */
+function sendFileToRenderer(win: BrowserWindow, filePath: string): void {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const parsed = matter(content);
+    const title = (parsed.data.title as string) || path.basename(filePath, path.extname(filePath));
+    const body = (parsed.content as string).trim();
+    win.webContents.send(IPC.FILE_OPENED_EXTERNALLY, { title, body });
+  } catch {
+    // Ignore unreadable files
+  }
+}
+
+/** Return a file path passed from the OS shell (Windows right-click / open-with). */
+function getArgvFilePath(): string | null {
+  // Packaged: argv = [exe, ...args]  Dev: argv = [electron, script, ...args]
+  const args = app.isPackaged ? process.argv.slice(1) : process.argv.slice(2);
+  const filePath = args.find(
+    a => !a.startsWith('-') && (a.endsWith('.md') || a.endsWith('.txt')) && fs.existsSync(a),
+  );
+  return filePath ?? null;
+}
+
+// macOS: file opened via Finder "Open with" or drag-onto-dock
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  const wins = BrowserWindow.getAllWindows();
+  if (wins.length > 0 && wins[0].webContents) {
+    sendFileToRenderer(wins[0], filePath);
+  } else {
+    pendingExternalFile = filePath;
+  }
+});
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -177,6 +243,13 @@ app.whenReady().then(async () => {
 
   const mainWindow = createWindow();
   buildMenu(mainWindow);
+
+  // Send any externally-opened file once the renderer has fully loaded
+  mainWindow.webContents.once('did-finish-load', () => {
+    const filePath = pendingExternalFile ?? getArgvFilePath();
+    pendingExternalFile = null;
+    if (filePath) sendFileToRenderer(mainWindow, filePath);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

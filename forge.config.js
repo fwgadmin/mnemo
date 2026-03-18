@@ -2,6 +2,21 @@ module.exports = {
   packagerConfig: {
     asar: true,
     name: 'Mnemo',
+    // macOS: registers CFBundleDocumentTypes so Finder shows "Open with Mnemo" for these extensions
+    fileAssociations: [
+      {
+        ext: 'md',
+        name: 'Markdown Document',
+        description: 'Open with Mnemo',
+        role: 'Editor',
+      },
+      {
+        ext: 'txt',
+        name: 'Text File',
+        description: 'Open with Mnemo',
+        role: 'Editor',
+      },
+    ],
   },
   rebuildConfig: {},
   makers: [
