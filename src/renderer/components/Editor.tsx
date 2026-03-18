@@ -4,7 +4,7 @@ import { EditorView, keymap, highlightActiveLine, drawSelection, lineNumbers, hi
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from '@codemirror/language';
+import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { wikilinkDecorations } from './wikilinkPlugin';
@@ -154,7 +154,6 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
         lineNumbersCompartment.current.of(showLineNumbers ? [lineNumbers(), highlightActiveLineGutter()] : []),
         history(),
         drawSelection(),
-        indentOnInput(),
         bracketMatching(),
         highlightActiveLine(),
         highlightSelectionMatches(),
