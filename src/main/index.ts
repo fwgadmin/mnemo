@@ -2,6 +2,15 @@ import { app, BrowserWindow, ipcMain, Menu, dialog, nativeImage } from 'electron
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawnSync } from 'child_process';
+
+// Load .env from the repo root if present (dev mode cloud config)
+try {
+  (process as NodeJS.Process & { loadEnvFile(path?: string): void }).loadEnvFile(
+    path.join(__dirname, '..', '..', '.env'),
+  );
+} catch {
+  // .env is optional — ignore if absent
+}
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
 import type { INoteStore } from '../shared/types';
