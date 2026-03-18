@@ -35,6 +35,7 @@ const mnemoTheme = EditorView.theme({
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
     lineHeight: '1.7',
     padding: '0',
+    paddingLeft: '6px',
     caretColor: '#7c7cff',
   },
   '.cm-cursor': {
@@ -45,6 +46,7 @@ const mnemoTheme = EditorView.theme({
     backgroundColor: 'transparent',
     color: '#333',
     border: 'none',
+    paddingRight: '8px',
   },
   '.cm-activeLineGutter': {
     backgroundColor: 'transparent',
