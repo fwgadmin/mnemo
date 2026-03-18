@@ -1,12 +1,12 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { NoteStore } from '../store/NoteStore';
+import type { INoteStore } from '../../shared/types';
 
 /**
  * Creates and configures the Mnemo MCP server.
  * Exposes notes as resources, CRUD + search as tools, and prompt templates.
  */
-export function createMcpServer(store: NoteStore): McpServer {
+export function createMcpServer(store: INoteStore): McpServer {
   const mcp = new McpServer(
     { name: 'mnemo', version: '0.1.0' },
     { capabilities: { resources: {}, tools: {}, prompts: {} } },
@@ -19,11 +19,11 @@ export function createMcpServer(store: NoteStore): McpServer {
     'notes-list',
     'mnemo://notes',
     { description: 'List of all notes in the vault', mimeType: 'application/json' },
-    () => ({
+    async () => ({
       contents: [{
         uri: 'mnemo://notes',
         mimeType: 'application/json',
-        text: JSON.stringify(store.list(), null, 2),
+        text: JSON.stringify(await store.list(), null, 2),
       }],
     }),
   );
@@ -33,9 +33,9 @@ export function createMcpServer(store: NoteStore): McpServer {
     'note',
     new ResourceTemplate('mnemo://notes/{id}', { list: undefined }),
     { description: 'A single note by ID', mimeType: 'text/markdown' },
-    (uri, variables) => {
+    async (uri, variables) => {
       const id = String(variables.id);
-      const note = store.read(id);
+      const note = await store.read(id);
       if (!note) {
         return { contents: [{ uri: uri.href, mimeType: 'text/plain', text: `Note ${id} not found` }] };
       }
@@ -55,8 +55,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'create_note',
     'Create a new note in the vault',
     { title: z.string(), body: z.string(), tags: z.array(z.string()).optional() },
-    (args) => {
-      const note = store.create({ title: args.title, body: args.body, tags: args.tags });
+    async (args) => {
+      const note = await store.create({ title: args.title, body: args.body, tags: args.tags });
       return { content: [{ type: 'text', text: JSON.stringify(note, null, 2) }] };
     },
   );
@@ -65,8 +65,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'read_note',
     'Read a note by ID',
     { id: z.string() },
-    (args) => {
-      const note = store.read(args.id);
+    async (args) => {
+      const note = await store.read(args.id);
       if (!note) {
         return { content: [{ type: 'text', text: `Note ${args.id} not found` }], isError: true };
       }
@@ -83,8 +83,8 @@ export function createMcpServer(store: NoteStore): McpServer {
       body: z.string().optional(),
       tags: z.array(z.string()).optional(),
     },
-    (args) => {
-      const note = store.update({ id: args.id, title: args.title, body: args.body, tags: args.tags });
+    async (args) => {
+      const note = await store.update({ id: args.id, title: args.title, body: args.body, tags: args.tags });
       if (!note) {
         return { content: [{ type: 'text', text: `Note ${args.id} not found` }], isError: true };
       }
@@ -96,8 +96,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'delete_note',
     'Delete a note by ID',
     { id: z.string() },
-    (args) => {
-      const deleted = store.delete(args.id);
+    async (args) => {
+      const deleted = await store.delete(args.id);
       return {
         content: [{ type: 'text', text: deleted ? `Deleted ${args.id}` : `Note ${args.id} not found` }],
         isError: !deleted,
@@ -109,8 +109,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'search_notes',
     'Full-text search across all notes',
     { query: z.string() },
-    (args) => {
-      const results = store.search(args.query);
+    async (args) => {
+      const results = await store.search(args.query);
       return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
     },
   );
@@ -119,8 +119,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'get_backlinks',
     'Get all notes that link to the given note',
     { id: z.string() },
-    (args) => {
-      const backlinks = store.getBacklinks(args.id);
+    async (args) => {
+      const backlinks = await store.getBacklinks(args.id);
       return { content: [{ type: 'text', text: JSON.stringify(backlinks, null, 2) }] };
     },
   );
@@ -129,8 +129,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'link_notes',
     'Set outgoing links from a source note to one or more target notes',
     { sourceId: z.string(), targetIds: z.array(z.string()) },
-    (args) => {
-      store.updateLinks(args.sourceId, args.targetIds);
+    async (args) => {
+      await store.updateLinks(args.sourceId, args.targetIds);
       return { content: [{ type: 'text', text: `Linked ${args.sourceId} → [${args.targetIds.join(', ')}]` }] };
     },
   );
@@ -139,9 +139,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'get_graph',
     'Get the full note graph (nodes and links)',
     {},
-    () => {
-      const notes = store.list();
-      const links = store.getAllLinks();
+    async () => {
+      const [notes, links] = await Promise.all([store.list(), store.getAllLinks()]);
       const graph = {
         nodes: notes.map(n => ({ id: n.id, title: n.title })),
         links,
@@ -156,8 +155,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'summarize_note',
     'Generate a concise summary of a note',
     { id: z.string() },
-    (args) => {
-      const note = store.read(args.id);
+    async (args) => {
+      const note = await store.read(args.id);
       if (!note) {
         return {
           messages: [{
@@ -182,9 +181,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'relate_notes',
     'Analyze relationships and commonalities between two notes',
     { id1: z.string(), id2: z.string() },
-    (args) => {
-      const n1 = store.read(args.id1);
-      const n2 = store.read(args.id2);
+    async (args) => {
+      const [n1, n2] = await Promise.all([store.read(args.id1), store.read(args.id2)]);
       if (!n1 || !n2) {
         const missing = !n1 ? args.id1 : args.id2;
         return {
@@ -217,8 +215,8 @@ export function createMcpServer(store: NoteStore): McpServer {
     'query_vault',
     'Ask a question using the full vault as context',
     { question: z.string() },
-    (args) => {
-      const notes = store.list();
+    async (args) => {
+      const notes = await store.list();
       const summaries = notes.map(n => `- **${n.title}** (${n.id}): ${n.snippet}`).join('\n');
       return {
         messages: [{

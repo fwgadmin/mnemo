@@ -55,6 +55,21 @@ export interface GraphData {
   links: Array<{ source: string; target: string }>;
 }
 
+/** Async store interface implemented by both LocalNoteStore and TursoNoteStore */
+export interface INoteStore {
+  create(input: CreateNoteInput): Promise<Note>;
+  read(id: string): Promise<Note | null>;
+  update(input: UpdateNoteInput): Promise<Note | null>;
+  delete(id: string): Promise<boolean>;
+  list(tenantId?: string): Promise<NoteListItem[]>;
+  search(query: string, tenantId?: string): Promise<SearchResult[]>;
+  getBacklinks(noteId: string): Promise<NoteListItem[]>;
+  updateLinks(sourceId: string, targetIds: string[]): Promise<void>;
+  resolveTitle(title: string, tenantId?: string): Promise<string | null>;
+  getAllLinks(tenantId?: string): Promise<Array<{ source: string; target: string }>>;
+  close(): void;
+}
+
 /** IPC channel names */
 export const IPC = {
   NOTE_CREATE: 'note:create',

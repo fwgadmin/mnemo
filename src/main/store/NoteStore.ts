@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import type { Note, NoteListItem, CreateNoteInput, UpdateNoteInput, SearchResult } from '../../shared/types';
+import type { Note, NoteListItem, CreateNoteInput, UpdateNoteInput, SearchResult, INoteStore } from '../../shared/types';
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS notes (
@@ -48,7 +48,8 @@ const FTS_SQL = [
   END`,
 ];
 
-export class NoteStore {
+/** Local SQLite-backed store (offline, default). */
+export class LocalNoteStore implements INoteStore {
   private db: Database.Database;
   private vaultPath: string;
 
@@ -70,7 +71,7 @@ export class NoteStore {
     }
   }
 
-  create(input: CreateNoteInput): Note {
+  create(input: CreateNoteInput): Promise<Note> {
     const now = new Date().toISOString();
     const id = uuidv4();
     const tenantId = input.tenantId ?? 'default';
@@ -94,17 +95,17 @@ export class NoteStore {
     };
 
     this.writeMdFile(note);
-    return note;
+    return Promise.resolve(note);
   }
 
-  read(id: string): Note | null {
+  read(id: string): Promise<Note | null> {
     const row = this.db.prepare('SELECT * FROM notes WHERE id = ?').get(id) as any;
-    if (!row) return null;
-    return this.rowToNote(row);
+    if (!row) return Promise.resolve(null);
+    return Promise.resolve(this.rowToNote(row));
   }
 
-  update(input: UpdateNoteInput): Note | null {
-    const existing = this.read(input.id);
+  async update(input: UpdateNoteInput): Promise<Note | null> {
+    const existing = await this.read(input.id);
     if (!existing) return null;
 
     const now = new Date().toISOString();
@@ -128,34 +129,34 @@ export class NoteStore {
     return note;
   }
 
-  delete(id: string): boolean {
+  delete(id: string): Promise<boolean> {
     const result = this.db.prepare('DELETE FROM notes WHERE id = ?').run(id);
     if (result.changes > 0) {
       const filePath = path.join(this.vaultPath, `${id}.md`);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
-      return true;
+      return Promise.resolve(true);
     }
-    return false;
+    return Promise.resolve(false);
   }
 
-  list(tenantId: string = 'default'): NoteListItem[] {
+  list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const rows = this.db.prepare(
       'SELECT id, title, body, tags, updated_at FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
     ).all(tenantId) as any[];
 
-    return rows.map(row => ({
+    return Promise.resolve(rows.map(row => ({
       id: row.id,
       title: row.title,
       tags: JSON.parse(row.tags),
       modified: row.updated_at,
       snippet: row.body.substring(0, 120),
-    }));
+    })));
   }
 
-  search(query: string, tenantId: string = 'default'): SearchResult[] {
-    if (!query.trim()) return [];
+  search(query: string, tenantId: string = 'default'): Promise<SearchResult[]> {
+    if (!query.trim()) return Promise.resolve([]);
 
     const rows = this.db.prepare(`
       SELECT n.id, n.title, n.body, notes_fts.rank
@@ -167,15 +168,15 @@ export class NoteStore {
       LIMIT 50
     `).all(query, tenantId) as any[];
 
-    return rows.map(row => ({
+    return Promise.resolve(rows.map(row => ({
       id: row.id,
       title: row.title,
       snippet: row.body.substring(0, 120),
       rank: row.rank,
-    }));
+    })));
   }
 
-  getBacklinks(noteId: string): NoteListItem[] {
+  getBacklinks(noteId: string): Promise<NoteListItem[]> {
     const rows = this.db.prepare(`
       SELECT n.id, n.title, n.body, n.tags, n.updated_at
       FROM note_links nl
@@ -184,16 +185,16 @@ export class NoteStore {
       ORDER BY n.updated_at DESC
     `).all(noteId) as any[];
 
-    return rows.map(row => ({
+    return Promise.resolve(rows.map(row => ({
       id: row.id,
       title: row.title,
       tags: JSON.parse(row.tags),
       modified: row.updated_at,
       snippet: row.body.substring(0, 120),
-    }));
+    })));
   }
 
-  updateLinks(sourceId: string, targetIds: string[]): void {
+  updateLinks(sourceId: string, targetIds: string[]): Promise<void> {
     const del = this.db.prepare('DELETE FROM note_links WHERE source_id = ?');
     const ins = this.db.prepare('INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)');
 
@@ -204,24 +205,25 @@ export class NoteStore {
       }
     });
     transaction();
+    return Promise.resolve();
   }
 
   /** Resolve a title to a note ID (for wikilink targets) */
-  resolveTitle(title: string, tenantId: string = 'default'): string | null {
+  resolveTitle(title: string, tenantId: string = 'default'): Promise<string | null> {
     const row = this.db.prepare(
       'SELECT id FROM notes WHERE title = ? AND tenant_id = ? LIMIT 1'
     ).get(title, tenantId) as any;
-    return row?.id ?? null;
+    return Promise.resolve(row?.id ?? null);
   }
 
-  getAllLinks(tenantId: string = 'default'): Array<{ source: string; target: string }> {
+  getAllLinks(tenantId: string = 'default'): Promise<Array<{ source: string; target: string }>> {
     const rows = this.db.prepare(`
       SELECT nl.source_id as source, nl.target_id as target
       FROM note_links nl
       JOIN notes n ON n.id = nl.source_id
       WHERE n.tenant_id = ?
     `).all(tenantId) as any[];
-    return rows;
+    return Promise.resolve(rows as Array<{ source: string; target: string }>);
   }
 
   close(): void {

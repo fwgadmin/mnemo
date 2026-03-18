@@ -1,16 +1,17 @@
 const path = require('path');
 
 /**
- * Builds the standalone MCP stdio server (mnemo-mcp.js) into dist/.
- * Run with: npm run build:mcp
- * Then point Claude Desktop / Cursor at: dist/mnemo-mcp.js
+ * Builds the HTTP/SSE MCP server (mnemo-mcp-http.js) into dist/.
+ * Run with: npm run build:mcp-http
+ * Then deploy to a Node.js host (Railway, Render, Fly.io, etc.)
+ * and set TURSO_URL, TURSO_AUTH_TOKEN, MCP_API_KEY env vars.
  */
 module.exports = {
-  entry: './src/main/mcp/stdio.ts',
+  entry: './src/main/mcp/http.ts',
   target: 'node',
   mode: 'production',
   output: {
-    filename: 'mnemo-mcp.js',
+    filename: 'mnemo-mcp-http.js',
     path: path.join(__dirname, 'dist'),
   },
   module: {
@@ -23,20 +24,16 @@ module.exports = {
           options: { transpileOnly: true },
         },
       },
-      {
-        test: /\.node$/,
-        use: 'node-loader',
-      },
     ],
   },
   resolve: {
     extensions: ['.js', '.ts', '.json'],
   },
   externals: {
-    'better-sqlite3': 'commonjs better-sqlite3',
+    'express': 'commonjs express',
     '@libsql/client': 'commonjs @libsql/client',
     '@modelcontextprotocol/sdk/server/mcp.js': 'commonjs @modelcontextprotocol/sdk/server/mcp.js',
-    '@modelcontextprotocol/sdk/server/stdio.js': 'commonjs @modelcontextprotocol/sdk/server/stdio.js',
+    '@modelcontextprotocol/sdk/server/sse.js': 'commonjs @modelcontextprotocol/sdk/server/sse.js',
     'zod': 'commonjs zod',
   },
 };

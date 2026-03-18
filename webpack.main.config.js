@@ -25,6 +25,7 @@ module.exports = {
   },
   externals: {
     'better-sqlite3': 'commonjs better-sqlite3',
+    '@libsql/client': 'commonjs @libsql/client',
     '@modelcontextprotocol/sdk/server/mcp.js': 'commonjs @modelcontextprotocol/sdk/server/mcp.js',
     '@modelcontextprotocol/sdk/server/stdio.js': 'commonjs @modelcontextprotocol/sdk/server/stdio.js',
     'zod': 'commonjs zod',

@@ -1,7 +1,9 @@
 import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { NoteStore } from './store/NoteStore';
+import { LocalNoteStore } from './store/NoteStore';
+import { TursoNoteStore } from './store/TursoNoteStore';
+import type { INoteStore } from '../shared/types';
 import { IPC } from '../shared/types';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
@@ -17,14 +19,22 @@ if (require('electron-squirrel-startup')) {
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
-let store: NoteStore;
+let store: INoteStore;
 let mcpServer: McpServer;
 
-function initStore(): void {
-  const userDataPath = app.getPath('userData');
-  const dbPath = path.join(userDataPath, 'mnemo.db');
-  const vaultPath = path.join(userDataPath, 'vault');
-  store = new NoteStore(dbPath, vaultPath);
+async function initStore(): Promise<void> {
+  const tursoUrl = process.env['MNEMO_TURSO_URL'];
+  const tursoToken = process.env['MNEMO_TURSO_TOKEN'];
+  if (tursoUrl && tursoToken) {
+    const turso = new TursoNoteStore(tursoUrl, tursoToken);
+    await turso.initSchema();
+    store = turso;
+  } else {
+    const userDataPath = app.getPath('userData');
+    const dbPath = path.join(userDataPath, 'mnemo.db');
+    const vaultPath = path.join(userDataPath, 'vault');
+    store = new LocalNoteStore(dbPath, vaultPath);
+  }
 }
 
 function createWindow(): BrowserWindow {
@@ -115,9 +125,8 @@ function registerIpcHandlers(): void {
     return store.getBacklinks(noteId);
   });
 
-  ipcMain.handle(IPC.NOTE_GRAPH, (_event, tenantId?: string) => {
-    const notes = store.list(tenantId);
-    const links = store.getAllLinks(tenantId);
+  ipcMain.handle(IPC.NOTE_GRAPH, async (_event, tenantId?: string) => {
+    const [notes, links] = await Promise.all([store.list(tenantId), store.getAllLinks(tenantId)]);
     return {
       nodes: notes.map(n => ({ id: n.id, title: n.title })),
       links,
@@ -125,7 +134,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC.NOTE_UPDATE_LINKS, (_event, sourceId: string, targetIds: string[]) => {
-    store.updateLinks(sourceId, targetIds);
+    return store.updateLinks(sourceId, targetIds);
   });
 
   ipcMain.handle(IPC.NOTE_RESOLVE_TITLE, (_event, title: string, tenantId?: string) => {
@@ -159,8 +168,8 @@ function registerIpcHandlers(): void {
   });
 }
 
-app.whenReady().then(() => {
-  initStore();
+app.whenReady().then(async () => {
+  await initStore();
   registerIpcHandlers();
 
   // Create MCP server (available for stdio entry point; lifecycle managed externally)
