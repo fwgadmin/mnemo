@@ -187,24 +187,31 @@ export default function HelpView({ onClose }: HelpViewProps) {
               </p>
 
               <p className="mt-3 font-medium text-[#ccc]">Step 2 — find your data paths</p>
-              <p className="mt-1 text-[#aaa]">Your notes are stored here:</p>
+              <p className="mt-1 text-[#aaa]">Your notes are stored in your OS app-data directory:</p>
               <Table
-                headers={['File', 'Path']}
+                headers={['OS', 'Database', 'Vault']}
                 rows={[
-                  ['Database', '%APPDATA%\\Mnemo\\mnemo.db'],
-                  ['Vault', '%APPDATA%\\Mnemo\\vault'],
+                  ['Windows', '%APPDATA%\\Mnemo\\mnemo.db', '%APPDATA%\\Mnemo\\vault'],
+                  ['macOS', '~/Library/Application Support/Mnemo/mnemo.db', '~/Library/Application Support/Mnemo/vault'],
+                  ['Linux', '~/.config/Mnemo/mnemo.db', '~/.config/Mnemo/vault'],
                 ]}
               />
-              <p className="mt-1 text-[#aaa]">
-                On Windows, <Mono>%APPDATA%</Mono> is typically{' '}
-                <Mono>C:\Users\YOU\AppData\Roaming</Mono>.
-              </p>
 
               <p className="mt-3 font-medium text-[#ccc]">Step 3 — configure your MCP client</p>
               <p className="mt-1 text-[#aaa]">
-                <strong>Claude Desktop</strong> — open{' '}
-                <Mono>%APPDATA%\Claude\claude_desktop_config.json</Mono> and add:
+                Open your client's config file and add a <Mono>mnemo</Mono> entry. Config file
+                locations:
               </p>
+              <Table
+                headers={['Client', 'Config file']}
+                rows={[
+                  ['Claude Desktop (Windows)', '%APPDATA%\\Claude\\claude_desktop_config.json'],
+                  ['Claude Desktop (macOS)', '~/Library/Application Support/Claude/claude_desktop_config.json'],
+                  ['Cursor', '.cursor/mcp.json in your project, or global settings → MCP'],
+                  ['VS Code (Copilot)', '.vscode/mcp.json in your project'],
+                ]}
+              />
+              <p className="mt-2 font-medium text-[#ccc]">Windows</p>
               <CodeBlock>{`{
   "mcpServers": {
     "mnemo": {
@@ -217,10 +224,32 @@ export default function HelpView({ onClose }: HelpViewProps) {
     }
   }
 }`}</CodeBlock>
-              <p className="mt-2 text-[#aaa]">
-                <strong>Cursor / VS Code</strong> — add the same <Mono>mnemo</Mono> block to
-                your workspace or user MCP settings JSON.
-              </p>
+              <p className="mt-2 font-medium text-[#ccc]">macOS</p>
+              <CodeBlock>{`{
+  "mcpServers": {
+    "mnemo": {
+      "command": "node",
+      "args": [
+        "/path/to/mnemo/dist/mnemo-mcp.js",
+        "--db",    "/Users/YOU/Library/Application Support/Mnemo/mnemo.db",
+        "--vault", "/Users/YOU/Library/Application Support/Mnemo/vault"
+      ]
+    }
+  }
+}`}</CodeBlock>
+              <p className="mt-2 font-medium text-[#ccc]">Linux</p>
+              <CodeBlock>{`{
+  "mcpServers": {
+    "mnemo": {
+      "command": "node",
+      "args": [
+        "/path/to/mnemo/dist/mnemo-mcp.js",
+        "--db",    "/home/YOU/.config/Mnemo/mnemo.db",
+        "--vault", "/home/YOU/.config/Mnemo/vault"
+      ]
+    }
+  }
+}`}</CodeBlock>
               <p className="mt-2 text-[#aaa]">
                 The GUI app and the MCP subprocess <strong>share the same database</strong>, so
                 any notes created or edited by an AI agent appear immediately in the Mnemo window.
