@@ -3,8 +3,32 @@ import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, highlightActiveLine, drawSelection, lineNumbers, highlightActiveLineGutter } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { languages } from '@codemirror/language-data';
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
+import { javascript } from '@codemirror/lang-javascript';
+import { python } from '@codemirror/lang-python';
+import { json } from '@codemirror/lang-json';
+import { html } from '@codemirror/lang-html';
+import { css } from '@codemirror/lang-css';
+import { sql } from '@codemirror/lang-sql';
+import { rust } from '@codemirror/lang-rust';
+import { cpp } from '@codemirror/lang-cpp';
+import { java } from '@codemirror/lang-java';
+import { xml } from '@codemirror/lang-xml';
+import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, LanguageDescription } from '@codemirror/language';
+
+// Synchronously available languages — avoids async lezer mixed-tree issues
+const codeLanguages = [
+  LanguageDescription.of({ name: 'JavaScript', alias: ['js', 'javascript'], extensions: ['js', 'mjs', 'jsx'], support: javascript() }),
+  LanguageDescription.of({ name: 'TypeScript', alias: ['ts', 'typescript'], extensions: ['ts', 'tsx'], support: javascript({ typescript: true }) }),
+  LanguageDescription.of({ name: 'Python',     alias: ['py', 'python'],     extensions: ['py'],           support: python() }),
+  LanguageDescription.of({ name: 'JSON',        alias: ['json'],             extensions: ['json'],          support: json() }),
+  LanguageDescription.of({ name: 'HTML',        alias: ['html'],             extensions: ['html', 'htm'],   support: html() }),
+  LanguageDescription.of({ name: 'CSS',         alias: ['css'],              extensions: ['css'],           support: css() }),
+  LanguageDescription.of({ name: 'SQL',         alias: ['sql'],              extensions: ['sql'],           support: sql() }),
+  LanguageDescription.of({ name: 'Rust',        alias: ['rust', 'rs'],       extensions: ['rs'],            support: rust() }),
+  LanguageDescription.of({ name: 'C++',         alias: ['cpp', 'c', 'cc'],  extensions: ['cpp', 'c', 'h'], support: cpp() }),
+  LanguageDescription.of({ name: 'Java',        alias: ['java'],             extensions: ['java'],          support: java() }),
+  LanguageDescription.of({ name: 'XML',         alias: ['xml', 'svg'],       extensions: ['xml', 'svg'],    support: xml() }),
+];
 import { oneDark } from '@codemirror/theme-one-dark';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { wikilinkDecorations } from './wikilinkPlugin';
@@ -157,7 +181,7 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
         bracketMatching(),
         highlightActiveLine(),
         highlightSelectionMatches(),
-        markdown({ base: markdownLanguage, codeLanguages: languages }),
+        markdown({ base: markdownLanguage, codeLanguages }),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         mnemoTheme,
         oneDark,
