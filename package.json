@@ -8,8 +8,8 @@
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "build:mcp": "webpack-cli --config webpack.mcp.config.js",
-    "build:mcp-http": "webpack-cli --config webpack.mcp-http.config.js",
+    "build:mcp": "npx webpack-cli --config webpack.mcp.config.js",
+    "build:mcp-http": "npx webpack-cli --config webpack.mcp-http.config.js",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
