@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { EditorState } from '@codemirror/state';
+import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, highlightActiveLine, drawSelection, lineNumbers, highlightActiveLineGutter } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
@@ -17,6 +17,7 @@ interface EditorProps {
   onNavigate: (title: string) => void;
   showHeader?: boolean;
   saveSignal?: number;
+  showLineNumbers?: boolean;
 }
 
 /** Custom dark theme matching Mnemo's aesthetic */
@@ -79,7 +80,7 @@ const mnemoTheme = EditorView.theme({
   },
 }, { dark: true });
 
-export default function Editor({ note, onUpdate, onNavigate, showHeader = true, saveSignal }: EditorProps) {
+export default function Editor({ note, onUpdate, onNavigate, showHeader = true, saveSignal, showLineNumbers = true }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -87,6 +88,7 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
   const titleValueRef = useRef(note.title);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onUpdateRef = useRef(onUpdate);
+  const lineNumbersCompartment = useRef(new Compartment());
   useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
 
   const saveNow = useCallback(() => {
@@ -141,8 +143,7 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
     const state = EditorState.create({
       doc: note.body,
       extensions: [
-        lineNumbers(),
-        highlightActiveLineGutter(),
+        lineNumbersCompartment.current.of(showLineNumbers ? [lineNumbers(), highlightActiveLineGutter()] : []),
         history(),
         drawSelection(),
         indentOnInput(),
@@ -178,6 +179,16 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
+
+  // Dynamically reconfigure line numbers without rebuilding the editor
+  useEffect(() => {
+    if (!viewRef.current) return;
+    viewRef.current.dispatch({
+      effects: lineNumbersCompartment.current.reconfigure(
+        showLineNumbers ? [lineNumbers(), highlightActiveLineGutter()] : []
+      ),
+    });
+  }, [showLineNumbers]);
 
   const handleTitleChange = (newTitle: string) => {
     titleValueRef.current = newTitle;

@@ -27,6 +27,7 @@ export default function App() {
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showSidebar, setShowSidebar] = useState(() => loadPref('showSidebar', true));
   const [showNoteHeader, setShowNoteHeader] = useState(() => loadPref('showNoteHeader', true));
+  const [showLineNumbers, setShowLineNumbers] = useState(() => loadPref('showLineNumbers', true));
   const [activeTab, setActiveTab] = useState<ActiveTab>('note');
   const [saveSignal, setSaveSignal] = useState(0);
 
@@ -37,6 +38,7 @@ export default function App() {
   // Persist UI prefs
   useEffect(() => { savePref('showSidebar', showSidebar); }, [showSidebar]);
   useEffect(() => { savePref('showNoteHeader', showNoteHeader); }, [showNoteHeader]);
+  useEffect(() => { savePref('showLineNumbers', showLineNumbers); }, [showLineNumbers]);
 
   const loadNotes = useCallback(async () => {
     const list = await window.mnemo.notes.list();
@@ -102,6 +104,9 @@ export default function App() {
           break;
         case 'toggle-header':
           setShowNoteHeader(h => !h);
+          break;
+        case 'toggle-line-numbers':
+          setShowLineNumbers(l => !l);
           break;
         case 'toggle-graph':
           setRightPanel(p => p === 'graph' ? 'none' : 'graph');
@@ -234,6 +239,7 @@ export default function App() {
               onNavigate={handleNavigateToTitle}
               showHeader={showNoteHeader}
               saveSignal={saveSignal}
+              showLineNumbers={showLineNumbers}
             />
             <BacklinksPanel
               noteId={activeNote.id}

@@ -69,6 +69,7 @@ function buildMenu(mainWindow: BrowserWindow): void {
       submenu: [
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: send('toggle-sidebar') },
         { label: 'Toggle Note Header', click: send('toggle-header') },
+        { label: 'Toggle Line Numbers', click: send('toggle-line-numbers') },
         { type: 'separator' },
         { label: 'Toggle Graph', accelerator: 'CmdOrCtrl+G', click: send('toggle-graph') },
       ],

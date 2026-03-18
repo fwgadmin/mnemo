@@ -55,22 +55,30 @@ export default function GraphView({ onSelectNote, activeNoteId }: GraphViewProps
     };
   }, [loadGraph]);
 
-  // Resize canvas
+  const drawRef = useRef<() => void>(() => { /* set after draw is defined */ });
+
+  // Resize canvas — defer the actual resize to rAF so we don't mutate layout
+  // inside the ResizeObserver callback (which triggers the Chrome/Electron
+  // "ResizeObserver loop completed with undelivered notifications" warning).
   useEffect(() => {
+    let rafId = 0;
     const resizeObserver = new ResizeObserver(() => {
-      const container = containerRef.current;
-      const canvas = canvasRef.current;
-      if (!container || !canvas) return;
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = container.clientWidth * dpr;
-      canvas.height = container.clientHeight * dpr;
-      canvas.style.width = container.clientWidth + 'px';
-      canvas.style.height = container.clientHeight + 'px';
-      draw();
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const container = containerRef.current;
+        const canvas = canvasRef.current;
+        if (!container || !canvas) return;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = container.clientWidth * dpr;
+        canvas.height = container.clientHeight * dpr;
+        canvas.style.width = container.clientWidth + 'px';
+        canvas.style.height = container.clientHeight + 'px';
+        drawRef.current();
+      });
     });
 
     if (containerRef.current) resizeObserver.observe(containerRef.current);
-    return () => resizeObserver.disconnect();
+    return () => { resizeObserver.disconnect(); cancelAnimationFrame(rafId); };
   }, []);
 
   const draw = useCallback(() => {
@@ -127,6 +135,9 @@ export default function GraphView({ onSelectNote, activeNoteId }: GraphViewProps
 
     ctx.restore();
   }, [activeNoteId, hoveredNode]);
+
+  // Keep drawRef in sync so ResizeObserver can always call the latest draw
+  useEffect(() => { drawRef.current = draw; }, [draw]);
 
   // Redraw when active/hover changes
   useEffect(() => { draw(); }, [draw]);
