@@ -349,6 +349,12 @@ For a packaged app, set the variables in your OS environment before launching th
 
 ---
 
+## About
+
+Mnemo is built and maintained by [Ferrowood Group, LLC](https://www.ferrowoodgroup.com).
+
+---
+
 ## License
 
-MIT
+MIT © [Ferrowood Group, LLC](https://www.ferrowoodgroup.com)

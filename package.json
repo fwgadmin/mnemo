@@ -20,7 +20,10 @@
     "rag",
     "ai"
   ],
-  "author": "",
+  "author": {
+    "name": "Ferrowood Group, LLC",
+    "url": "https://www.ferrowoodgroup.com"
+  },
   "type": "commonjs",
   "config": {
     "forge": "./forge.config.js"
