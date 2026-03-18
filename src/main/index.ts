@@ -13,7 +13,7 @@ try {
 }
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
-import type { INoteStore } from '../shared/types';
+import type { INoteStore, AppConfig } from '../shared/types';
 import { IPC } from '../shared/types';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
@@ -23,18 +23,49 @@ const matter = require('gray-matter');
 
 // ─── Windows shell registration (Squirrel install/uninstall hooks) ─────────────
 
+const PROG_ID   = 'MnemoNote';
+// Extensions to register in the Windows right-click context menu.
+// Kept to common text/config types to avoid polluting every file's menu.
+const FILE_EXTS = ['.md', '.txt', '.log', '.csv', '.json', '.yaml', '.yml', '.toml', '.ini', '.conf', '.cfg', '.env'];
+
 function registerShellAssociations(exePath: string): void {
-  for (const ext of ['.md', '.txt']) {
-    const key = `HKCU\\Software\\Classes\\${ext}\\shell\\Open in Mnemo`;
-    spawnSync('reg', ['add', key, '/ve', '/d', 'Open in Mnemo', '/f']);
-    spawnSync('reg', ['add', `${key}\\command`, '/ve', '/d', `"${exePath}" "%1"`, '/f']);
+  const iconVal = `"${exePath}",0`;
+  const cmdVal  = `"${exePath}" "%1"`;
+  const cls     = 'HKCU\\Software\\Classes';
+
+  // ProgId root — used by the "Open With" dialog and file-type ownership
+  spawnSync('reg', ['add', `${cls}\\${PROG_ID}`,                           '/ve', '/d', 'Mnemo Note',      '/f']);
+  spawnSync('reg', ['add', `${cls}\\${PROG_ID}\\DefaultIcon`,              '/ve', '/d', iconVal,            '/f']);
+  spawnSync('reg', ['add', `${cls}\\${PROG_ID}\\shell\\open`,              '/ve', '/d', 'Open in &Mnemo',  '/f']);
+  spawnSync('reg', ['add', `${cls}\\${PROG_ID}\\shell\\open`,              '/v',  'Icon', '/d', iconVal,   '/f']);
+  spawnSync('reg', ['add', `${cls}\\${PROG_ID}\\shell\\open\\command`,     '/ve', '/d', cmdVal,             '/f']);
+
+  for (const ext of FILE_EXTS) {
+    // Right-click context-menu verb on the extension key itself
+    spawnSync('reg', ['add', `${cls}\\${ext}\\shell\\mnemo.open`,          '/ve', '/d', 'Open in &Mnemo',  '/f']);
+    spawnSync('reg', ['add', `${cls}\\${ext}\\shell\\mnemo.open`,          '/v',  'Icon', '/d', iconVal,   '/f']);
+    spawnSync('reg', ['add', `${cls}\\${ext}\\shell\\mnemo.open\\command`, '/ve', '/d', cmdVal,             '/f']);
+    // Advertise ProgId so Mnemo appears in the right-click "Open with" submenu
+    spawnSync('reg', ['add', `${cls}\\${ext}\\OpenWithProgids`,            '/v',  PROG_ID, '/t', 'REG_NONE', '/d', '', '/f']);
+  }
+
+  // Applications\Mnemo.exe — fills the full "Open with > Choose another app" dialog
+  const app = `${cls}\\Applications\\Mnemo.exe`;
+  spawnSync('reg', ['add', app,                           '/v', 'FriendlyAppName', '/d', 'Mnemo',          '/f']);
+  spawnSync('reg', ['add', `${app}\\shell\\open\\command`, '/ve', '/d', cmdVal,                            '/f']);
+  for (const ext of FILE_EXTS) {
+    spawnSync('reg', ['add', `${app}\\SupportedTypes`,    '/v', ext, '/t', 'REG_SZ', '/d', '',             '/f']);
   }
 }
 
 function deregisterShellAssociations(): void {
-  for (const ext of ['.md', '.txt']) {
-    spawnSync('reg', ['delete', `HKCU\\Software\\Classes\\${ext}\\shell\\Open in Mnemo`, '/f']);
+  const cls = 'HKCU\\Software\\Classes';
+  spawnSync('reg', ['delete', `${cls}\\${PROG_ID}`,                              '/f']);
+  for (const ext of FILE_EXTS) {
+    spawnSync('reg', ['delete', `${cls}\\${ext}\\shell\\mnemo.open`,             '/f']);
+    spawnSync('reg', ['delete', `${cls}\\${ext}\\OpenWithProgids`, '/v', PROG_ID, '/f']);
   }
+  spawnSync('reg', ['delete', `${cls}\\Applications\\Mnemo.exe`,                 '/f']);
 }
 
 // Run shell registration BEFORE electron-squirrel-startup handles events (and quits)
@@ -57,16 +88,27 @@ if (require('electron-squirrel-startup')) {
 /** File path queued before the window finishes loading (macOS open-file, fast Windows launch) */
 let pendingExternalFile: string | null = null;
 
-/** Parse a markdown/text file and send it to the renderer as a new note import. */
+/** Parse any text file and send it to the renderer as a new note import. */
 function sendFileToRenderer(win: BrowserWindow, filePath: string): void {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = matter(content);
-    const title = (parsed.data.title as string) || path.basename(filePath, path.extname(filePath));
-    const body = (parsed.content as string).trim();
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    // Try gray-matter for .md files; for everything else use the raw content directly.
+    const ext = path.extname(filePath).toLowerCase();
+    let title: string;
+    let body: string;
+    if (ext === '.md') {
+      const parsed = matter(raw);
+      title = (parsed.data.title as string) || path.basename(filePath, ext);
+      body  = (parsed.content as string).trim();
+    } else {
+      // No frontmatter parsing — use the filename (without extension, if any) as title
+      // and the full raw content as body.
+      title = path.basename(filePath, ext) || path.basename(filePath);
+      body  = raw.trim();
+    }
     win.webContents.send(IPC.FILE_OPENED_EXTERNALLY, { title, body });
   } catch {
-    // Ignore unreadable files
+    // Ignore unreadable / binary files
   }
 }
 
@@ -74,8 +116,11 @@ function sendFileToRenderer(win: BrowserWindow, filePath: string): void {
 function getArgvFilePath(): string | null {
   // Packaged: argv = [exe, ...args]  Dev: argv = [electron, script, ...args]
   const args = app.isPackaged ? process.argv.slice(1) : process.argv.slice(2);
+  // Accept any path-like argument that exists on disk — extension is irrelevant.
+  // Flags (starting with -) and the app's own paths are excluded.
+  const appDir = path.dirname(process.execPath);
   const filePath = args.find(
-    a => !a.startsWith('-') && (a.endsWith('.md') || a.endsWith('.txt')) && fs.existsSync(a),
+    a => !a.startsWith('-') && fs.existsSync(a) && !a.startsWith(appDir),
   );
   return filePath ?? null;
 }
@@ -97,9 +142,30 @@ declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 let store: INoteStore;
 let mcpServer: McpServer;
 
+// ─── Persistent config (userData/config.json) ─────────────────────────────────
+
+function getConfigPath(): string {
+  return path.join(app.getPath('userData'), 'config.json');
+}
+
+function readConfig(): AppConfig {
+  try {
+    return JSON.parse(fs.readFileSync(getConfigPath(), 'utf-8')) as AppConfig;
+  } catch {
+    return {};
+  }
+}
+
+function writeConfig(cfg: AppConfig): void {
+  fs.mkdirSync(path.dirname(getConfigPath()), { recursive: true });
+  fs.writeFileSync(getConfigPath(), JSON.stringify(cfg, null, 2), 'utf-8');
+}
+
 async function initStore(): Promise<void> {
-  const tursoUrl = process.env['MNEMO_TURSO_URL'];
-  const tursoToken = process.env['MNEMO_TURSO_TOKEN'];
+  const cfg = readConfig();
+  // config.json takes priority; fall back to .env (dev mode)
+  const tursoUrl   = cfg.tursoUrl   || process.env['MNEMO_TURSO_URL'];
+  const tursoToken = cfg.tursoToken || process.env['MNEMO_TURSO_TOKEN'];
   if (tursoUrl && tursoToken) {
     const turso = new TursoNoteStore(tursoUrl, tursoToken);
     await turso.initSchema();
@@ -172,6 +238,12 @@ function buildMenu(mainWindow: BrowserWindow): void {
         { label: 'Documentation', click: send('show-help') },
       ],
     },
+    {
+      label: 'Mnemo',
+      submenu: [
+        { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: send('settings') },
+      ],
+    },
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -226,7 +298,11 @@ function registerIpcHandlers(): void {
     const result = await dialog.showSaveDialog({
       title: 'Save Note As',
       defaultPath: `${title || 'note'}.md`,
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
+      filters: [
+        { name: 'Markdown', extensions: ['md'] },
+        { name: 'Text', extensions: ['txt'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
     });
     if (result.canceled || !result.filePath) return { saved: false };
     fs.writeFileSync(result.filePath, `# ${title}\n\n${body}`, 'utf-8');
@@ -235,18 +311,41 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.FILE_OPEN, async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Open Markdown File',
-      filters: [{ name: 'Markdown', extensions: ['md', 'txt'] }],
+      title: 'Open File',
+      filters: [
+        { name: 'Text Files', extensions: ['md', 'txt', 'log', 'csv', 'json', 'yaml', 'yml', 'toml', 'ini', 'conf', 'cfg', 'xml', 'html', 'htm', 'css', 'js', 'ts', 'py', 'sh', 'bat', 'ps1', 'rs', 'go', 'c', 'h', 'cpp', 'java', 'rb', 'php'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
       properties: ['openFile', 'multiSelections'],
     });
     if (result.canceled || !result.filePaths.length) return null;
     return result.filePaths.map((fp: string) => {
-      const content = fs.readFileSync(fp, 'utf-8');
-      const parsed = matter(content);
-      const title = (parsed.data.title as string) || path.basename(fp, path.extname(fp));
-      return { title, body: (parsed.content as string).trim() };
+      const raw  = fs.readFileSync(fp, 'utf-8');
+      const ext  = path.extname(fp).toLowerCase();
+      if (ext === '.md') {
+        const parsed = matter(raw);
+        const title  = (parsed.data.title as string) || path.basename(fp, ext);
+        return { title, body: (parsed.content as string).trim() };
+      }
+      return { title: path.basename(fp, ext) || path.basename(fp), body: raw.trim() };
     });
   });
+
+  ipcMain.handle(IPC.CONFIG_READ, () => readConfig());
+
+  ipcMain.handle(IPC.CONFIG_SAVE, async (_event, cfg: AppConfig) => {
+    writeConfig(cfg);
+    store?.close();
+    await initStore();
+    // Recreate MCP server against the new store
+    mcpServer?.close();
+    mcpServer = createMcpServer(store);
+    return true;
+  });
+
+  ipcMain.handle(IPC.CONFIG_STORE_TYPE, () =>
+    store instanceof TursoNoteStore ? 'turso' : 'local',
+  );
 }
 
 app.whenReady().then(async () => {

@@ -4,21 +4,33 @@
     .md and .txt files in the current user's registry (no admin required).
 
 .DESCRIPTION
-    Run with -Unregister to remove the entries.
-    The installed-app version of Mnemo does this automatically during setup.
-    Use this script when running Mnemo from source / dev mode.
+    Mirrors the registry structure that the Squirrel installer writes via the
+    --squirrel-install / --squirrel-updated hooks in main/index.ts:
+
+      HKCU\Software\Classes\MnemoNote\             (ProgId root)
+      HKCU\Software\Classes\MnemoNote\DefaultIcon  (app icon)
+      HKCU\Software\Classes\MnemoNote\shell\open\command
+
+      For each extension (.md, .txt):
+        HKCU\Software\Classes\{ext}\shell\mnemo.open\command   (right-click verb)
+        HKCU\Software\Classes\{ext}\OpenWithProgids\MnemoNote  (Open With dialog)
+
+      HKCU\Software\Classes\Applications\Mnemo.exe\            (app capabilities)
+
+    Run with -Unregister to remove all entries.
+    Use this script in dev/source mode; the installer handles it automatically.
 
 .PARAMETER ExePath
     Path to the Mnemo executable.
-    Defaults to the packaged app in the local AppData install directory.
-    For dev, pass the full path to your electron binary + entry script, e.g.:
-        -ExePath '"C:\path\to\node_modules\.bin\electron.cmd" "C:\path\to\src\main\index.ts"'
+    Defaults to the Squirrel-installed location (%LOCALAPPDATA%\Mnemo\Mnemo.exe).
+    For a dev build pass the full path, e.g.:
+        -ExePath 'C:\dev\fwg\mnemo\out\Mnemo-win32-x64\Mnemo.exe'
 
 .PARAMETER Unregister
-    Switch: remove the context menu entries instead of adding them.
+    Switch: remove all Mnemo shell entries instead of adding them.
 
 .EXAMPLE
-    # Register using the packaged app (default)
+    # Register using the installed app (default)
     .\register-shell-windows.ps1
 
 .EXAMPLE
@@ -26,8 +38,8 @@
     .\register-shell-windows.ps1 -Unregister
 
 .EXAMPLE
-    # Register with a custom exe path (packaged build in dist/)
-    .\register-shell-windows.ps1 -ExePath '"C:\dev\fwg\mnemo\out\Mnemo-win32-x64\Mnemo.exe"'
+    # Register with a specific build
+    .\register-shell-windows.ps1 -ExePath 'C:\dev\fwg\mnemo\out\Mnemo-win32-x64\Mnemo.exe'
 #>
 
 param(
@@ -35,44 +47,107 @@ param(
     [switch]$Unregister
 )
 
-$Extensions = @('.md', '.txt')
-$MenuLabel  = 'Open in Mnemo'
+$Extensions = @('.md', '.txt', '.log', '.csv', '.json', '.yaml', '.yml', '.toml', '.ini', '.conf', '.cfg', '.env')
+$ProgId     = 'MnemoNote'
+$VerbKey    = 'mnemo.open'
+$VerbLabel  = 'Open in &Mnemo'
+$ClassRoot  = 'HKCU:\Software\Classes'
+$ProgRoot   = "$ClassRoot\$ProgId"
+$AppRoot    = "$ClassRoot\Applications\Mnemo.exe"
 
 if (-not $ExePath) {
-    # Default: look for the Squirrel-installed exe in AppData\Local\Mnemo
+    # Default: Squirrel installs to %LOCALAPPDATA%\Mnemo\Mnemo.exe
     $candidate = Join-Path $env:LOCALAPPDATA 'Mnemo\Mnemo.exe'
     if (Test-Path $candidate) {
-        $ExePath = "`"$candidate`""
+        $ExePath = $candidate
     } else {
-        Write-Error "Could not find Mnemo.exe at $candidate. Pass -ExePath explicitly."
+        Write-Error "Could not find Mnemo.exe at '$candidate'. Pass -ExePath explicitly."
         exit 1
     }
 }
 
-foreach ($ext in $Extensions) {
-    $keyBase = "HKCU:\Software\Classes\$ext\shell\$MenuLabel"
+$IconVal = "`"$ExePath`",0"
+$CmdVal  = "`"$ExePath`" `"%1`""
 
-    if ($Unregister) {
-        if (Test-Path $keyBase) {
-            Remove-Item -Path $keyBase -Recurse -Force
-            Write-Host "Removed context menu for $ext"
-        } else {
-            Write-Host "No entry found for $ext (skipped)"
-        }
-    } else {
-        New-Item -Path $keyBase -Force | Out-Null
-        Set-ItemProperty -Path $keyBase -Name '(default)' -Value $MenuLabel
-
-        $cmdKey = "$keyBase\command"
-        New-Item -Path $cmdKey -Force | Out-Null
-        Set-ItemProperty -Path $cmdKey -Name '(default)' -Value "$ExePath `"%1`""
-
-        Write-Host "Registered context menu for $ext  ->  $ExePath"
+if ($Unregister) {
+    # ── Remove ProgId root ────────────────────────────────────────────────────
+    if (Test-Path $ProgRoot) {
+        Remove-Item -Path $ProgRoot -Recurse -Force
+        Write-Host "Removed ProgId $ProgId"
     }
-}
 
-if (-not $Unregister) {
-    Write-Host ""
-    Write-Host "Done. Right-click any .md or .txt file and choose '$MenuLabel'."
-    Write-Host "Changes take effect immediately (no restart needed)."
+    # ── Remove per-extension entries ──────────────────────────────────────────
+    foreach ($ext in $Extensions) {
+        $verbPath = "$ClassRoot\$ext\shell\$VerbKey"
+        if (Test-Path $verbPath) {
+            Remove-Item -Path $verbPath -Recurse -Force
+            Write-Host "Removed context-menu verb for $ext"
+        }
+        $owpPath = "$ClassRoot\$ext\OpenWithProgids"
+        if (Test-Path "$owpPath\$ProgId") {
+            Remove-ItemProperty -Path $owpPath -Name $ProgId -ErrorAction SilentlyContinue
+            Write-Host "Removed OpenWithProgids entry for $ext"
+        }
+    }
+
+    # ── Remove Applications\Mnemo.exe ────────────────────────────────────────
+    if (Test-Path $AppRoot) {
+        Remove-Item -Path $AppRoot -Recurse -Force
+        Write-Host "Removed Applications\Mnemo.exe"
+    }
+
+    Write-Host "`nUnregistration complete."
+} else {
+    # ── ProgId root ───────────────────────────────────────────────────────────
+    New-Item -Path $ProgRoot -Force | Out-Null
+    Set-ItemProperty -Path $ProgRoot -Name '(default)' -Value 'Mnemo Note'
+
+    New-Item -Path "$ProgRoot\DefaultIcon" -Force | Out-Null
+    Set-ItemProperty -Path "$ProgRoot\DefaultIcon" -Name '(default)' -Value $IconVal
+
+    New-Item -Path "$ProgRoot\shell\open" -Force | Out-Null
+    Set-ItemProperty -Path "$ProgRoot\shell\open" -Name '(default)' -Value $VerbLabel
+    Set-ItemProperty -Path "$ProgRoot\shell\open" -Name 'Icon'      -Value $IconVal
+
+    New-Item -Path "$ProgRoot\shell\open\command" -Force | Out-Null
+    Set-ItemProperty -Path "$ProgRoot\shell\open\command" -Name '(default)' -Value $CmdVal
+
+    Write-Host "Registered ProgId $ProgId"
+
+    # ── Per-extension entries ─────────────────────────────────────────────────
+    foreach ($ext in $Extensions) {
+        # Right-click context-menu verb
+        $verbPath = "$ClassRoot\$ext\shell\$VerbKey"
+        New-Item -Path $verbPath -Force | Out-Null
+        Set-ItemProperty -Path $verbPath -Name '(default)' -Value $VerbLabel
+        Set-ItemProperty -Path $verbPath -Name 'Icon'      -Value $IconVal
+
+        New-Item -Path "$verbPath\command" -Force | Out-Null
+        Set-ItemProperty -Path "$verbPath\command" -Name '(default)' -Value $CmdVal
+
+        # OpenWithProgids — surfaces Mnemo in the right-click "Open with" submenu
+        New-Item -Path "$ClassRoot\$ext\OpenWithProgids" -Force | Out-Null
+        New-ItemProperty -Path "$ClassRoot\$ext\OpenWithProgids" `
+            -Name $ProgId -PropertyType Binary -Value ([byte[]]@()) -Force | Out-Null
+
+        Write-Host "Registered context-menu verb for $ext"
+    }
+
+    # ── Applications\Mnemo.exe ────────────────────────────────────────────────
+    New-Item -Path $AppRoot -Force | Out-Null
+    Set-ItemProperty -Path $AppRoot -Name 'FriendlyAppName' -Value 'Mnemo'
+
+    New-Item -Path "$AppRoot\shell\open\command" -Force | Out-Null
+    Set-ItemProperty -Path "$AppRoot\shell\open\command" -Name '(default)' -Value $CmdVal
+
+    New-Item -Path "$AppRoot\SupportedTypes" -Force | Out-Null
+    foreach ($ext in $Extensions) {
+        New-ItemProperty -Path "$AppRoot\SupportedTypes" `
+            -Name $ext -PropertyType String -Value '' -Force | Out-Null
+    }
+
+    Write-Host "Registered Applications\Mnemo.exe"
+
+    Write-Host "`nDone. Right-click any .md or .txt file and choose 'Open in Mnemo'."
+    Write-Host "Changes take effect immediately (no Explorer restart needed)."
 }

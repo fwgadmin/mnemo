@@ -43,6 +43,12 @@ const MENUS: MenuDef[] = [
       { label: 'Documentation', cmd: 'show-help' },
     ],
   },
+  {
+    label: 'Mnemo',
+    items: [
+      { label: 'Settings…', cmd: 'settings', shortcut: 'Ctrl+,' },
+    ],
+  },
 ];
 
 interface MenuBarProps {

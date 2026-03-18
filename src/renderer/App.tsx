@@ -7,6 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import HelpView from './components/HelpView';
 import MenuBar from './components/MenuBar';
 import MarkdownHelper from './components/MarkdownHelper';
+import SettingsView from './components/SettingsView';
 import { extractWikilinks } from './components/wikilinkPlugin';
 import type { Note, NoteListItem } from '../shared/types';
 
@@ -32,6 +33,7 @@ export default function App() {
   const [showLineNumbers, setShowLineNumbers] = useState(() => loadPref('showLineNumbers', true));
   const [activeTab, setActiveTab] = useState<ActiveTab>('note');
   const [saveSignal, setSaveSignal] = useState(0);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Keep a stable ref to activeNote for use in callbacks/effects
   const activeNoteRef = useRef<Note | null>(null);
@@ -144,6 +146,9 @@ export default function App() {
         break;
       case 'show-help':
         setActiveTab('help');
+        break;
+      case 'settings':
+        setShowSettings(true);
         break;
     }
   }, [handleCreateNote, loadNotes]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -332,6 +337,13 @@ export default function App() {
         />
       )}
       </div>
+
+      {/* Settings overlay */}
+      {showSettings && (
+        <div className="absolute inset-0 z-50 bg-[#0f0f0f]">
+          <SettingsView onClose={() => setShowSettings(false)} />
+        </div>
+      )}
     </div>
   );
 }
