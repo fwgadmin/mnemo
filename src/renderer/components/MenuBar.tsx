@@ -91,14 +91,14 @@ export default function MenuBar({ onCommand }: MenuBarProps) {
             {menu.label}
           </button>
           {open === menu.label && (
-            <div className="absolute top-full left-0 z-50 bg-[#1c1c1c] border border-[#2a2a2a] rounded-sm shadow-xl py-1 min-w-[210px]">
+            <div className="absolute top-full left-0 z-50 bg-[#1c1c1c] border border-[#2a2a2a] rounded-sm shadow-xl py-1 min-w-[240px]">
               {menu.items.map((item, i) =>
                 item.separator ? (
                   <div key={i} className="border-t border-[#2a2a2a] my-1" />
                 ) : (
                   <button
                     key={item.label}
-                    className="w-full flex items-center justify-between px-4 py-[3px] text-xs text-[#ccc] hover:bg-[#2a3a5a] hover:text-white text-left cursor-default"
+                    className="w-full flex items-center justify-between px-4 py-[3px] text-xs text-[#ccc] hover:bg-[#2a3a5a] hover:text-white text-left cursor-default whitespace-nowrap"
                     onClick={() => handleItem(item.cmd!)}
                   >
                     <span>{item.label}</span>
