@@ -68,6 +68,14 @@ export default function App() {
         e.preventDefault();
         setShowSidebar(s => !s);
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'H') {
+        e.preventDefault();
+        setShowNoteHeader(h => !h);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'L') {
+        e.preventDefault();
+        setShowLineNumbers(l => !l);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -216,16 +224,6 @@ export default function App() {
         />
       )}
 
-      {/* Re-open strip when sidebar is hidden */}
-      {!showSidebar && (
-        <button
-          onClick={() => setShowSidebar(true)}
-          title="Show Sidebar (Ctrl+B)"
-          className="w-2 hover:w-5 h-full bg-[#1a1a1a] hover:bg-[#252525] transition-all flex items-center justify-center group shrink-0 cursor-pointer border-r border-[#1e1e1e]"
-        >
-          <span className="opacity-0 group-hover:opacity-100 text-[#555] text-[10px] transition-opacity">›</span>
-        </button>
-      )}
 
       {/* Editor + backlinks */}
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">

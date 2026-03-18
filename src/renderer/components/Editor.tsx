@@ -28,6 +28,9 @@ const mnemoTheme = EditorView.theme({
     fontSize: '14px',
     height: '100%',
   },
+  '&.cm-focused': {
+    outline: 'none',
+  },
   '.cm-content': {
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
     lineHeight: '1.7',
