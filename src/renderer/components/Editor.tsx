@@ -7,7 +7,6 @@ import { languages } from '@codemirror/language-data';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
-import { autocompletion, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { wikilinkDecorations } from './wikilinkPlugin';
 import type { Note } from '../../shared/types';
 
@@ -157,7 +156,6 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
         drawSelection(),
         indentOnInput(),
         bracketMatching(),
-        closeBrackets(),
         highlightActiveLine(),
         highlightSelectionMatches(),
         markdown({ base: markdownLanguage, codeLanguages: languages }),
@@ -169,7 +167,6 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
           ...defaultKeymap,
           ...historyKeymap,
           ...searchKeymap,
-          ...closeBracketsKeymap,
           indentWithTab,
         ]),
         updateListener,
