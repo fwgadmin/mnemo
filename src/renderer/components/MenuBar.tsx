@@ -34,6 +34,7 @@ const MENUS: MenuDef[] = [
       { label: 'Toggle Line Numbers', cmd: 'toggle-line-numbers', shortcut: 'Ctrl+Shift+L' },
       { separator: true, label: '' },
       { label: 'Toggle Graph', cmd: 'toggle-graph', shortcut: 'Ctrl+G' },
+      { label: 'Markdown Helper', cmd: 'toggle-markdown-help', shortcut: 'Ctrl+M' },
     ],
   },
   {

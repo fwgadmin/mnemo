@@ -163,6 +163,7 @@ function buildMenu(mainWindow: BrowserWindow): void {
         { label: 'Toggle Line Numbers', accelerator: 'CmdOrCtrl+Shift+L', click: send('toggle-line-numbers') },
         { type: 'separator' },
         { label: 'Toggle Graph', accelerator: 'CmdOrCtrl+G', click: send('toggle-graph') },
+        { label: 'Markdown Helper', accelerator: 'CmdOrCtrl+M', click: send('toggle-markdown-help') },
       ],
     },
     {

@@ -80,6 +80,10 @@ const mnemoTheme = EditorView.theme({
   '.cm-scroller': {
     overflow: 'auto',
   },
+  '.cm-scroller::-webkit-scrollbar': { width: '6px' },
+  '.cm-scroller::-webkit-scrollbar-track': { background: 'transparent' },
+  '.cm-scroller::-webkit-scrollbar-thumb': { background: '#333', borderRadius: '3px' },
+  '.cm-scroller::-webkit-scrollbar-thumb:hover': { background: '#555' },
   '.cm-selectionMatch': {
     backgroundColor: '#ffffff15',
   },
@@ -154,7 +158,6 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
         indentOnInput(),
         bracketMatching(),
         closeBrackets(),
-        autocompletion(),
         highlightActiveLine(),
         highlightSelectionMatches(),
         markdown({ base: markdownLanguage, codeLanguages: languages }),
@@ -201,7 +204,7 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
   };
 
   const wordCount = note.body.trim() ? note.body.trim().split(/\s+/).length : 0;
-  const editorPx = showHeader ? 'px-4' : 'px-3';
+  const editorPx = showHeader ? 'pl-4 pr-2' : 'pl-3 pr-1';
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">

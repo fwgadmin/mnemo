@@ -6,10 +6,11 @@ import GraphView from './components/GraphView';
 import CommandPalette from './components/CommandPalette';
 import HelpView from './components/HelpView';
 import MenuBar from './components/MenuBar';
+import MarkdownHelper from './components/MarkdownHelper';
 import { extractWikilinks } from './components/wikilinkPlugin';
 import type { Note, NoteListItem } from '../shared/types';
 
-type RightPanel = 'none' | 'graph';
+type RightPanel = 'none' | 'graph' | 'markdown-help';
 type ActiveTab = 'note' | 'help';
 
 function loadPref(key: string, def: boolean): boolean {
@@ -60,6 +61,10 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
         e.preventDefault();
         setRightPanel(p => p === 'graph' ? 'none' : 'graph');
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
+        e.preventDefault();
+        setRightPanel(p => p === 'markdown-help' ? 'none' : 'markdown-help');
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault();
@@ -133,6 +138,9 @@ export default function App() {
         break;
       case 'toggle-graph':
         setRightPanel(p => p === 'graph' ? 'none' : 'graph');
+        break;
+      case 'toggle-markdown-help':
+        setRightPanel(p => p === 'markdown-help' ? 'none' : 'markdown-help');
         break;
       case 'show-help':
         setActiveTab('help');
@@ -277,7 +285,7 @@ export default function App() {
             <div className="text-center">
               <div className="text-5xl mb-4 opacity-20">μ</div>
               <p className="text-sm">Select a note or create a new one</p>
-              <p className="text-xs mt-2 text-[#444]">Ctrl+P to search · Ctrl+N to create · Ctrl+G for graph</p>
+              <p className="text-xs mt-2 text-[#444]">Ctrl+P to search · Ctrl+N to create · Ctrl+G for graph · Ctrl+M for reference</p>
               <button
                 onClick={handleCreateNote}
                 className="mt-4 px-4 py-2 text-xs bg-[#1a1a2e] hover:bg-[#252547] rounded-md transition-colors border border-[#333] cursor-pointer"
@@ -289,7 +297,12 @@ export default function App() {
         )}
       </main>
 
-      {/* Right panel (graph view) */}
+      {/* Right panel: markdown helper */}
+      {rightPanel === 'markdown-help' && (
+        <MarkdownHelper onClose={() => setRightPanel('none')} />
+      )}
+
+      {/* Right panel: graph view */}
       {rightPanel === 'graph' && (
         <div className="w-80 min-w-[280px] border-l border-[#1e1e1e] flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e1e1e]">
