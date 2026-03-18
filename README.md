@@ -18,6 +18,7 @@
 - **MCP server (stdio)** — run headlessly for Claude Desktop / Cursor integration
 - **MCP server (HTTP/SSE)** — hosted endpoint for cloud AI platforms (ChatGPT, Gemini, etc.)
 - **Turso cloud sync** — optional Turso-backed database so multiple clients share one vault
+- **File associations** — right-click any `.md` or `.txt` file in Explorer to open it in Mnemo
 - **Multi-tenant** — tenant-scoped notes for separating knowledge bases
 - **Flat-file vault** — every note synced to `vault/` as Markdown with YAML frontmatter
 
@@ -155,6 +156,8 @@ This produces `dist/mnemo-mcp-http.js`. Deploy it to any Node.js host and set th
 | `Ctrl+G` | Toggle graph view |
 | `Ctrl+B` | Toggle sidebar |
 | `Ctrl+S` | Save (also auto-saves on edit) |
+| `Ctrl+Shift+S` | Save As (export `.md` file) |
+| `Ctrl+O` | Open / import `.md` file |
 | `Ctrl+Shift+H` | Toggle note header |
 | `Ctrl+Shift+L` | Toggle line numbers |
 
@@ -203,6 +206,18 @@ npm run package        # Package Electron app for distribution
 npm run make           # Build platform installers
 ```
 
+### Windows shell context menu (dev mode)
+
+The packaged installer registers "Open in Mnemo" automatically via Squirrel hooks. For dev mode, run once:
+
+```powershell
+.\scripts\register-shell-windows.ps1 -ExePath '"C:\path\to\out\Mnemo-win32-x64\Mnemo.exe"'
+# Remove with:
+.\scripts\register-shell-windows.ps1 -Unregister
+```
+
+Right-click any `.md` or `.txt` file in Explorer and choose **Open in Mnemo**.
+
 ---
 
 ## Deploying the HTTP MCP Server to a VPS
@@ -211,7 +226,7 @@ The HTTP/SSE MCP server (`dist/mnemo-mcp-http.js`) is a plain Node.js process. I
 
 ### Prerequisites
 
-- A VPS with Node.js 20+ installed (Ubuntu/Debian recommended)
+- A VPS with Node.js 22 LTS installed (Ubuntu 24.04 recommended — see below)
 - A free [Turso](https://turso.tech) account and database
 - `dist/mnemo-mcp-http.js` built locally with `npm run build:mcp-http`
 
@@ -234,80 +249,127 @@ turso db show mnemo --url          # → libsql://mnemo-<org>.turso.io
 turso db tokens create mnemo       # → <token>
 ```
 
-### 2. Copy the server bundle to your VPS
+### 2. Build and upload the server bundle
 
-```bash
-scp dist/mnemo-mcp-http.js user@your-vps:/opt/mnemo/
+On your local machine:
+
+```powershell
+npm run build:mcp-http
 ```
 
-### 3. Install Node.js dependencies on the VPS
+This produces `dist/mnemo-mcp-http.js`. Upload it along with a minimal `package.json`:
 
-The bundle externalises `express` and `@libsql/client`, so install them next to the binary:
+```powershell
+# Create deploy package
+New-Item -ItemType Directory -Force dist\deploy | Out-Null
+Copy-Item dist\mnemo-mcp-http.js dist\deploy\
+
+@'
+{
+  "name": "mnemo-mcp-http",
+  "version": "0.9.0",
+  "main": "mnemo-mcp-http.js",
+  "dependencies": {
+    "express": "*",
+    "@libsql/client": "*",
+    "@modelcontextprotocol/sdk": "*",
+    "zod": "*"
+  }
+}
+'@ | Set-Content dist\deploy\package.json
+
+# Upload (replace YOUR_VPS_IP)
+scp -r dist\deploy\* root@YOUR_VPS_IP:/opt/mnemo/
+```
+
+### 3. Install Node.js 22 and dependencies on the VPS
 
 ```bash
-ssh user@your-vps
+# Install Node.js 22 LTS
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt install -y nodejs
+
+# Install server dependencies
 cd /opt/mnemo
-npm init -y
-npm install express @libsql/client @modelcontextprotocol/sdk zod
+npm install --omit=dev
 ```
 
 ### 4. Set environment variables
 
-Generate a strong random API key (e.g. `openssl rand -hex 32`) and set:
+Generate a strong random API key and create `/opt/mnemo/.env`:
 
 ```bash
-export TURSO_URL="libsql://mnemo-<org>.turso.io"
-export TURSO_AUTH_TOKEN="<your-turso-token>"
-export MCP_API_KEY="<your-strong-random-key>"
-export PORT=3001          # optional, default 3001
+openssl rand -hex 32   # use the output as MCP_API_KEY
+
+cat > /opt/mnemo/.env << 'EOF'
+TURSO_URL=libsql://your-db.turso.io
+TURSO_AUTH_TOKEN=your-turso-token
+MCP_API_KEY=your-strong-random-key
+PORT=3001
+EOF
+
+chmod 600 /opt/mnemo/.env
 ```
 
-Store these in `/etc/environment` or use a process manager `.env` file — never commit them to source control.
+> Never commit this file to source control.
 
-### 5. Run with PM2
+### 5. Run as a systemd service
 
 ```bash
-npm install -g pm2
+cat > /etc/systemd/system/mnemo-mcp.service << 'EOF'
+[Unit]
+Description=Mnemo MCP HTTP Server
+After=network.target
 
-pm2 start /opt/mnemo/mnemo-mcp-http.js \
-  --name mnemo-mcp \
-  --env production
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/mnemo
+EnvironmentFile=/opt/mnemo/.env
+ExecStart=/usr/bin/node /opt/mnemo/mnemo-mcp-http.js
+Restart=on-failure
+RestartSec=5
 
-pm2 save
-pm2 startup   # follow the printed command to enable auto-start on reboot
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now mnemo-mcp
+systemctl status mnemo-mcp
 ```
 
-### 6. Expose via nginx (HTTPS required for most AI platforms)
+### 6. Expose via nginx with TLS
 
-Install certbot and nginx, then add a site config:
+```bash
+apt install -y nginx certbot python3-certbot-nginx
 
-```nginx
+# HTTP-only first (certbot needs port 80 to issue the cert)
+cat > /etc/nginx/sites-available/mnemo-mcp << 'EOF'
 server {
-    listen 443 ssl;
-    server_name mcp.yourdomain.com;
+    listen 80;
+    server_name mnemo.yourdomain.com;
 
-    ssl_certificate     /etc/letsencrypt/live/mcp.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/mcp.yourdomain.com/privkey.pem;
+    proxy_read_timeout  3600s;
+    proxy_send_timeout  3600s;
+    proxy_buffering     off;
 
     location / {
-        proxy_pass http://127.0.0.1:3001;
+        proxy_pass         http://127.0.0.1:3001;
         proxy_http_version 1.1;
-
-        # Required for SSE — disable buffering
-        proxy_set_header Connection '';
-        proxy_buffering off;
-        proxy_cache off;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   Connection '';
         chunked_transfer_encoding on;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
     }
 }
-```
+EOF
 
-```bash
-sudo certbot --nginx -d mcp.yourdomain.com
-sudo systemctl reload nginx
+ln -sf /etc/nginx/sites-available/mnemo-mcp /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+
+# Obtain TLS cert (certbot rewrites the nginx config to add HTTPS)
+certbot --nginx -d mnemo.yourdomain.com
 ```
 
 ### 7. Connect an AI platform
@@ -329,23 +391,33 @@ curl https://mcp.yourdomain.com/health
 
 ### 9. Connect the Electron app to the same Turso vault
 
-Set environment variables before launching Mnemo to share the cloud DB:
+Create a `.env` file in the repo root (it is gitignored):
+
+```bash
+# .env  — never commit this file
+MNEMO_TURSO_URL=libsql://your-db.turso.io
+MNEMO_TURSO_TOKEN=your-turso-token
+```
+
+Then `npm start` as normal. The app reads the `.env` at startup and switches from local SQLite to `TursoNoteStore`, sharing the same database as the hosted MCP server.
+
+To return to local-only storage, delete or comment out both lines.
+
+**Alternatively**, set the variables in your shell before launching:
 
 **Windows (PowerShell):**
 ```powershell
-$env:MNEMO_TURSO_URL = "libsql://mnemo-<org>.turso.io"
-$env:MNEMO_TURSO_TOKEN = "<your-turso-token>"
+$env:MNEMO_TURSO_URL = "libsql://your-db.turso.io"
+$env:MNEMO_TURSO_TOKEN = "your-turso-token"
 npm start
 ```
 
 **macOS / Linux:**
 ```bash
-MNEMO_TURSO_URL="libsql://mnemo-<org>.turso.io" \
-MNEMO_TURSO_TOKEN="<your-turso-token>" \
+MNEMO_TURSO_URL="libsql://your-db.turso.io" \
+MNEMO_TURSO_TOKEN="your-turso-token" \
 npm start
 ```
-
-For a packaged app, set the variables in your OS environment before launching the `.exe` / `.app`.
 
 ---
 
