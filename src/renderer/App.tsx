@@ -5,6 +5,7 @@ import BacklinksPanel from './components/BacklinksPanel';
 import GraphView from './components/GraphView';
 import CommandPalette from './components/CommandPalette';
 import HelpView from './components/HelpView';
+import MenuBar from './components/MenuBar';
 import { extractWikilinks } from './components/wikilinkPlugin';
 import type { Note, NoteListItem } from '../shared/types';
 
@@ -81,52 +82,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Native menu commands from main process
-  useEffect(() => {
-    const unsubscribe = window.mnemo.onMenuCommand(async (command) => {
-      const note = activeNoteRef.current;
-      switch (command) {
-        case 'new-note':
-          handleCreateNote();
-          break;
-        case 'save':
-          setSaveSignal(s => s + 1);
-          break;
-        case 'save-as':
-          if (note) {
-            await window.mnemo.file.saveAs({ title: note.title, body: note.body });
-          }
-          break;
-        case 'open': {
-          const files = await window.mnemo.file.open();
-          if (files && files.length > 0) {
-            for (const f of files) {
-              await window.mnemo.notes.create({ title: f.title, body: f.body, tags: [] });
-            }
-            await loadNotes();
-          }
-          break;
-        }
-        case 'toggle-sidebar':
-          setShowSidebar(s => !s);
-          break;
-        case 'toggle-header':
-          setShowNoteHeader(h => !h);
-          break;
-        case 'toggle-line-numbers':
-          setShowLineNumbers(l => !l);
-          break;
-        case 'toggle-graph':
-          setRightPanel(p => p === 'graph' ? 'none' : 'graph');
-          break;
-        case 'show-help':
-          setActiveTab('help');
-          break;
-      }
-    });
-    return () => unsubscribe();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleSelectNote = useCallback(async (id: string) => {
     const note = await window.mnemo.notes.read(id);
     setActiveNote(note);
@@ -141,6 +96,55 @@ export default function App() {
     await loadNotes();
     setActiveNote(note);
   }, [loadNotes]);
+
+  // Menu command handler (used by both native menu IPC and custom MenuBar)
+  const handleMenuCommand = useCallback(async (command: string) => {
+    const note = activeNoteRef.current;
+    switch (command) {
+      case 'new-note':
+        handleCreateNote();
+        break;
+      case 'save':
+        setSaveSignal(s => s + 1);
+        break;
+      case 'save-as':
+        if (note) {
+          await window.mnemo.file.saveAs({ title: note.title, body: note.body });
+        }
+        break;
+      case 'open': {
+        const files = await window.mnemo.file.open();
+        if (files && files.length > 0) {
+          for (const f of files) {
+            await window.mnemo.notes.create({ title: f.title, body: f.body, tags: [] });
+          }
+          await loadNotes();
+        }
+        break;
+      }
+      case 'toggle-sidebar':
+        setShowSidebar(s => !s);
+        break;
+      case 'toggle-header':
+        setShowNoteHeader(h => !h);
+        break;
+      case 'toggle-line-numbers':
+        setShowLineNumbers(l => !l);
+        break;
+      case 'toggle-graph':
+        setRightPanel(p => p === 'graph' ? 'none' : 'graph');
+        break;
+      case 'show-help':
+        setActiveTab('help');
+        break;
+    }
+  }, [handleCreateNote, loadNotes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Native menu commands from main process (accelerators still work via hidden native menu)
+  useEffect(() => {
+    const unsubscribe = window.mnemo.onMenuCommand(handleMenuCommand);
+    return () => unsubscribe();
+  }, [handleMenuCommand]);
 
   const handleUpdateNote = useCallback(async (id: string, title: string, body: string) => {
     // Extract wikilinks and resolve to note IDs
@@ -208,7 +212,9 @@ export default function App() {
   }, [handleSelectNote, loadNotes]);
 
   return (
-    <div className="flex h-screen w-screen bg-[#0f0f0f] text-[#e4e4e7]">
+    <div className="flex flex-col h-screen w-screen bg-[#0f0f0f] text-[#e4e4e7]">
+      <MenuBar onCommand={handleMenuCommand} />
+      <div className="flex flex-1 overflow-hidden">
       {/* Sidebar */}
       {showSidebar && (
         <Sidebar
@@ -290,6 +296,7 @@ export default function App() {
           onClose={() => setShowCommandPalette(false)}
         />
       )}
+      </div>
     </div>
   );
 }

@@ -35,6 +35,7 @@ function createWindow(): BrowserWindow {
     minHeight: 500,
     title: 'Mnemo',
     backgroundColor: '#0f0f0f',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,
