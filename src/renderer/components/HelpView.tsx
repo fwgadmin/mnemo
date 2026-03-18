@@ -126,9 +126,10 @@ export default function HelpView({ onClose }: HelpViewProps) {
 
           <Section title="MCP Integration">
             <p>
-              Mnemo is both an MCP <strong>server</strong> (exposes your vault to agents) and can
-              act as an MCP <strong>client</strong> (future phases). The server starts automatically
-              when the app is open.
+              Mnemo exposes your vault as an MCP <strong>server</strong>. External AI clients
+              such as Claude Desktop, Cursor, or Copilot connect to it via a <strong>stdio
+              subprocess</strong> — meaning the client spawns a dedicated Mnemo process rather
+              than connecting to the running GUI app over a port.
             </p>
 
             <SubSection title="Resources">
@@ -168,22 +169,55 @@ export default function HelpView({ onClose }: HelpViewProps) {
               />
             </SubSection>
 
-            <SubSection title="Standalone / Headless Mode">
+            <SubSection title="Connecting to your vault">
               <p className="text-[#aaa]">
-                Run Mnemo as a headless MCP server for Claude Desktop, Cursor, or any MCP client:
+                Point your MCP client at the <strong>standalone entry point</strong> bundled with
+                Mnemo, passing the paths to your live database and vault folder. Both are stored
+                in your app data directory:
               </p>
-              <CodeBlock>{`node mnemo-mcp.js --db ./mnemo.db --vault ./vault`}</CodeBlock>
-              <p className="mt-2 text-[#aaa]">In your <Mono>claude_desktop_config.json</Mono>:</p>
+              <Table
+                headers={['File', 'Default path (Windows)']}
+                rows={[
+                  ['Database', '%APPDATA%\\Mnemo\\mnemo.db'],
+                  ['Vault', '%APPDATA%\\Mnemo\\vault'],
+                ]}
+              />
+              <p className="mt-3 text-[#aaa]">
+                Add this block to <Mono>claude_desktop_config.json</Mono> (found at
+                <Mono>%APPDATA%\Roaming\Claude\claude_desktop_config.json</Mono>) or your
+                equivalent Cursor / VS Code MCP config:
+              </p>
               <CodeBlock>{`{
   "mcpServers": {
     "mnemo": {
       "command": "node",
-      "args": ["path/to/mnemo-mcp.js",
-               "--db", "path/to/mnemo.db",
-               "--vault", "path/to/vault"]
+      "args": [
+        "C:/Users/YOU/AppData/Local/Programs/mnemo/resources/app/.webpack/main/mnemo-mcp.js",
+        "--db",   "%APPDATA%/Mnemo/mnemo.db",
+        "--vault", "%APPDATA%/Mnemo/vault"
+      ]
     }
   }
 }`}</CodeBlock>
+              <p className="mt-2 text-[#aaa]">
+                The <strong>Mnemo GUI and the MCP subprocess share the same database file</strong>.
+                Changes made through an AI agent are immediately visible in the app, and vice versa.
+              </p>
+            </SubSection>
+
+            <SubSection title="About Prompts (summarize_note, relate_notes, query_vault)">
+              <p className="text-[#aaa]">
+                These are <strong>MCP Prompt templates</strong>, not self-executing tools. When
+                invoked, Mnemo fetches the requested note(s) from the database and assembles a
+                ready-to-send message — for example:
+              </p>
+              <CodeBlock>{`Please summarize the following note titled "My Note":\n\n[note body here]`}</CodeBlock>
+              <p className="mt-2 text-[#aaa]">
+                That message is handed to whichever LLM your MCP client has connected (e.g.
+                Claude, GPT-4o). <strong>Mnemo itself performs no summarization</strong> — it only
+                prepares the prompt. Without a connected LLM, calling these prompts returns the
+                raw formatted text with no summary or analysis.
+              </p>
             </SubSection>
           </Section>
 
