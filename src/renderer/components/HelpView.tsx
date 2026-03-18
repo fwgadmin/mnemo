@@ -272,6 +272,73 @@ export default function HelpView({ onClose }: HelpViewProps) {
             </SubSection>
           </Section>
 
+          <Section title="Syntax Highlighting">
+            <p>
+              The editor uses <Mono>CodeMirror 6</Mono> with full Markdown syntax highlighting.
+              Fenced code blocks are highlighted in the language of their tag:
+            </p>
+            <CodeBlock>{`\`\`\`javascript
+console.log('hello world');
+\`\`\`
+
+\`\`\`python
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+\`\`\`
+
+\`\`\`sql
+SELECT * FROM notes WHERE title LIKE '%mnemo%';
+\`\`\``}</CodeBlock>
+
+            <SubSection title="Supported language tags">
+              <p className="text-[#aaa] mb-2">
+                Any language from the CodeMirror language-data registry is supported. Common ones:
+              </p>
+              <Table
+                headers={['Tag', 'Language']}
+                rows={[
+                  ['javascript / js', 'JavaScript'],
+                  ['typescript / ts', 'TypeScript'],
+                  ['jsx / tsx', 'React JSX / TSX'],
+                  ['python', 'Python'],
+                  ['sql', 'SQL'],
+                  ['html', 'HTML'],
+                  ['css', 'CSS'],
+                  ['json', 'JSON'],
+                  ['yaml', 'YAML'],
+                  ['markdown / md', 'Markdown'],
+                  ['bash / sh / shell', 'Shell / Bash'],
+                  ['rust', 'Rust'],
+                  ['go', 'Go'],
+                  ['java', 'Java'],
+                  ['cpp / c++', 'C++'],
+                  ['csharp / c#', 'C#'],
+                  ['ruby', 'Ruby'],
+                  ['php', 'PHP'],
+                  ['swift', 'Swift'],
+                  ['kotlin', 'Kotlin'],
+                ]}
+              />
+            </SubSection>
+
+            <SubSection title="Inline Markdown">
+              <Table
+                headers={['Syntax', 'Result']}
+                rows={[
+                  ['**bold**', 'Bold text'],
+                  ['*italic* or _italic_', 'Italic text'],
+                  ['`inline code`', 'Inline code (monospace)'],
+                  ['# Heading 1 … ###### Heading 6', 'Headings'],
+                  ['> quoted text', 'Blockquote'],
+                  ['- item or * item', 'Unordered list'],
+                  ['1. item', 'Ordered list'],
+                  ['--- or ***', 'Horizontal rule'],
+                  ['[[Note Title]]', 'Wikilink to another note'],
+                ]}
+              />
+            </SubSection>
+          </Section>
+
           <Section title="Keyboard Shortcuts">
             <Table
               headers={['Shortcut', 'Action']}
@@ -283,6 +350,8 @@ export default function HelpView({ onClose }: HelpViewProps) {
                 ['Ctrl+P', 'Command palette'],
                 ['Ctrl+G', 'Toggle graph view'],
                 ['Ctrl+B', 'Toggle sidebar'],
+                ['Ctrl+Shift+H', 'Toggle note header'],
+                ['Ctrl+Shift+L', 'Toggle line numbers'],
               ]}
             />
           </Section>

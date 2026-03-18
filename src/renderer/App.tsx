@@ -140,6 +140,18 @@ export default function App() {
     }
   }, [handleCreateNote, loadNotes]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Renderer-level hotkey: Ctrl+N — new note (works even when focus is inside CodeMirror)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        handleCreateNote();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleCreateNote]);
+
   // Native menu commands from main process (accelerators still work via hidden native menu)
   useEffect(() => {
     const unsubscribe = window.mnemo.onMenuCommand(handleMenuCommand);
