@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig } from '../../shared/types';
+import type { AppConfig, SyncResult } from '../../shared/types';
 
 interface Props {
   onClose: () => void;
+  onSaved?: () => void;
 }
 
-export default function SettingsView({ onClose }: Props) {
+export default function SettingsView({ onClose, onSaved }: Props) {
   const [tursoUrl, setTursoUrl]     = useState('');
   const [tursoToken, setTursoToken] = useState('');
   const [showToken, setShowToken]   = useState(false);
   const [storeType, setStoreType]   = useState<'turso' | 'local' | null>(null);
   const [saving, setSaving]         = useState(false);
+  const [syncing, setSyncing]       = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [status, setStatus]         = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
@@ -36,7 +39,10 @@ export default function SettingsView({ onClose }: Props) {
       await window.mnemo.config.save(cfg);
       const type = await window.mnemo.config.storeType();
       setStoreType(type);
-      setStatus({ ok: true, msg: type === 'turso' ? 'Connected to Turso.' : 'Saved — using local SQLite (no credentials provided).' });
+      setStatus({ ok: true, msg: type === 'turso' ? 'Connected to Turso — loading notes…' : 'Saved — using local SQLite.' });
+      onSaved?.();
+      // Close settings so the reloaded note list is immediately visible
+      setTimeout(() => onClose(), 800);
     } catch (e) {
       setStatus({ ok: false, msg: `Failed to save: ${e instanceof Error ? e.message : String(e)}` });
     } finally {
@@ -53,6 +59,8 @@ export default function SettingsView({ onClose }: Props) {
       await window.mnemo.config.save({});
       setStoreType('local');
       setStatus({ ok: true, msg: 'Credentials cleared — using local SQLite.' });
+      onSaved?.();
+      setTimeout(() => onClose(), 800);
     } finally {
       setSaving(false);
     }
@@ -153,6 +161,41 @@ export default function SettingsView({ onClose }: Props) {
           )}
         </div>
       </section>
+
+      {/* Local → Turso sync — only visible when connected */}
+      {storeType === 'turso' && (
+        <section className="mb-8 max-w-lg">
+          <h2 className="text-sm font-semibold text-[#aaa] uppercase tracking-widest mb-4">Import Local Notes</h2>
+          <p className="text-xs text-[#666] mb-5 leading-relaxed">
+            Copy notes from your offline local database into Turso. Existing Turso notes are kept;
+            local notes are only written if they are newer. Safe to run more than once.
+          </p>
+          {syncResult && (
+            <p className="text-xs text-emerald-400 mb-3">
+              Done — {syncResult.synced} note{syncResult.synced !== 1 ? 's' : ''} synced to Turso.
+            </p>
+          )}
+          <button
+            onClick={async () => {
+              setSyncing(true);
+              setSyncResult(null);
+              try {
+                const result = await window.mnemo.config.syncLocalNotes();
+                setSyncResult(result);
+                onSaved?.();  // reload sidebar
+              } catch (e) {
+                setStatus({ ok: false, msg: `Sync failed: ${e instanceof Error ? e.message : String(e)}` });
+              } finally {
+                setSyncing(false);
+              }
+            }}
+            disabled={syncing || saving}
+            className="px-4 py-1.5 bg-[#2a2a2a] hover:bg-[#333] border border-[#3a3a3a] rounded text-sm text-white transition-colors disabled:opacity-50"
+          >
+            {syncing ? 'Syncing…' : 'Sync local notes to Turso'}
+          </button>
+        </section>
+      )}
 
       <section className="max-w-lg">
         <h2 className="text-sm font-semibold text-[#aaa] uppercase tracking-widest mb-4">Getting Started with Turso</h2>

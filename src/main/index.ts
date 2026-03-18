@@ -13,7 +13,7 @@ try {
 }
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
-import type { INoteStore, AppConfig } from '../shared/types';
+import type { INoteStore, AppConfig, SyncResult } from '../shared/types';
 import { IPC } from '../shared/types';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
@@ -346,6 +346,29 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.CONFIG_STORE_TYPE, () =>
     store instanceof TursoNoteStore ? 'turso' : 'local',
   );
+
+  ipcMain.handle(IPC.CONFIG_SYNC_LOCAL, async (): Promise<SyncResult> => {
+    if (!(store instanceof TursoNoteStore)) {
+      throw new Error('Not connected to Turso — switch to Turso first.');
+    }
+    const dbPath = path.join(app.getPath('userData'), 'mnemo.db');
+    if (!fs.existsSync(dbPath)) return { synced: 0, skipped: 0 };
+
+    // Open local DB as read-only so we never mutate it during migration
+    const Database = require('better-sqlite3');
+    const localDb = new Database(dbPath, { readonly: true });
+    try {
+      const notes = localDb
+        .prepare('SELECT id, title, body, tags, tenant_id, created_at, updated_at FROM notes')
+        .all() as Array<{ id: string; title: string; body: string; tags: string; tenant_id: string; created_at: string; updated_at: string }>;
+      const links = localDb
+        .prepare('SELECT source_id, target_id FROM note_links')
+        .all() as Array<{ source_id: string; target_id: string }>;
+      return await store.importNotes(notes, links);
+    } finally {
+      localDb.close();
+    }
+  });
 }
 
 app.whenReady().then(async () => {

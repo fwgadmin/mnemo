@@ -55,6 +55,12 @@ export interface GraphData {
   links: Array<{ source: string; target: string }>;
 }
 
+/** Result of a local→Turso sync operation */
+export interface SyncResult {
+  synced: number;
+  skipped: number;
+}
+
 /** Cloud/sync configuration stored in userData/config.json */
 export interface AppConfig {
   tursoUrl?: string;
@@ -96,6 +102,7 @@ export const IPC = {
   CONFIG_READ: 'config:read',
   CONFIG_SAVE: 'config:save',
   CONFIG_STORE_TYPE: 'config:storeType',
+  CONFIG_SYNC_LOCAL: 'config:syncLocal',
   // Menu → renderer commands
   MENU_COMMAND: 'menu:command',
 } as const;

@@ -341,7 +341,14 @@ export default function App() {
       {/* Settings overlay */}
       {showSettings && (
         <div className="absolute inset-0 z-50 bg-[#0f0f0f]">
-          <SettingsView onClose={() => setShowSettings(false)} />
+          <SettingsView
+            onClose={() => setShowSettings(false)}
+            onSaved={() => {
+              // Store has switched — clear stale active note and reload the list
+              setActiveNote(null);
+              loadNotes();
+            }}
+          />
         </div>
       )}
     </div>
