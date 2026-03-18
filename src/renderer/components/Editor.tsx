@@ -199,13 +199,13 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
   };
 
   const wordCount = note.body.trim() ? note.body.trim().split(/\s+/).length : 0;
-  const editorPx = showHeader ? 'px-8' : 'px-6';
+  const editorPx = showHeader ? 'px-4' : 'px-3';
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {showHeader && (
         <>
-          <div className="px-8 pt-6 pb-2">
+          <div className="px-4 pt-3 pb-1">
             <input
               ref={titleRef}
               type="text"
@@ -233,10 +233,10 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
               )}
             </div>
           </div>
-          <div className="mx-8 border-t border-[#1a1a1a] my-2" />
+          <div className="mx-4 border-t border-[#1a1a1a] my-1" />
         </>
       )}
-      <div ref={containerRef} className={`flex-1 overflow-hidden ${editorPx} ${showHeader ? 'pb-6' : 'py-5'}`} />
+      <div ref={containerRef} className={`flex-1 overflow-hidden ${editorPx} ${showHeader ? 'pb-3' : 'py-3'}`} />
     </div>
   );
 }
