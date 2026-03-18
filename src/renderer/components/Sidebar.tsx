@@ -43,7 +43,7 @@ export default function Sidebar({
   const [contextMenuId, setContextMenuId] = useState<string | null>(null);
   const [categoryEditId, setCategoryEditId] = useState<string | null>(null);
   const [categoryValue, setCategoryValue] = useState('');
-  const [grouped, setGrouped] = useState(() => localStorage.getItem('mnemo.grouped') === 'true');
+  const [grouped, setGrouped] = useState(() => localStorage.getItem('mnemo.grouped') !== 'false');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
   const categoryInputRef = useRef<HTMLInputElement>(null);
@@ -88,7 +88,7 @@ export default function Sidebar({
     });
   }, []);
 
-  const renderNoteItem = (note: NoteListItem) => (
+  const renderNoteItem = (note: NoteListItem, hideCategory = false) => (
     <div key={note.id}>
       <div
         onClick={() => { onSelectNote(note.id); setContextMenuId(null); }}
@@ -105,7 +105,7 @@ export default function Sidebar({
         {note.snippet && (
           <div className="text-[10px] text-[#555] truncate mt-0.5">{note.snippet}</div>
         )}
-        {note.tags.length > 0 && (
+        {!hideCategory && note.tags.length > 0 && (
           <div className="flex gap-1 mt-1 flex-wrap">
             {note.tags.slice(0, 3).map(tag => (
               <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-[#1e1e2e] text-[#777]">
@@ -216,7 +216,7 @@ export default function Sidebar({
                 {group}
                 <span className="ml-auto text-[9px] font-normal text-[#444]">{groupNotes.length}</span>
               </button>
-              {!collapsedGroups.has(group) && groupNotes.map(renderNoteItem)}
+              {!collapsedGroups.has(group) && groupNotes.map(n => renderNoteItem(n, true))}
             </div>
           ))
         ) : (
