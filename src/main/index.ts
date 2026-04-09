@@ -52,6 +52,21 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
+// Optional: align GUI data dir with CLI (`mnemo note`, MCP) via MNEMO_HOME
+if (!app.isReady()) {
+  const raw = process.env['MNEMO_HOME']?.trim();
+  if (raw) {
+    const dir = path.resolve(raw);
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      app.setPath('userData', dir);
+    } catch {
+      // keep default userData if setPath fails
+    }
+  }
+}
+
+
 // ─── External file handling ────────────────────────────────────────────────────
 
 /** File path queued before the window finishes loading (macOS open-file, fast Windows launch) */

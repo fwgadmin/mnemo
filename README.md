@@ -52,6 +52,33 @@ npm start
 
 The app opens with a local SQLite database stored in your OS user-data directory. No sign-up required.
 
+### Linux (Ubuntu 24.04) — terminal first
+
+**System packages for packaging:** building a `.deb` needs `fakeroot` and `dpkg` (usually already present on Ubuntu).
+
+**Optional build tools:** if `better-sqlite3` fails to install prebuilt binaries, install build prerequisites:
+
+```bash
+sudo apt install -y build-essential python3
+```
+
+**Install the app:** after `npm run make`, install `out/make/deb/x64/mnemo_*_amd64.deb` (or use the zip under `out/make/zip/`). The package installs the `mnemo` command and a GNOME desktop entry for **Mnemo**.
+
+**`mnemo` command (after `.deb` install):**
+
+| Command | Purpose |
+|---------|---------|
+| `mnemo` | Open the graphical app (pass `.md` / `.txt` paths to import) |
+| `mnemo mcp` | MCP server on stdio (same flags as `dist/mnemo-mcp.js`) |
+| `mnemo mcp-http` | HTTP/SSE server (requires `TURSO_URL`, `TURSO_AUTH_TOKEN`, `MCP_API_KEY`; uses system `node`) |
+| `mnemo note list` / `show` / `search` / `new` | Work with notes in the terminal |
+
+`mcp` and `note` run on the **same Electron runtime** as the app so SQLite native code matches. `mcp-http` uses your system Node.js.
+
+**Share one vault between GUI and CLI:** set `MNEMO_HOME` to a directory; both the app and `mnemo note` / `mnemo mcp` use it for `mnemo.db` and `vault/` (GUI reads this via `app.setPath('userData', …)`).
+
+**From a git checkout (development):** `npm install`, then `npm run build:cli`, then use `npx mnemo` or `node bin/mnemo.js` (or add `./node_modules/.bin` to `PATH`). The dev launcher runs `mcp`/`note` under Electron-as-Node with the repo’s `node_modules`.
+
 ---
 
 ## MCP Integration
@@ -100,7 +127,7 @@ Build the standalone MCP binary:
 npm run build:mcp
 ```
 
-This produces `dist/mnemo-mcp.js`. Add it to your Claude Desktop config:
+This produces `dist/mnemo-mcp.js`. Add it to your Claude Desktop config (on Linux with the `.deb` installed you can use `"command": "mnemo"` and `"args": ["mcp", ...]` instead of `node` + the script path):
 
 ```json
 {
@@ -172,7 +199,9 @@ src/
 │   ├── mcp/
 │   │   ├── server.ts            # MCP server (resources, tools, prompts)
 │   │   ├── stdio.ts             # Standalone stdio entry point
+│   │   ├── stdio-bootstrap.ts   # Shared MCP stdio bootstrap (CLI + mnemo-mcp.js)
 │   │   └── http.ts              # HTTP/SSE entry point (hosted platforms)
+│   ├── cli.ts                   # Node CLI bundle (mcp, mcp-http, note)
 │   └── store/
 │       ├── NoteStore.ts         # LocalNoteStore — SQLite via better-sqlite3
 │       └── TursoNoteStore.ts    # TursoNoteStore — cloud SQLite via @libsql/client
@@ -202,8 +231,9 @@ npm start              # Dev mode with hot reload
 npm run typecheck      # TypeScript type-check (zero errors enforced)
 npm run build:mcp      # Build stdio MCP server → dist/mnemo-mcp.js
 npm run build:mcp-http # Build HTTP MCP server → dist/mnemo-mcp-http.js
+npm run build:cli      # Build unified CLI bundle → dist/mnemo-cli.js
 npm run package        # Package Electron app for distribution
-npm run make           # Build platform installers
+npm run make           # Build platform installers (.deb + zip on Linux)
 ```
 
 ### Windows shell context menu (dev mode)
@@ -217,6 +247,10 @@ The packaged installer registers "Open in Mnemo" automatically via Squirrel hook
 ```
 
 Right-click any `.md` or `.txt` file in Explorer and choose **Open in Mnemo**.
+
+### Linux / GNOME (`.deb`)
+
+The Debian package registers **Mnemo** for `text/markdown` and `text/plain`. Use **Open With** in Files, or set the default app under **Settings → Default Applications**. The menu entry runs `mnemo %U`, which opens the Electron app and forwards file paths.
 
 ---
 
