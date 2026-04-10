@@ -1,0 +1,104 @@
+# On version tags (v*): build desktop installers on Windows + Linux, attach zip bundles to the GitHub Release.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Windows (Squirrel + zip)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create Windows installers
+        run: npm run make
+
+      - name: Zip Windows out/make
+        shell: pwsh
+        run: |
+          Compress-Archive -Path .\out\make -DestinationPath "mnemo-${{ github.ref_name }}-windows-x64.zip"
+
+      - name: Upload Windows zip (staging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: mnemo-${{ github.ref_name }}-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  build-linux:
+    name: Build Linux (.deb + zip)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install packaging and native build deps
+        run: sudo apt-get update && sudo apt-get install -y fakeroot dpkg zip build-essential python3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create Linux installers
+        run: npm run make
+
+      - name: Zip Linux out/make
+        run: |
+          (cd out/make && zip -r "${GITHUB_WORKSPACE}/mnemo-${GITHUB_REF_NAME}-linux-amd64.zip" .)
+
+      - name: Upload Linux zip (staging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-zip
+          path: mnemo-${{ github.ref_name }}-linux-amd64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish GitHub release assets
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build zips
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            assets/windows-zip/*.zip
+            assets/linux-zip/*.zip
+          generate_release_notes: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
