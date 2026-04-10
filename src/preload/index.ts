@@ -35,7 +35,10 @@ export interface MnemoAPI {
     storeType(): Promise<'turso' | 'local'>;
     syncLocalNotes(): Promise<SyncResult>;
   };
-  /** Theme, layout, sidebar, category colors — synced to ui-preferences.json (same as MCP) */
+  /**
+   * UI preferences (theme, layout, toggles, category colors, Markdown CSS overrides, IDE tab order).
+   * Saves merge into ui-preferences.json and, when using a remote libSQL/Turso datasource, mirror the same JSON to `app_kv` for cross-device sync.
+   */
   preferences: {
     read(): Promise<MnemoUiPreferences>;
     save(partial: Partial<MnemoUiPreferences>): Promise<boolean>;

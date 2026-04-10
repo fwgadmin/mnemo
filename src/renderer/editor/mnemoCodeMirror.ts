@@ -93,14 +93,44 @@ export const mnemoEditorTheme = EditorView.theme(
  */
 const mnemoHighlightStyle = HighlightStyle.define(
   [
-    /* Markdown / prose */
-    { tag: [t.heading, t.heading1], color: 'var(--mnemo-editor-heading)', fontWeight: 'var(--mnemo-editor-heading-weight)' },
-    { tag: t.heading1, fontSize: 'var(--mnemo-editor-h1-size)' },
-    { tag: t.heading2, fontSize: 'var(--mnemo-editor-h2-size)' },
-    { tag: t.heading3, fontSize: 'var(--mnemo-editor-h3-size)' },
-    { tag: t.heading4, fontSize: 'var(--mnemo-editor-h4-size)' },
-    { tag: t.heading5, fontSize: 'var(--mnemo-editor-h5-size)' },
-    { tag: t.heading6, fontSize: 'var(--mnemo-editor-h6-size)' },
+    /* Markdown / prose — one spec per heading level so tagHighlighter map isn't overwritten by font-only rules */
+    {
+      tag: t.heading1,
+      color: 'var(--mnemo-editor-heading)',
+      fontWeight: 'var(--mnemo-editor-heading-weight)',
+      fontSize: 'var(--mnemo-editor-h1-size)',
+    },
+    {
+      tag: t.heading2,
+      color: 'var(--mnemo-editor-heading)',
+      fontWeight: 'var(--mnemo-editor-heading-weight)',
+      fontSize: 'var(--mnemo-editor-h2-size)',
+    },
+    {
+      tag: t.heading3,
+      color: 'var(--mnemo-editor-heading)',
+      fontWeight: 'var(--mnemo-editor-heading-weight)',
+      fontSize: 'var(--mnemo-editor-h3-size)',
+    },
+    {
+      tag: t.heading4,
+      color: 'var(--mnemo-editor-heading)',
+      fontWeight: 'var(--mnemo-editor-heading-weight)',
+      fontSize: 'var(--mnemo-editor-h4-size)',
+    },
+    {
+      tag: t.heading5,
+      color: 'var(--mnemo-editor-heading)',
+      fontWeight: 'var(--mnemo-editor-heading-weight)',
+      fontSize: 'var(--mnemo-editor-h5-size)',
+    },
+    {
+      tag: t.heading6,
+      color: 'var(--mnemo-editor-heading)',
+      fontWeight: 'var(--mnemo-editor-heading-weight)',
+      fontSize: 'var(--mnemo-editor-h6-size)',
+    },
+    { tag: t.heading, color: 'var(--mnemo-editor-heading)', fontWeight: 'var(--mnemo-editor-heading-weight)' },
     { tag: t.strong, fontWeight: 'bold', color: 'var(--mnemo-editor-strong)' },
     { tag: t.emphasis, fontStyle: 'italic', color: 'var(--mnemo-editor-emphasis)' },
     { tag: t.strikethrough, textDecoration: 'line-through', color: 'var(--mnemo-editor-strikethrough)' },

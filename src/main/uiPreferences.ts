@@ -1,6 +1,8 @@
 /**
  * UI preferences on disk — same file for Electron GUI, CLI, and MCP agents.
  * Default: ui-preferences.json next to config (MNEMO_HOME, XDG data, or legacy paths).
+ * When the active store is TursoNoteStore, reads merge disk + cloud `app_kv.ui_preferences`;
+ * writes update both the JSON file and `app_kv` so themes, category colors, Markdown overrides, etc. sync.
  */
 import * as fs from 'fs';
 import * as path from 'path';

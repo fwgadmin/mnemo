@@ -24,6 +24,22 @@
 - **Categories** — first tag is the folder path (`General`, `Unassigned`, or nested paths); sidebar grouping, IDE Solution Explorer, folder colors, rename/promote/demote
 - **Themes & layouts** — CSS-variable themes; classic sidebar, top navigation, or IDE tabs with optional layout override in Settings
 - **CLI** — `mnemo note` includes list/show/search/new/import plus category tree, `set-category`, and folder rename/promote/demote (same semantics as the app)
+- **UI preferences sync** — theme, layout, folder colors, Markdown appearance (CSS variables), and related settings save to `ui-preferences.json`; with a linked **Turso/libSQL** database the same merged JSON is mirrored to `app_kv` (`ui_preferences`) for multi-device sync
+
+---
+
+## UI preferences persistence
+
+The app stores **themes, layout (and override), sidebar/chrome toggles, grouped list & category subtree scope, category folder colors, Markdown editor CSS overrides** (`markdownGlobal` / `markdownByTheme`), and **IDE tab order** in **`ui-preferences.json`** beside your config directory (same resolution as `MNEMO_HOME` / Electron user data). The MCP resource `mnemo://preferences` and tools `get_ui_preferences` / `set_ui_preferences` use the same shape.
+
+### Remote database (Turso / libSQL)
+
+When Settings points at a **remote libSQL** datasource, the Electron app uses `TursoNoteStore`. Each preferences save writes the **full merged** snapshot to:
+
+1. **`ui-preferences.json`** on disk (also used by CLI and local MCP when not cloud-backed), and  
+2. The **`app_kv`** table, key **`ui_preferences`**, in the linked database — so other machines or services using the same vault see the same colors and format settings.
+
+On launch, the app reads disk and **merges** cloud values when Turso is connected (see `readUiPreferencesMerged` in `src/main/uiPreferences.ts`). A few values are cached in `localStorage` for bootstrap; the file and `app_kv` mirror are the durable sources.
 
 ---
 
@@ -100,7 +116,7 @@ sudo apt install -y build-essential python3
 | ---------------------- | ----------- |
 | `mnemo://notes`        | JSON list of all notes |
 | `mnemo://notes/{id}`   | Single note as Markdown |
-| `mnemo://preferences`  | UI preferences (theme, layout, grouped categories, category colors, IDE tab order) — same JSON as `ui-preferences.json` beside config |
+| `mnemo://preferences`  | UI preferences (theme, layout, grouped categories, category colors, Markdown CSS overrides, IDE tab order) — same JSON as `ui-preferences.json`; with Turso, merged from disk + `app_kv` |
 
 
 ### Tools
@@ -116,8 +132,8 @@ sudo apt install -y build-essential python3
 | `get_backlinks`      | Notes linking to a given note |
 | `link_notes`         | Set outgoing wikilinks from source to targets |
 | `get_graph`          | Nodes (`id`, `title`, `ref`) and link edges |
-| `get_ui_preferences` | Read merged UI preferences from disk |
-| `set_ui_preferences` | Merge partial preferences (theme, layout, editor toggles, grouped, category subtree scope, category colors, IDE tab IDs) |
+| `get_ui_preferences` | Read merged UI preferences (disk + Turso `app_kv` when connected) |
+| `set_ui_preferences` | Merge partial preferences (theme, layout, editor toggles, grouped, category subtree scope, category colors, Markdown appearance maps, IDE tab IDs); writes `ui-preferences.json` and mirrors to `app_kv` when the store is Turso |
 
 
 ### Prompts
@@ -236,7 +252,7 @@ src/
 │   ├── App.tsx                  # Root component
 │   └── components/
 │       ├── Editor.tsx           # CodeMirror 6 markdown editor
-│       ├── Sidebar.tsx          # Note list + search
+│       ├── Sidebar.tsx          # Note list + search (MNEMO / Explorer header in IDE layout)
 │       ├── BacklinksPanel.tsx   # Incoming links panel
 │       ├── GraphView.tsx        # d3-force canvas graph
 │       ├── CommandPalette.tsx   # Fuzzy search + commands

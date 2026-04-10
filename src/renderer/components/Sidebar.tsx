@@ -429,8 +429,8 @@ export default function Sidebar({
     <div className="flex items-center justify-between px-4 py-3 border-b border-mnemo-border">
       {layout === 'ide' ? (
         <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-mnemo-dim">Explorer</div>
-          <div className="text-xs font-semibold tracking-wide text-mnemo-muted truncate">MNEMO</div>
+          <div className="text-xs font-semibold tracking-wide text-mnemo-muted truncate leading-tight">MNEMO</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-mnemo-dim mt-0.5">Explorer</div>
         </div>
       ) : (
         <span className="text-sm font-semibold tracking-wide text-mnemo-muted">MNEMO</span>

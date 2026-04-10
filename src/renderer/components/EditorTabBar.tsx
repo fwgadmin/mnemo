@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { clampFixedContextMenu } from '../fixedMenuPosition';
 
 export interface EditorTabItem {
   id: string;
@@ -28,8 +29,18 @@ export default function EditorTabBar({
   onCloseTabsToRight,
 }: EditorTabBarProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; tabId: string; tabIndex: number } | null>(null);
+  const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!menu) return;
+    setMenuPos({ left: menu.x, top: menu.y });
+    const el = menuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setMenuPos(clampFixedContextMenu(menu.x, menu.y, width, height));
+  }, [menu]);
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -129,10 +140,7 @@ export default function EditorTabBar({
         <div
           ref={menuRef}
           className="fixed z-[300] min-w-[200px] rounded-md border border-mnemo-border bg-mnemo-panel-elevated py-1 text-[11px] shadow-xl"
-          style={{
-            left: Math.min(menu.x, typeof window !== 'undefined' ? window.innerWidth - 216 : menu.x),
-            top: Math.min(menu.y, typeof window !== 'undefined' ? window.innerHeight - 88 : menu.y),
-          }}
+          style={{ left: menuPos.left, top: menuPos.top }}
         >
           <button
             type="button"

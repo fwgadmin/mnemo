@@ -34,7 +34,7 @@ export function createMcpServer(store: INoteStore): McpServer {
     'mnemo://preferences',
     {
       description:
-        'Mnemo UI preferences (theme, layout, markdown editor CSS overrides, category colors, …) — merged from disk + Turso when connected; same shape as ui-preferences.json',
+        'Mnemo UI preferences (theme, layout, Markdown CSS overrides, category colors, IDE tabs, …) — merged from disk + Turso app_kv when connected; same shape as ui-preferences.json',
       mimeType: 'application/json',
     },
     async () => ({
@@ -201,7 +201,7 @@ export function createMcpServer(store: INoteStore): McpServer {
 
   mcp.tool(
     'get_ui_preferences',
-    'Read Mnemo UI preferences (disk + Turso merge when using cloud DB): theme, layout, markdown CSS overrides (markdownGlobal / markdownByTheme), category colors, etc. Same JSON as mnemo://preferences.',
+    'Read merged UI preferences (disk + Turso app_kv when using cloud DB): theme, layout, Markdown CSS overrides (markdownGlobal / markdownByTheme), category colors, IDE tab order, etc. Same JSON as mnemo://preferences.',
     {},
     async () => {
       const prefs = await readUiPreferencesMerged(store);
@@ -211,7 +211,7 @@ export function createMcpServer(store: INoteStore): McpServer {
 
   mcp.tool(
     'set_ui_preferences',
-    'Merge partial UI preferences into ui-preferences.json and into Turso app_kv when the store is Turso (cross-device sync). Keys must be valid (--mnemo-editor-*, --mnemo-syntax-* only for markdown maps).',
+    'Merge partial UI preferences into ui-preferences.json and mirror the full merged JSON to Turso app_kv (key ui_preferences) when the store is Turso. Markdown map keys must be valid (--mnemo-editor-*, --mnemo-syntax-*).',
     uiPrefFields,
     async (args) => {
       const merged = await mergeAndWriteUiPreferencesAsync(args as Partial<MnemoUiPreferences>, undefined, store);

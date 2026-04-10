@@ -93,6 +93,7 @@ export type LayoutOverridePreference = 'inherit' | 'sidebar' | 'top' | 'ide';
 /**
  * Customizable UI state shared by the Electron app (via IPC), on-disk JSON
  * (`ui-preferences.json` next to config), and MCP tools (`get_ui_preferences` / `set_ui_preferences`).
+ * When the app uses a remote libSQL (Turso) store, the merged snapshot is also written to `app_kv` under key `ui_preferences`.
  */
 export interface MnemoUiPreferences {
   themeId?: string;

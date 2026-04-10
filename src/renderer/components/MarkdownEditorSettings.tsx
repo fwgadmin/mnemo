@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type Row = { key: string; label: string; kind: 'text' | 'color' };
 
@@ -19,6 +19,80 @@ const ROWS: Row[] = [
 
 function isHex6(v: string): boolean {
   return /^#[0-9A-Fa-f]{6}$/.test(v.trim());
+}
+
+function normalizePickerHex(hex: string | null | undefined, fallback: string): string {
+  if (!hex || typeof hex !== 'string') return fallback;
+  const t = hex.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(t)) return t;
+  if (/^#[0-9a-fA-F]{3}$/.test(t)) {
+    const r = t[1]!;
+    const g = t[2]!;
+    const b = t[3]!;
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  return fallback;
+}
+
+function MarkdownColorRow({
+  label,
+  value,
+  onTextChange,
+  onApplyHex,
+  onClear,
+}: {
+  label: string;
+  value: string;
+  onTextChange: (v: string) => void;
+  onApplyHex: (hex: string) => void;
+  onClear: () => void;
+}) {
+  const baseline = '#888888';
+  const [draftHex, setDraftHex] = useState(() => normalizePickerHex(isHex6(value) ? value : null, baseline));
+
+  useEffect(() => {
+    setDraftHex(normalizePickerHex(isHex6(value) ? value : null, baseline));
+  }, [value]);
+
+  const committed = isHex6(value) ? value : baseline;
+  const dirty = draftHex.toLowerCase() !== committed.toLowerCase();
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 min-w-0 w-full">
+      <input
+        type="color"
+        aria-label={label}
+        className="h-9 w-12 shrink-0 cursor-pointer rounded border border-mnemo-border bg-mnemo-app"
+        value={draftHex}
+        onChange={e => setDraftHex(e.target.value)}
+      />
+      <input
+        type="text"
+        value={value}
+        onChange={e => onTextChange(e.target.value)}
+        placeholder="#rrggbb or color-mix(…)"
+        className="min-w-0 flex-1 basis-[min(100%,12rem)] px-2 py-1.5 rounded border border-mnemo-border bg-mnemo-app text-mnemo-text text-xs font-mono"
+      />
+      <button
+        type="button"
+        disabled={!dirty}
+        onClick={() => onApplyHex(draftHex)}
+        className="px-2.5 py-1 rounded text-[11px] font-medium bg-mnemo-accent text-mnemo-bg-app hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+      >
+        Apply
+      </button>
+      {value !== '' && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="shrink-0 text-[10px] text-mnemo-dim hover:text-mnemo-muted px-1"
+          title="Clear override"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
 }
 
 interface MarkdownEditorSettingsProps {
@@ -117,22 +191,13 @@ export default function MarkdownEditorSettings({
                     className="flex-1 min-w-0 px-2 py-1.5 rounded border border-mnemo-border bg-mnemo-app text-mnemo-text text-xs font-mono"
                   />
                 ) : isHex6(val) || val === '' ? (
-                  <>
-                    <input
-                      type="color"
-                      aria-label={row.label}
-                      className="h-9 w-12 shrink-0 cursor-pointer rounded border border-mnemo-border bg-mnemo-app"
-                      value={isHex6(val) ? val : '#888888'}
-                      onChange={e => setKey(row.key, e.target.value)}
-                    />
-                    <input
-                      type="text"
-                      value={val}
-                      onChange={e => setKey(row.key, e.target.value)}
-                      placeholder="#rrggbb or color-mix(…)"
-                      className="flex-1 min-w-0 px-2 py-1.5 rounded border border-mnemo-border bg-mnemo-app text-mnemo-text text-xs font-mono"
-                    />
-                  </>
+                  <MarkdownColorRow
+                    label={row.label}
+                    value={val}
+                    onTextChange={v => setKey(row.key, v)}
+                    onApplyHex={hex => setKey(row.key, hex)}
+                    onClear={() => clearKey(row.key)}
+                  />
                 ) : (
                   <input
                     type="text"
@@ -142,7 +207,8 @@ export default function MarkdownEditorSettings({
                     className="flex-1 min-w-0 px-2 py-1.5 rounded border border-mnemo-border bg-mnemo-app text-mnemo-text text-xs font-mono"
                   />
                 )}
-                {val !== '' && (
+                {((row.kind === 'text' && val !== '') ||
+                  (row.kind === 'color' && !isHex6(val) && val !== '')) && (
                   <button
                     type="button"
                     onClick={() => clearKey(row.key)}

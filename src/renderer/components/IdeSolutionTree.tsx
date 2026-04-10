@@ -147,11 +147,12 @@ export default function IdeSolutionTree({
           onDrop={e => onDrop(e, node.path)}
           onDragLeave={onDragLeave}
           onContextMenu={e => onFolderContextMenu(e, node.path)}
-          className={`rounded-sm transition-colors bg-mnemo-panel-elevated/50 border border-mnemo-border/50 ${
+          className={`rounded-sm transition-colors bg-mnemo-panel-elevated/50 border ${
             isDrag ? 'bg-mnemo-active/40 ring-1 ring-mnemo-accent/30' : ''
           }`}
           style={{
             paddingLeft: indent,
+            borderColor: 'var(--mnemo-sidebar-category-edge)',
             borderLeftWidth: 3,
             borderLeftStyle: 'solid',
             borderLeftColor: stripeBorder,
