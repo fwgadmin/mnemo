@@ -274,8 +274,25 @@ npm run build:mcp      # Build stdio MCP server → dist/mnemo-mcp.js
 npm run build:mcp-http # Build HTTP MCP server → dist/mnemo-mcp-http.js
 npm run build:cli      # Build unified CLI bundle → dist/mnemo-cli.js
 npm run package        # Package Electron app for distribution
-npm run make           # Build platform installers (.deb + zip on Linux)
+npm run make           # Build platform installers (see below)
 ```
+
+### Windows release build
+
+Desktop installers for Windows are produced with **Electron Forge** and the **Squirrel** maker (`@electron-forge/maker-squirrel` in `forge.config.js`).
+
+1. **Machine:** Run the build on **Windows** (or **GitHub Actions** `windows-latest` / your own Windows CI agent). Squirrel installers are not produced when you only build on Linux/macOS.
+2. **Prerequisites:** Node.js LTS, repo dependencies (`npm install`). For an **MSI** in addition to the setup `.exe`, set `noMsi: false` in `forge.config.js` and install the **WiX Toolset** on the build machine; the default is Squirrel-only (`noMsi: true`).
+3. **Build:** From the repo root:
+   ```powershell
+   npm install
+   npm run make
+   ```
+4. **Artifacts:** Look under **`out/make/`** — typically a **`MnemoSetup.exe`** (Squirrel) and a **zip** of the unpacked app (`maker-zip` also targets `win32`). Version comes from **`package.json`** → bump it before tagging a release.
+5. **Code signing:** Not configured in-repo; for public distribution you usually sign **`Mnemo.exe`** / the installer with a Windows code-signing certificate (see Electron Forge docs and `@electron/windows-sign`).
+6. **App behavior:** Install/update shortcuts and **“Open in Mnemo”** context-menu registration use **`electron-squirrel-startup`** and the Squirrel hooks in `src/main/index.ts` — no extra step after a normal install.
+
+**npm package vs desktop app:** Publishing **`npm publish`** (CLI + MCP bundles per `prepublishOnly` and `package.json` `files`) is separate from **`npm run make`**. Run **`npm run prepublishOnly`** (or **`npm publish`**, which runs it) before publishing the npm package; use **`npm run make`** on Windows when you need **`MnemoSetup.exe`**.
 
 ### Windows shell context menu (dev mode)
 

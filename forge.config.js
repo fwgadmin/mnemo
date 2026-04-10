@@ -91,32 +91,6 @@ module.exports = {
         installCliNodeModulesForPackage(appDir);
       }
     },
-  },
-  packagerConfig: {
-    asar: {
-      // Unpack every native binary regardless of package name or scope.
-      // JS files stay inside the asar; only .node binaries must live on disk.
-      unpack: '**/*.node',
-    },
-    name: 'Mnemo',
-    icon: path.join(__dirname, 'src', 'assets', 'icon'),
-    fileAssociations: [
-      {
-        ext: 'md',
-        name: 'Markdown Document',
-        description: 'Open with Mnemo',
-        role: 'Editor',
-      },
-      {
-        ext: 'txt',
-        name: 'Text File',
-        description: 'Open with Mnemo',
-        role: 'Editor',
-      },
-    ],
-  },
-  rebuildConfig: {},
-  hooks: {
     // The webpack plugin only packages .webpack/ output — node_modules for
     // webpack externals never make it in.  Recursively copy each external
     // package and its full transitive dependency tree from the already-rebuilt
@@ -161,6 +135,30 @@ module.exports = {
       }
     },
   },
+  packagerConfig: {
+    asar: {
+      // Unpack every native binary regardless of package name or scope.
+      // JS files stay inside the asar; only .node binaries must live on disk.
+      unpack: '**/*.node',
+    },
+    name: 'Mnemo',
+    icon: path.join(__dirname, 'src', 'assets', 'icon'),
+    fileAssociations: [
+      {
+        ext: 'md',
+        name: 'Markdown Document',
+        description: 'Open with Mnemo',
+        role: 'Editor',
+      },
+      {
+        ext: 'txt',
+        name: 'Text File',
+        description: 'Open with Mnemo',
+        role: 'Editor',
+      },
+    ],
+  },
+  rebuildConfig: {},
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
