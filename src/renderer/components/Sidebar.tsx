@@ -11,9 +11,11 @@ import {
   findNodeByPath,
   isValidDemoteParent,
   normalizePath,
+  promoteCategoryPath,
   pruneCategoryTree,
   sortPathsByTreeOrder,
   splitPath,
+  categoryDisplayDepth,
 } from '../categoryPath';
 import { colorForCategoryPath } from '../categoryColors';
 import CategoryCombobox from './CategoryCombobox';
@@ -145,12 +147,18 @@ export default function Sidebar({
     };
   }, [folderDemote]);
 
-  const categoryPaths = useMemo(() => distinctCategoryPaths(vaultNotes), [vaultNotes]);
+
+  const categoryPathsList = useMemo(() => distinctCategoryPaths(vaultNotes), [vaultNotes]);
 
   const demoteParentPaths = useMemo(() => {
     if (!folderDemote) return [];
-    return distinctCategoryPaths(vaultNotes).filter(p => isValidDemoteParent(folderDemote.path, p));
-  }, [vaultNotes, folderDemote]);
+    return categoryPathsList.filter(p => isValidDemoteParent(folderDemote.path, p));
+  }, [vaultNotes, folderDemote, categoryPathsList]);
+
+  const canDemoteFolderMenu = useMemo(() => {
+    if (!folderColorMenu || !onDemoteCategory) return false;
+    return categoryPathsList.some(p => isValidDemoteParent(folderColorMenu.path, p));
+  }, [folderColorMenu, onDemoteCategory, categoryPathsList]);
   const tree = useMemo(() => buildCategoryTree(vaultNotes), [vaultNotes]);
 
   const displayedNotes = useMemo(() => {
@@ -350,7 +358,7 @@ export default function Sidebar({
       {categoryEditId === note.id && (
         <div className="mx-2 mb-1 px-2" onClick={e => e.stopPropagation()}>
           <CategoryCombobox
-            paths={categoryPaths}
+            paths={categoryPathsList}
             value={categoryPathFromTags(note.tags, vaultNotes)}
             onChange={path => commitCategory(note.id, path)}
             placeholder="e.g. Work/Meetings"
@@ -369,7 +377,7 @@ export default function Sidebar({
         <span className="text-[10px] uppercase tracking-wider text-mnemo-dim shrink-0">Jump</span>
         <div className="flex-1 min-w-[120px]">
           <CategoryCombobox
-            paths={categoryPaths}
+            paths={categoryPathsList}
             value={selectedFolder ?? ''}
             onChange={path => {
               const t = path.trim();
@@ -491,7 +499,7 @@ export default function Sidebar({
     ) : grouped ? (
       <div className="py-1">
         {groupedSections.map(({ path, notes: sectionNotes, node }, idx) => {
-          const depth = node?.depth ?? 0;
+          const depth = categoryDisplayDepth(path);
           const label =
             path === GENERAL_PATH
               ? 'General'
@@ -566,8 +574,21 @@ export default function Sidebar({
         onSetCategoryColor(folderColorMenu.path, hex);
         setFolderColorMenu(null);
       }}
+      currentColorHex={
+        folderColorMenu
+          ? categoryColors[categoryColorStorageKey(folderColorMenu.path)] ??
+            resolvedCategoryColors[categoryColorStorageKey(folderColorMenu.path)]
+          : undefined
+      }
+      onPickCustomColor={hex => {
+        if (!folderColorMenu) return;
+        onSetCategoryColor(folderColorMenu.path, hex);
+        setFolderColorMenu(null);
+      }}
       canPromote={Boolean(
-        folderColorMenu && onPromoteCategory && folderColorMenu.path !== GENERAL_PATH,
+        folderColorMenu &&
+          onPromoteCategory &&
+          promoteCategoryPath(folderColorMenu.path) !== null,
       )}
       onPromote={() => {
         if (!folderColorMenu || !onPromoteCategory) return;
@@ -575,9 +596,7 @@ export default function Sidebar({
         setFolderColorMenu(null);
         void onPromoteCategory(p);
       }}
-      canDemote={Boolean(
-        folderColorMenu && onDemoteCategory && folderColorMenu.path !== GENERAL_PATH,
-      )}
+      canDemote={canDemoteFolderMenu}
       onRequestDemote={() => {
         if (!folderColorMenu || !onDemoteCategory) return;
         const { path, x, y } = folderColorMenu;
@@ -620,7 +639,7 @@ export default function Sidebar({
         >
           <p className="text-[10px] text-mnemo-dim mb-1.5">Rename category</p>
           <CategoryCombobox
-            paths={categoryPaths}
+            paths={categoryPathsList}
             value={folderRename.path}
             onChange={path => {
               const dest =

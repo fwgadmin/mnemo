@@ -157,7 +157,9 @@ export default function SettingsView({
           <span className="text-mnemo-muted">Categories:</span>{' '}
           In the sidebar, <strong>right-click</strong> a category header (grouped view or IDE Solution Explorer) for{' '}
           <strong>Rename</strong>, <strong>Promote</strong> (move up one level), <strong>Demote</strong> (nest under a
-          parent), <strong>suggested colors</strong>, or <strong>Clear folder color</strong>. Subfolders inherit a
+          parent — including moving <strong>General</strong> under another folder), <strong>suggested colors</strong>, a{' '}
+          <strong>custom color</strong> control, or <strong>Clear folder color</strong>. Top-level folders line up
+          flat; only nested paths are indented. Subfolders inherit a
           parent color until you set their own. Colors apply to folder labels and note titles; IDE tabs use the same
           accent for the tab title.
         </p>

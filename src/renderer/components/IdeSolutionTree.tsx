@@ -108,13 +108,20 @@ export default function IdeSolutionTree({
     });
   }, []);
 
-  const renderNode = (node: CategoryTreeNode, depth: number): React.ReactNode => {
+  const renderNode = (
+    node: CategoryTreeNode,
+    depth: number,
+    opts?: { generalTopLevel?: boolean },
+  ): React.ReactNode => {
     const notesHere = [...(notesByPath.get(node.path) ?? [])].sort((a, b) =>
       (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }),
     );
-    const childFolders = [...node.children].sort((a, b) =>
-      a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
-    );
+    const childFolders =
+      opts?.generalTopLevel && node.path === GENERAL_PATH
+        ? []
+        : [...node.children].sort((a, b) =>
+            a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
+          );
     const hasSubfolders = childFolders.length > 0;
     const hasNotes = notesHere.length > 0;
     const expandable = hasSubfolders || hasNotes;
@@ -123,7 +130,10 @@ export default function IdeSolutionTree({
       node.path === GENERAL_PATH ? 'General' : node.path === UNASSIGNED_PATH ? 'Unassigned' : node.segment;
     const stripe = colorForCategoryPath(node.path, categoryColors);
     const isDrag = dragOverCategory === node.path;
-    const visibleCount = visibleNotesInSubtree(node, notesByPath);
+    const visibleCount =
+      opts?.generalTopLevel && node.path === GENERAL_PATH
+        ? notesHere.length
+        : visibleNotesInSubtree(node, notesByPath);
 
     const indent = 4 + depth * 14;
 
@@ -192,9 +202,14 @@ export default function IdeSolutionTree({
     );
   };
 
+  const topChildren = [...root.children].sort((a, b) =>
+    a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
+  );
+
   return (
     <div className="py-0.5 font-sans text-[11px] leading-tight" role="tree">
-      {renderNode(root, 0)}
+      {renderNode(root, 0, { generalTopLevel: true })}
+      {topChildren.map(ch => renderNode(ch, 0))}
     </div>
   );
 }

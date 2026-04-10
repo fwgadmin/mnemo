@@ -8,6 +8,9 @@ interface CategoryFolderColorMenuProps {
   onRequestRename?: () => void;
   suggestedColors: string[];
   onPickSuggestedColor: (hex: string) => void;
+  /** Initial value for the custom color input (#rrggbb). */
+  currentColorHex?: string | null;
+  onPickCustomColor: (hex: string) => void;
   canPromote: boolean;
   onPromote: () => void;
   canDemote: boolean;
@@ -16,9 +19,21 @@ interface CategoryFolderColorMenuProps {
   onClearColor: () => void;
 }
 
+function normalizePickerHex(hex: string | null | undefined, fallback: string): string {
+  if (!hex || typeof hex !== 'string') return fallback;
+  const t = hex.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(t)) return t;
+  if (/^#[0-9a-fA-F]{3}$/.test(t)) {
+    const r = t[1]!;
+    const g = t[2]!;
+    const b = t[3]!;
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  return fallback;
+}
+
 /**
- * Right-click context menu for category folders: colors from suggested swatches only
- * (no native color wheel).
+ * Right-click context menu for category folders: suggested swatches plus native color input.
  */
 export default function CategoryFolderColorMenu({
   state,
@@ -26,6 +41,8 @@ export default function CategoryFolderColorMenu({
   onRequestRename,
   suggestedColors,
   onPickSuggestedColor,
+  currentColorHex,
+  onPickCustomColor,
   canPromote,
   onPromote,
   canDemote,
@@ -131,6 +148,20 @@ export default function CategoryFolderColorMenu({
           </div>
         </div>
       )}
+      <div className="px-2.5 py-2 border-t border-mnemo-border/80">
+        <div className="text-[10px] uppercase tracking-wide text-mnemo-dim mb-1.5">Custom color</div>
+        <input
+          type="color"
+          aria-label="Pick a custom folder color"
+          className="h-9 w-full cursor-pointer rounded border border-mnemo-border/70 bg-mnemo-panel"
+          value={normalizePickerHex(currentColorHex ?? null, '#6366f1')}
+          onMouseDown={e => e.stopPropagation()}
+          onChange={e => {
+            e.stopPropagation();
+            onPickCustomColor(e.target.value);
+          }}
+        />
+      </div>
       {canClear && (
         <button
           type="button"

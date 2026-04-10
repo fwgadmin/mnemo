@@ -80,13 +80,31 @@ export function pathNestedUnderParent(childPath: string, parent: string): string
 export function isValidDemoteParent(folderPath: string, parent: string): boolean {
   const f = normalizePath(folderPath) || GENERAL_PATH;
   const p = normalizePath(parent) || GENERAL_PATH;
-  if (f === GENERAL_PATH) return false;
   if (f === p) return false;
   if (p === GENERAL_PATH) return false;
+
+  if (f === GENERAL_PATH) {
+    if (p === UNASSIGNED_PATH) return false;
+    if (p.startsWith(`${f}/`) || f.startsWith(`${p}/`)) return false;
+    const pSegs = splitPath(p);
+    if (pSegs.includes(GENERAL_PATH)) return false;
+    return true;
+  }
+
   if (p.startsWith(`${f}/`) || f.startsWith(`${p}/`)) return false;
   const segs = splitPath(f);
   if (segs.includes(p)) return false;
   return true;
+}
+
+/**
+ * Sidebar / tree indent: top-level folders (General, Unassigned, Work, …) share depth 0;
+ * each extra path segment adds one level (Work/Meetings → 1).
+ */
+export function categoryDisplayDepth(path: string): number {
+  if (path === GENERAL_PATH || path === UNASSIGNED_PATH) return 0;
+  const parts = splitPath(path);
+  return Math.max(0, parts.length - 1);
 }
 
 /** Note path is under folder prefix (prefix is a folder path, not necessarily a leaf) */
