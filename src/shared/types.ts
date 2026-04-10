@@ -55,6 +55,18 @@ export interface GraphData {
   links: Array<{ source: string; target: string }>;
 }
 
+/** Result of a local→Turso sync operation */
+export interface SyncResult {
+  synced: number;
+  skipped: number;
+}
+
+/** Cloud/sync configuration stored in userData/config.json */
+export interface AppConfig {
+  tursoUrl?: string;
+  tursoToken?: string;
+}
+
 /** Async store interface implemented by both LocalNoteStore and TursoNoteStore */
 export interface INoteStore {
   create(input: CreateNoteInput): Promise<Note>;
@@ -86,6 +98,11 @@ export const IPC = {
   FILE_SAVE_AS: 'file:saveAs',
   FILE_OPEN: 'file:open',
   FILE_OPENED_EXTERNALLY: 'file:openedExternally',
+  // Config (Turso credentials, stored in userData/config.json)
+  CONFIG_READ: 'config:read',
+  CONFIG_SAVE: 'config:save',
+  CONFIG_STORE_TYPE: 'config:storeType',
+  CONFIG_SYNC_LOCAL: 'config:syncLocal',
   // Menu → renderer commands
   MENU_COMMAND: 'menu:command',
 } as const;

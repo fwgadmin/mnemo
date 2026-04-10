@@ -236,6 +236,54 @@ export class TursoNoteStore implements INoteStore {
   /** No-op: HTTP client has no persistent connection to tear down. */
   close(): void { /* no-op */ }
 
+  /**
+   * Bulk-upsert notes from another store (e.g. local SQLite) into Turso.
+   * Uses "last-write-wins by updated_at" — existing Turso notes are only
+   * overwritten if the incoming version is newer.
+   * Links are inserted with INSERT OR IGNORE (additive, never deleted).
+   */
+  async importNotes(
+    notes: Array<{ id: string; title: string; body: string; tags: string; tenant_id: string; created_at: string; updated_at: string }>,
+    links: Array<{ source_id: string; target_id: string }>,
+  ): Promise<{ synced: number; skipped: number }> {
+    if (notes.length === 0) return { synced: 0, skipped: 0 };
+
+    let synced = 0;
+    const CHUNK = 50;
+
+    // Upsert notes in chunks to stay within libSQL batch limits
+    for (let i = 0; i < notes.length; i += CHUNK) {
+      const chunk = notes.slice(i, i + CHUNK);
+      const statements = chunk.map(n => ({
+        sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+                title      = excluded.title,
+                body       = excluded.body,
+                tags       = excluded.tags,
+                updated_at = excluded.updated_at
+              WHERE excluded.updated_at > notes.updated_at`,
+        args: [n.id, n.title, n.body, n.tags, n.tenant_id, n.created_at, n.updated_at] as import('@libsql/client').InValue[],
+      }));
+      await this.client.batch(statements, 'write');
+      synced += chunk.length;
+    }
+
+    // Additive link sync — never remove existing Turso links
+    if (links.length > 0) {
+      for (let i = 0; i < links.length; i += CHUNK) {
+        const chunk = links.slice(i, i + CHUNK);
+        const statements = chunk.map(l => ({
+          sql: 'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
+          args: [l.source_id, l.target_id] as import('@libsql/client').InValue[],
+        }));
+        await this.client.batch(statements, 'write');
+      }
+    }
+
+    return { synced, skipped: 0 };
+  }
+
   private rowToNote(id: string, row: Record<string, unknown>): Note {
     const links: string[] = [];  // links loaded lazily by consumers if needed
     return {
