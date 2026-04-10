@@ -19,12 +19,14 @@ export function parseWikilinkInner(inner: string): { target: string; display: st
 
 /** Extract unique wikilink **target** titles (for resolveTitle / graph). */
 export function extractWikilinks(text: string): string[] {
+  const seen = new Set<string>();
   const links: string[] = [];
   const re = new RegExp(WIKILINK_PATTERN.source, 'g');
   let match: RegExpExecArray | null;
   while ((match = re.exec(text)) !== null) {
     const { target } = parseWikilinkInner(match[1]);
-    if (target && !links.includes(target)) {
+    if (target && !seen.has(target)) {
+      seen.add(target);
       links.push(target);
     }
   }
