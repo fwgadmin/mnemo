@@ -128,7 +128,10 @@ export default function Sidebar({
           }
         `}
       >
-        <div className="font-medium truncate text-xs">{note.title || 'Untitled'}</div>
+        <div className="font-medium truncate text-xs">
+          <span className="text-[#555] mr-1.5 tabular-nums">{note.ref}</span>
+          {note.title || 'Untitled'}
+        </div>
         {note.snippet && (
           <div className="text-[10px] text-[#555] truncate mt-0.5">{note.snippet}</div>
         )}

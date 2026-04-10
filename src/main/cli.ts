@@ -6,19 +6,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import * as os from 'os';
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
-import type { INoteStore } from '../shared/types';
+import type { INoteStore, Note } from '../shared/types';
 import { runMcpStdioServer, parseMcpStdioArgs } from './mcp/stdio-bootstrap';
-
-function defaultDataDir(): string {
-  const fromEnv = process.env['MNEMO_HOME'];
-  if (fromEnv) return path.resolve(fromEnv);
-  const xdg = process.env['XDG_DATA_HOME'];
-  const base = xdg ? path.join(xdg, 'mnemo') : path.join(os.homedir(), '.local', 'share', 'mnemo');
-  return base;
-}
+import { defaultLocalDataDir, resolveTursoCredentials } from './userConfig';
 
 function printHelp(): void {
   console.log(`Mnemo CLI (Node)
@@ -34,9 +26,11 @@ MCP options:
   --turso-url / --turso-token   Turso instead of local SQLite
 
 Note commands use XDG: ~/.local/share/mnemo/ unless MNEMO_HOME or --db/--vault is set.
+If you configured Turso in the app Settings, the same credentials are read from config.json
+(MNEMO_HOME, ~/.local/share/mnemo, or ~/.config/mnemo) or from MNEMO_TURSO_URL / MNEMO_TURSO_TOKEN.
 
   mnemo note list
-  mnemo note show <id>
+  mnemo note show <ref | uuid>   ref = stable number from list (1-based)
   mnemo note search <query>
   mnemo note new --title "T" [--body "markdown"]
 
@@ -55,6 +49,16 @@ function resolveBundledScript(name: 'mnemo-mcp-http.js'): string {
     if (fs.existsSync(p)) return p;
   }
   throw new Error(`Could not find ${name}. Run: npm run build:mcp-http`);
+}
+
+/** Resolve numeric ref first, then UUID. */
+async function resolveNoteForShow(store: INoteStore, arg: string): Promise<Note | null> {
+  if (/^\d+$/.test(arg)) {
+    const n = parseInt(arg, 10);
+    const byRef = await store.readByRef(n);
+    if (byRef) return byRef;
+  }
+  return store.read(arg);
 }
 
 function stripStoreArgs(argv: string[]): string[] {
@@ -78,11 +82,12 @@ async function openStoreForNote(argv: string[]): Promise<INoteStore> {
   const parsed = parseMcpStdioArgs(argv);
   const hasDb = argv.includes('--db');
   const hasVault = argv.includes('--vault');
-  const dbPath = hasDb ? parsed.dbPath : path.join(defaultDataDir(), 'mnemo.db');
-  const vaultPath = hasVault ? parsed.vaultPath : path.join(defaultDataDir(), 'vault');
+  const dbPath = hasDb ? parsed.dbPath : path.join(defaultLocalDataDir(), 'mnemo.db');
+  const vaultPath = hasVault ? parsed.vaultPath : path.join(defaultLocalDataDir(), 'vault');
 
-  if (parsed.tursoUrl && parsed.tursoToken) {
-    const turso = new TursoNoteStore(parsed.tursoUrl, parsed.tursoToken, vaultPath);
+  const { tursoUrl, tursoToken } = resolveTursoCredentials(parsed);
+  if (tursoUrl && tursoToken) {
+    const turso = new TursoNoteStore(tursoUrl, tursoToken, vaultPath);
     await turso.initSchema();
     return turso;
   }
@@ -100,17 +105,17 @@ async function cmdNote(argv: string[]): Promise<void> {
       case 'list': {
         const notes = await store.list();
         for (const n of notes) {
-          console.log(`${n.id}\t${n.modified}\t${n.title}`);
+          console.log(`${n.ref}\t${n.modified}\t${n.title}\t${n.id}`);
         }
         break;
       }
       case 'show': {
         const id = args[0];
         if (!id) {
-          console.error('Usage: mnemo note show <id>');
+          console.error('Usage: mnemo note show <ref | uuid>');
           process.exit(1);
         }
-        const note = await store.read(id);
+        const note = await resolveNoteForShow(store, id);
         if (!note) {
           console.error('Note not found.');
           process.exit(1);
@@ -128,7 +133,7 @@ async function cmdNote(argv: string[]): Promise<void> {
         const hits = await store.search(q);
         for (const h of hits) {
           const snip = h.snippet.replace(/\s+/g, ' ').trim();
-          console.log(`${h.id}\t${h.rank}\t${h.title}\n  ${snip}`);
+          console.log(`${h.ref}\t${h.rank}\t${h.title}\t${h.id}\n  ${snip}`);
         }
         break;
       }
@@ -144,7 +149,7 @@ async function cmdNote(argv: string[]): Promise<void> {
           process.exit(1);
         }
         const note = await store.create({ title, body });
-        console.log(note.id);
+        console.log(`${note.ref}\t${note.id}`);
         break;
       }
       default:

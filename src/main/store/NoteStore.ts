@@ -4,6 +4,25 @@ import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import type { Note, NoteListItem, CreateNoteInput, UpdateNoteInput, SearchResult, INoteStore } from '../../shared/types';
 
+/** Add `ref` column + backfill; safe to call on every open. Exported for Turso sync from local file. */
+export function migrateNoteDatabaseRef(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(notes)').all() as { name: string }[];
+  if (cols.some(c => c.name === 'ref')) return;
+  db.exec('ALTER TABLE notes ADD COLUMN ref INTEGER');
+  const tenants = db.prepare('SELECT DISTINCT tenant_id FROM notes').all() as { tenant_id: string }[];
+  for (const { tenant_id } of tenants) {
+    const rows = db
+      .prepare('SELECT id FROM notes WHERE tenant_id = ? ORDER BY created_at ASC')
+      .all(tenant_id) as { id: string }[];
+    let r = 1;
+    const upd = db.prepare('UPDATE notes SET ref = ? WHERE id = ?');
+    for (const row of rows) {
+      upd.run(r++, row.id);
+    }
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes (tenant_id, ref)');
+}
+
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS notes (
   id          TEXT PRIMARY KEY,
@@ -62,6 +81,7 @@ export class LocalNoteStore implements INoteStore {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.initSchema();
+    migrateNoteDatabaseRef(this.db);
   }
 
   private initSchema(): void {
@@ -77,14 +97,20 @@ export class LocalNoteStore implements INoteStore {
     const tenantId = input.tenantId ?? 'default';
     const tags = input.tags ?? [];
 
+    const nextRefRow = this.db
+      .prepare('SELECT COALESCE(MAX(ref), 0) + 1 AS n FROM notes WHERE tenant_id = ?')
+      .get(tenantId) as { n: number };
+    const nextRef = nextRefRow.n;
+
     const stmt = this.db.prepare(`
-      INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, input.title, input.body, JSON.stringify(tags), tenantId, now, now);
+    stmt.run(id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, nextRef);
 
     const note: Note = {
       id,
+      ref: nextRef,
       title: input.title,
       body: input.body,
       tags,
@@ -104,6 +130,12 @@ export class LocalNoteStore implements INoteStore {
     return Promise.resolve(this.rowToNote(row));
   }
 
+  readByRef(ref: number, tenantId: string = 'default'): Promise<Note | null> {
+    const row = this.db.prepare('SELECT * FROM notes WHERE tenant_id = ? AND ref = ?').get(tenantId, ref) as any;
+    if (!row) return Promise.resolve(null);
+    return Promise.resolve(this.rowToNote(row));
+  }
+
   async update(input: UpdateNoteInput): Promise<Note | null> {
     const existing = await this.read(input.id);
     if (!existing) return null;
@@ -119,6 +151,7 @@ export class LocalNoteStore implements INoteStore {
 
     const note: Note = {
       ...existing,
+      ref: existing.ref,
       title,
       body,
       tags,
@@ -143,10 +176,11 @@ export class LocalNoteStore implements INoteStore {
 
   list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const rows = this.db.prepare(
-      'SELECT id, title, body, tags, updated_at FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
+      'SELECT ref, id, title, body, tags, updated_at FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
     ).all(tenantId) as any[];
 
     return Promise.resolve(rows.map(row => ({
+      ref: row.ref,
       id: row.id,
       title: row.title,
       tags: JSON.parse(row.tags),
@@ -159,7 +193,7 @@ export class LocalNoteStore implements INoteStore {
     if (!query.trim()) return Promise.resolve([]);
 
     const rows = this.db.prepare(`
-      SELECT n.id, n.title, n.body, notes_fts.rank
+      SELECT n.ref, n.id, n.title, n.body, notes_fts.rank
       FROM notes_fts
       JOIN notes n ON n.rowid = notes_fts.rowid
       WHERE notes_fts MATCH ?
@@ -169,6 +203,7 @@ export class LocalNoteStore implements INoteStore {
     `).all(query, tenantId) as any[];
 
     return Promise.resolve(rows.map(row => ({
+      ref: row.ref,
       id: row.id,
       title: row.title,
       snippet: row.body.substring(0, 120),
@@ -178,7 +213,7 @@ export class LocalNoteStore implements INoteStore {
 
   getBacklinks(noteId: string): Promise<NoteListItem[]> {
     const rows = this.db.prepare(`
-      SELECT n.id, n.title, n.body, n.tags, n.updated_at
+      SELECT n.ref, n.id, n.title, n.body, n.tags, n.updated_at
       FROM note_links nl
       JOIN notes n ON n.id = nl.source_id
       WHERE nl.target_id = ?
@@ -186,6 +221,7 @@ export class LocalNoteStore implements INoteStore {
     `).all(noteId) as any[];
 
     return Promise.resolve(rows.map(row => ({
+      ref: row.ref,
       id: row.id,
       title: row.title,
       tags: JSON.parse(row.tags),
@@ -235,6 +271,7 @@ export class LocalNoteStore implements INoteStore {
   private rowToNote(row: any): Note {
     return {
       id: row.id,
+      ref: row.ref as number,
       title: row.title,
       body: row.body,
       tags: JSON.parse(row.tags),
@@ -256,6 +293,7 @@ export class LocalNoteStore implements INoteStore {
     const frontmatter = [
       '---',
       `id: "${note.id}"`,
+      `ref: ${note.ref}`,
       `title: "${note.title.replace(/"/g, '\\"')}"`,
       `tags: [${note.tags.map(t => `"${t}"`).join(', ')}]`,
       `created: "${note.created}"`,

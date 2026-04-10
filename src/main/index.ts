@@ -11,7 +11,7 @@ try {
 } catch {
   // .env is optional — ignore if absent
 }
-import { LocalNoteStore } from './store/NoteStore';
+import { LocalNoteStore, migrateNoteDatabaseRef } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
 import type { INoteStore, AppConfig, SyncResult } from '../shared/types';
 import { IPC } from '../shared/types';
@@ -296,7 +296,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.NOTE_GRAPH, async (_event, tenantId?: string) => {
     const [notes, links] = await Promise.all([store.list(tenantId), store.getAllLinks(tenantId)]);
     return {
-      nodes: notes.map(n => ({ id: n.id, title: n.title })),
+      nodes: notes.map(n => ({ id: n.id, title: n.title, ref: n.ref })),
       links,
     };
   });
@@ -369,13 +369,24 @@ function registerIpcHandlers(): void {
     const dbPath = path.join(app.getPath('userData'), 'mnemo.db');
     if (!fs.existsSync(dbPath)) return { synced: 0, skipped: 0 };
 
-    // Open local DB as read-only so we never mutate it during migration
     const Database = require('better-sqlite3');
-    const localDb = new Database(dbPath, { readonly: true });
+    const localDb = new Database(dbPath);
     try {
+      migrateNoteDatabaseRef(localDb);
       const notes = localDb
-        .prepare('SELECT id, title, body, tags, tenant_id, created_at, updated_at FROM notes')
-        .all() as Array<{ id: string; title: string; body: string; tags: string; tenant_id: string; created_at: string; updated_at: string }>;
+        .prepare(
+          'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref FROM notes',
+        )
+        .all() as Array<{
+          id: string;
+          title: string;
+          body: string;
+          tags: string;
+          tenant_id: string;
+          created_at: string;
+          updated_at: string;
+          ref: number | null;
+        }>;
       const links = localDb
         .prepare('SELECT source_id, target_id FROM note_links')
         .all() as Array<{ source_id: string; target_id: string }>;

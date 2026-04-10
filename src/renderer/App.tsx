@@ -225,6 +225,7 @@ export default function App() {
     }
     const results = await window.mnemo.notes.search(query);
     setNotes(results.map(r => ({
+      ref: r.ref,
       id: r.id,
       title: r.title,
       tags: [],

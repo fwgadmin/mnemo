@@ -12,6 +12,8 @@ export interface NoteFrontmatter {
 
 export interface Note {
   id: string;
+  /** Stable human-friendly index per tenant (1-based), for CLI / links */
+  ref: number;
   title: string;
   body: string;       // Markdown content (without frontmatter)
   tags: string[];
@@ -22,6 +24,7 @@ export interface Note {
 }
 
 export interface NoteListItem {
+  ref: number;
   id: string;
   title: string;
   tags: string[];
@@ -30,6 +33,7 @@ export interface NoteListItem {
 }
 
 export interface SearchResult {
+  ref: number;
   id: string;
   title: string;
   snippet: string;
@@ -51,7 +55,7 @@ export interface UpdateNoteInput {
 }
 
 export interface GraphData {
-  nodes: Array<{ id: string; title: string }>;
+  nodes: Array<{ id: string; title: string; ref: number }>;
   links: Array<{ source: string; target: string }>;
 }
 
@@ -71,6 +75,8 @@ export interface AppConfig {
 export interface INoteStore {
   create(input: CreateNoteInput): Promise<Note>;
   read(id: string): Promise<Note | null>;
+  /** Load by stable ref (same as list column); tenant defaults to "default". */
+  readByRef(ref: number, tenantId?: string): Promise<Note | null>;
   update(input: UpdateNoteInput): Promise<Note | null>;
   delete(id: string): Promise<boolean>;
   list(tenantId?: string): Promise<NoteListItem[]>;

@@ -11,6 +11,7 @@ interface GraphViewProps {
 interface GraphNode extends SimulationNodeDatum {
   id: string;
   title: string;
+  ref: number;
 }
 
 interface GraphLink extends SimulationLinkDatum<GraphNode> {
@@ -129,7 +130,11 @@ export default function GraphView({ onSelectNote, activeNoteId }: GraphViewProps
         ctx.font = '11px -apple-system, sans-serif';
         ctx.fillStyle = '#ccc';
         ctx.textAlign = 'center';
-        ctx.fillText(node.title || 'Untitled', node.x, node.y - radius - 6);
+        ctx.fillText(
+          `${node.ref} · ${node.title || 'Untitled'}`,
+          node.x,
+          node.y - radius - 6,
+        );
       }
     }
 

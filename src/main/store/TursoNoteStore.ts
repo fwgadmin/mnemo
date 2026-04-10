@@ -55,6 +55,39 @@ export class TursoNoteStore implements INoteStore {
       all.map(sql => ({ sql })),
       'write',
     );
+    await this.migrateRefIfNeeded();
+  }
+
+  private async migrateRefIfNeeded(): Promise<void> {
+    const info = await this.client.execute({ sql: 'PRAGMA table_info(notes)', args: [] });
+    const hasRef = info.rows.some(r => r['name'] === 'ref');
+    if (hasRef) return;
+
+    await this.client.execute({ sql: 'ALTER TABLE notes ADD COLUMN ref INTEGER', args: [] });
+
+    const tenants = await this.client.execute({
+      sql: 'SELECT DISTINCT tenant_id FROM notes',
+      args: [],
+    });
+    for (const row of tenants.rows) {
+      const tenantId = row['tenant_id'] as string;
+      const ids = await this.client.execute({
+        sql: 'SELECT id FROM notes WHERE tenant_id = ? ORDER BY created_at ASC',
+        args: [tenantId],
+      });
+      let r = 1;
+      for (const ir of ids.rows) {
+        await this.client.execute({
+          sql: 'UPDATE notes SET ref = ? WHERE id = ?',
+          args: [r++, ir['id'] as string],
+        });
+      }
+    }
+
+    await this.client.execute({
+      sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes (tenant_id, ref)',
+      args: [],
+    });
   }
 
   async create(input: CreateNoteInput): Promise<Note> {
@@ -63,14 +96,21 @@ export class TursoNoteStore implements INoteStore {
     const tenantId = input.tenantId ?? 'default';
     const tags = input.tags ?? [];
 
+    const maxRow = await this.client.execute({
+      sql: 'SELECT COALESCE(MAX(ref), 0) + 1 AS n FROM notes WHERE tenant_id = ?',
+      args: [tenantId],
+    });
+    const nextRef = maxRow.rows[0]?.['n'] as number;
+
     await this.client.execute({
-      sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      args: [id, input.title, input.body, JSON.stringify(tags), tenantId, now, now],
+      sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, nextRef],
     });
 
     const note: Note = {
       id,
+      ref: nextRef,
       title: input.title,
       body: input.body,
       tags,
@@ -94,6 +134,16 @@ export class TursoNoteStore implements INoteStore {
     return this.rowToNote(id, row);
   }
 
+  async readByRef(ref: number, tenantId: string = 'default'): Promise<Note | null> {
+    const result = await this.client.execute({
+      sql: 'SELECT * FROM notes WHERE tenant_id = ? AND ref = ?',
+      args: [tenantId, ref],
+    });
+    const row = result.rows[0];
+    if (!row) return null;
+    return this.rowToNote(row['id'] as string, row);
+  }
+
   async update(input: UpdateNoteInput): Promise<Note | null> {
     const existing = await this.read(input.id);
     if (!existing) return null;
@@ -108,7 +158,7 @@ export class TursoNoteStore implements INoteStore {
       args: [title, body, JSON.stringify(tags), now, input.id],
     });
 
-    const note: Note = { ...existing, title, body, tags, modified: now };
+    const note: Note = { ...existing, ref: existing.ref, title, body, tags, modified: now };
     this.writeMdFile(note);
     return note;
   }
@@ -130,11 +180,12 @@ export class TursoNoteStore implements INoteStore {
 
   async list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, body, tags, updated_at
+      sql: `SELECT ref, id, title, body, tags, updated_at
             FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC`,
       args: [tenantId],
     });
     return result.rows.map(row => ({
+      ref: row['ref'] as number,
       id: row['id'] as string,
       title: row['title'] as string,
       tags: JSON.parse(row['tags'] as string),
@@ -148,7 +199,7 @@ export class TursoNoteStore implements INoteStore {
 
     try {
       const result = await this.client.execute({
-        sql: `SELECT n.id, n.title, n.body, notes_fts.rank
+        sql: `SELECT n.ref, n.id, n.title, n.body, notes_fts.rank
               FROM notes_fts
               JOIN notes n ON n.rowid = notes_fts.rowid
               WHERE notes_fts MATCH ?
@@ -158,6 +209,7 @@ export class TursoNoteStore implements INoteStore {
         args: [query, tenantId],
       });
       return result.rows.map(row => ({
+        ref: row['ref'] as number,
         id: row['id'] as string,
         title: row['title'] as string,
         snippet: (row['body'] as string).substring(0, 120),
@@ -167,12 +219,13 @@ export class TursoNoteStore implements INoteStore {
       // FTS5 unavailable — fall back to LIKE
       const like = `%${query}%`;
       const result = await this.client.execute({
-        sql: `SELECT id, title, body FROM notes
+        sql: `SELECT ref, id, title, body FROM notes
               WHERE (title LIKE ? OR body LIKE ?) AND tenant_id = ?
               LIMIT 50`,
         args: [like, like, tenantId],
       });
       return result.rows.map((row, i) => ({
+        ref: row['ref'] as number,
         id: row['id'] as string,
         title: row['title'] as string,
         snippet: (row['body'] as string).substring(0, 120),
@@ -183,7 +236,7 @@ export class TursoNoteStore implements INoteStore {
 
   async getBacklinks(noteId: string): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT n.id, n.title, n.body, n.tags, n.updated_at
+      sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.updated_at
             FROM note_links nl
             JOIN notes n ON n.id = nl.source_id
             WHERE nl.target_id = ?
@@ -191,6 +244,7 @@ export class TursoNoteStore implements INoteStore {
       args: [noteId],
     });
     return result.rows.map(row => ({
+      ref: row['ref'] as number,
       id: row['id'] as string,
       title: row['title'] as string,
       tags: JSON.parse(row['tags'] as string),
@@ -243,7 +297,16 @@ export class TursoNoteStore implements INoteStore {
    * Links are inserted with INSERT OR IGNORE (additive, never deleted).
    */
   async importNotes(
-    notes: Array<{ id: string; title: string; body: string; tags: string; tenant_id: string; created_at: string; updated_at: string }>,
+    notes: Array<{
+      id: string;
+      title: string;
+      body: string;
+      tags: string;
+      tenant_id: string;
+      created_at: string;
+      updated_at: string;
+      ref: number | null;
+    }>,
     links: Array<{ source_id: string; target_id: string }>,
   ): Promise<{ synced: number; skipped: number }> {
     if (notes.length === 0) return { synced: 0, skipped: 0 };
@@ -255,15 +318,25 @@ export class TursoNoteStore implements INoteStore {
     for (let i = 0; i < notes.length; i += CHUNK) {
       const chunk = notes.slice(i, i + CHUNK);
       const statements = chunk.map(n => ({
-        sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
+        sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET
                 title      = excluded.title,
                 body       = excluded.body,
                 tags       = excluded.tags,
-                updated_at = excluded.updated_at
+                updated_at = excluded.updated_at,
+                ref        = COALESCE(excluded.ref, notes.ref)
               WHERE excluded.updated_at > notes.updated_at`,
-        args: [n.id, n.title, n.body, n.tags, n.tenant_id, n.created_at, n.updated_at] as import('@libsql/client').InValue[],
+        args: [
+          n.id,
+          n.title,
+          n.body,
+          n.tags,
+          n.tenant_id,
+          n.created_at,
+          n.updated_at,
+          n.ref,
+        ] as import('@libsql/client').InValue[],
       }));
       await this.client.batch(statements, 'write');
       synced += chunk.length;
@@ -288,6 +361,7 @@ export class TursoNoteStore implements INoteStore {
     const links: string[] = [];  // links loaded lazily by consumers if needed
     return {
       id,
+      ref: row['ref'] as number,
       title: row['title'] as string,
       body: row['body'] as string,
       tags: JSON.parse(row['tags'] as string),
