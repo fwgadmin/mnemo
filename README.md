@@ -508,4 +508,15 @@ Mnemo is built and maintained by [Ferrowood Group, LLC](https://www.ferrowoodgro
 
 ## License
 
+This project is open source under the **[MIT License](LICENSE)** (see the `LICENSE` file in the repository root). The same terms apply to packages published to npm.
+
+### Publishing to npm (maintainers)
+
+1. Ensure you are logged in: `npm login`
+2. Confirm the package name on npm is free, or change `"name"` in `package.json` (e.g. to a scoped name like `@your-org/mnemo` and set `"publishConfig": { "access": "public" }` for scoped packages).
+3. From the repo root, run `npm publish`. The `prepublishOnly` script runs typecheck and builds CLI/MCP bundles into `dist/` before the tarball is created.
+4. Inspect the tarball first with `npm pack --dry-run` if you want to verify contents.
+
+The published artifact is intentionally limited (`bin/`, `dist/`, `LICENSE`, `README.md` per `package.json` `files`) so the desktop Electron app sources are not uploaded as part of the npm package; consumers get the CLI/MCP entrypoints and install dependencies from `package.json`.
+
 MIT © [Ferrowood Group, LLC](https://www.ferrowoodgroup.com)
