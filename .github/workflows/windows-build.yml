@@ -1,0 +1,49 @@
+# Build Squirrel installer (MnemoSetup.exe) + zip on Windows runners — no local Windows machine required.
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+    paths:
+      - 'src/**'
+      - 'forge.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'webpack*.js'
+      - '.github/workflows/windows-build.yml'
+  pull_request:
+    branches: [master, main]
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  make:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create Windows installers
+        run: npm run make
+
+      - name: Upload installers (Squirrel + zip)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnemo-windows-${{ github.run_number }}-${{ github.sha }}
+          path: out/make/**
+          if-no-files-found: error
+          retention-days: 90

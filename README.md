@@ -281,16 +281,17 @@ npm run make           # Build platform installers (see below)
 
 Desktop installers for Windows are produced with **Electron Forge** and the **Squirrel** maker (`@electron-forge/maker-squirrel` in `forge.config.js`).
 
-1. **Machine:** Run the build on **Windows** (or **GitHub Actions** `windows-latest` / your own Windows CI agent). Squirrel installers are not produced when you only build on Linux/macOS.
+1. **Machine:** Squirrel installers are **not** produced on Linux/macOS `npm run make` alone — you need a **Windows** environment (local PC, VM, or CI).
 2. **Prerequisites:** Node.js LTS, repo dependencies (`npm install`). For an **MSI** in addition to the setup `.exe`, set `noMsi: false` in `forge.config.js` and install the **WiX Toolset** on the build machine; the default is Squirrel-only (`noMsi: true`).
-3. **Build:** From the repo root:
+3. **Build locally (Windows):** From the repo root:
    ```powershell
    npm install
    npm run make
    ```
-4. **Artifacts:** Look under **`out/make/`** — typically a **`MnemoSetup.exe`** (Squirrel) and a **zip** of the unpacked app (`maker-zip` also targets `win32`). Version comes from **`package.json`** → bump it before tagging a release.
-5. **Code signing:** Not configured in-repo; for public distribution you usually sign **`Mnemo.exe`** / the installer with a Windows code-signing certificate (see Electron Forge docs and `@electron/windows-sign`).
-6. **App behavior:** Install/update shortcuts and **“Open in Mnemo”** context-menu registration use **`electron-squirrel-startup`** and the Squirrel hooks in `src/main/index.ts` — no extra step after a normal install.
+4. **Build in CI (no Windows machine):** The workflow **Build Windows installer** (`.github/workflows/windows-build.yml`) runs on **`windows-latest`**, executes **`npm ci`** and **`npm run make`**, and uploads everything under **`out/make/`** as a workflow artifact (retained 90 days). In GitHub: **Actions** → select a successful run → scroll to **Artifacts** → download **`mnemo-windows-…`**. Unzip to find **`MnemoSetup.exe`**, the Squirrel **`RELEASES`** / **`.nupkg`** files, and the **zip** portable layout. Triggers: **workflow_dispatch** (manual **Run workflow**), pushes to **`main`** / **`master`** that change listed paths, and pull requests targeting those branches.
+5. **Artifacts (local or CI):** Look under **`out/make/`** — typically **`MnemoSetup.exe`** (Squirrel) and a **zip** of the unpacked app (`maker-zip` also targets `win32`). Version comes from **`package.json`** → bump it before tagging a release.
+6. **Code signing:** Not configured in-repo; for public distribution you usually sign **`Mnemo.exe`** / the installer with a Windows code-signing certificate (see Electron Forge docs and `@electron/windows-sign`).
+7. **App behavior:** Install/update shortcuts and **“Open in Mnemo”** context-menu registration use **`electron-squirrel-startup`** and the Squirrel hooks in `src/main/index.ts` — no extra step after a normal install.
 
 **npm package vs desktop app:** Publishing **`npm publish`** (CLI + MCP bundles per `prepublishOnly` and `package.json` `files`) is separate from **`npm run make`**. Run **`npm run prepublishOnly`** (or **`npm publish`**, which runs it) before publishing the npm package; use **`npm run make`** on Windows when you need **`MnemoSetup.exe`**.
 
