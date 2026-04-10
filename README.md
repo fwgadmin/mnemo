@@ -360,7 +360,7 @@ Copy-Item dist\mnemo-mcp-http.js dist\deploy\
 @'
 {
   "name": "mnemo-mcp-http",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "main": "mnemo-mcp-http.js",
   "dependencies": {
     "express": "*",
