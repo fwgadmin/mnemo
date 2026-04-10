@@ -90,7 +90,25 @@ export class TursoNoteStore implements INoteStore {
           args: [r++, ir['id'] as string],
         });
       }
-    }
+    await this.client.execute({
+      sql: `
+        UPDATE notes
+        SET ref = (
+          SELECT ranked.ref
+          FROM (
+            SELECT
+              id,
+              ROW_NUMBER() OVER (
+                PARTITION BY tenant_id
+                ORDER BY created_at ASC, id ASC
+              ) AS ref
+            FROM notes
+          ) AS ranked
+          WHERE ranked.id = notes.id
+        )
+      `,
+      args: [],
+    });
 
     await this.client.execute({
       sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes (tenant_id, ref)',
