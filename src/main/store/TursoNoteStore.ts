@@ -90,6 +90,7 @@ export class TursoNoteStore implements INoteStore {
           args: [r++, ir['id'] as string],
         });
       }
+    }
     await this.client.execute({
       sql: `
         UPDATE notes
