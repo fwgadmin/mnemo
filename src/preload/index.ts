@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../shared/types';
-import type { Note, NoteListItem, SearchResult, CreateNoteInput, UpdateNoteInput, GraphData } from '../shared/types';
+import type { Note, NoteListItem, SearchResult, CreateNoteInput, UpdateNoteInput, GraphData, AppConfig, SyncResult } from '../shared/types';
 
 export interface MnemoAPI {
   notes: {
@@ -18,6 +18,12 @@ export interface MnemoAPI {
   file: {
     saveAs(data: { title: string; body: string }): Promise<{ saved: boolean; filePath?: string }>;
     open(): Promise<Array<{ title: string; body: string }> | null>;
+  };
+  config: {
+    read(): Promise<AppConfig>;
+    save(cfg: AppConfig): Promise<boolean>;
+    storeType(): Promise<'turso' | 'local'>;
+    syncLocalNotes(): Promise<SyncResult>;
   };
   onMenuCommand(callback: (command: string) => void): () => void;
   onFileOpenedExternally(callback: (data: { title: string; body: string }) => void): () => void;
@@ -39,6 +45,12 @@ const api: MnemoAPI = {
   file: {
     saveAs: (data) => ipcRenderer.invoke(IPC.FILE_SAVE_AS, data),
     open: () => ipcRenderer.invoke(IPC.FILE_OPEN),
+  },
+  config: {
+    read: () => ipcRenderer.invoke(IPC.CONFIG_READ),
+    save: (cfg: AppConfig) => ipcRenderer.invoke(IPC.CONFIG_SAVE, cfg),
+    storeType: () => ipcRenderer.invoke(IPC.CONFIG_STORE_TYPE),
+    syncLocalNotes: (): Promise<SyncResult> => ipcRenderer.invoke(IPC.CONFIG_SYNC_LOCAL),
   },
   onMenuCommand: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, command: string) => callback(command);

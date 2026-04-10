@@ -45,6 +45,7 @@ export default function Sidebar({
   const [categoryValue, setCategoryValue] = useState('');
   const [grouped, setGrouped] = useState(() => localStorage.getItem('mnemo.grouped') !== 'false');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const categoryInputRef = useRef<HTMLInputElement>(null);
 
@@ -88,9 +89,35 @@ export default function Sidebar({
     });
   }, []);
 
+  const handleDragStart = useCallback((e: React.DragEvent, noteId: string) => {
+    e.dataTransfer.setData('text/plain', noteId);
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, category: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverCategory(category);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, category: string) => {
+    e.preventDefault();
+    setDragOverCategory(null);
+    const noteId = e.dataTransfer.getData('text/plain');
+    if (!noteId) return;
+    onSetCategory(noteId, category === 'General' ? '' : category);
+  }, [onSetCategory]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragOverCategory(null);
+  }, []);
+
   const renderNoteItem = (note: NoteListItem, hideCategory = false) => (
     <div key={note.id}>
       <div
+        draggable
+        onDragStart={(e) => handleDragStart(e, note.id)}
         onClick={() => { onSelectNote(note.id); setContextMenuId(null); }}
         onContextMenu={(e) => handleContextMenu(e, note.id)}
         className={`
@@ -207,7 +234,15 @@ export default function Sidebar({
           </div>
         ) : grouped && !searchQuery ? (
           [...groupByCategory(notes).entries()].map(([group, groupNotes]) => (
-            <div key={group} className="mb-1">
+            <div
+              key={group}
+              className={`mb-1 rounded transition-colors ${
+                dragOverCategory === group ? 'bg-[#1a1a2e]/50 ring-1 ring-[#3a3a6a]' : ''
+              }`}
+              onDragOver={(e) => handleDragOver(e, group)}
+              onDrop={(e) => handleDrop(e, group)}
+              onDragLeave={handleDragLeave}
+            >
               <button
                 onClick={() => toggleGroup(group)}
                 className="w-full flex items-center gap-1.5 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#555] hover:text-[#888] transition-colors cursor-pointer"

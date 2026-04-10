@@ -2,8 +2,8 @@
 
 **AI-native memory layer** — local-first note-taking with a built-in MCP server so AI assistants can read, search, create, and link your notes directly.
 
-[![version](https://img.shields.io/badge/version-0.9.0-blue)](package.json)
-[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[version](package.json)
+[license](LICENSE)
 
 ---
 
@@ -26,18 +26,20 @@
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Shell | Electron 41 |
-| UI | React 19, Tailwind CSS 3 |
-| Editor | CodeMirror 6 |
-| Local storage | SQLite via better-sqlite3 (WAL + FTS5) |
-| Cloud storage | Turso (libSQL) via @libsql/client |
-| Graph | d3-force (canvas) |
-| AI integration | Model Context Protocol SDK 1.x |
-| HTTP server | Express 4 |
-| Build | Electron Forge + Webpack |
-| Language | TypeScript 5 (strict) |
+
+| Layer          | Technology                             |
+| -------------- | -------------------------------------- |
+| Shell          | Electron 41                            |
+| UI             | React 19, Tailwind CSS 3               |
+| Editor         | CodeMirror 6                           |
+| Local storage  | SQLite via better-sqlite3 (WAL + FTS5) |
+| Cloud storage  | Turso (libSQL) via @libsql/client      |
+| Graph          | d3-force (canvas)                      |
+| AI integration | Model Context Protocol SDK 1.x         |
+| HTTP server    | Express 4                              |
+| Build          | Electron Forge + Webpack               |
+| Language       | TypeScript 5 (strict)                  |
+
 
 ---
 
@@ -52,37 +54,72 @@ npm start
 
 The app opens with a local SQLite database stored in your OS user-data directory. No sign-up required.
 
+### Linux (Ubuntu 24.04) — terminal first
+
+**System packages for packaging:** building a `.deb` needs `fakeroot` and `dpkg` (usually already present on Ubuntu).
+
+**Optional build tools:** if `better-sqlite3` fails to install prebuilt binaries, install build prerequisites:
+
+```bash
+sudo apt install -y build-essential python3
+```
+
+**Install the app:** after `npm run make`, install `out/make/deb/x64/mnemo_*_amd64.deb` (or use the zip under `out/make/zip/`). The package installs the `mnemo` command and a GNOME desktop entry for **Mnemo**.
+
+`**mnemo` command (after `.deb` install):**
+
+
+| Command                                       | Purpose                                                                                       |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `mnemo`                                       | Open the graphical app (pass `.md` / `.txt` paths to import)                                  |
+| `mnemo mcp`                                   | MCP server on stdio (same flags as `dist/mnemo-mcp.js`)                                       |
+| `mnemo mcp-http`                              | HTTP/SSE server (requires `TURSO_URL`, `TURSO_AUTH_TOKEN`, `MCP_API_KEY`; uses system `node`) |
+| `mnemo note list` / `show` / `search` / `new` | Work with notes in the terminal                                                               |
+
+
+`mcp` and `note` run on the **same Electron runtime** as the app so SQLite native code matches. `mcp-http` uses your system Node.js.
+
+**Share one vault between GUI and CLI:** set `MNEMO_HOME` to a directory; both the app and `mnemo note` / `mnemo mcp` use it for `mnemo.db` and `vault/` (GUI reads this via `app.setPath('userData', …)`).
+
+**From a git checkout (development):** `npm install`, then `npm run build:cli`, then use `npx mnemo` or `node bin/mnemo.js` (or add `./node_modules/.bin` to `PATH`). The dev launcher runs `mcp`/`note` under Electron-as-Node with the repo’s `node_modules`.
+
 ---
 
 ## MCP Integration
 
 ### Resources
 
-| URI | Description |
-|-----|-------------|
-| `mnemo://notes` | JSON list of all notes |
+
+| URI                  | Description             |
+| -------------------- | ----------------------- |
+| `mnemo://notes`      | JSON list of all notes  |
 | `mnemo://notes/{id}` | Single note as Markdown |
+
 
 ### Tools
 
-| Tool | Description |
-|------|-------------|
-| `create_note` | Create a new note |
-| `read_note` | Read a note by ID |
-| `update_note` | Update title, body, or tags |
-| `delete_note` | Delete a note |
-| `search_notes` | Full-text search |
-| `get_backlinks` | Get notes linking to a given note |
-| `link_notes` | Set outgoing links from source to targets |
-| `get_graph` | Full node/edge graph data |
+
+| Tool            | Description                               |
+| --------------- | ----------------------------------------- |
+| `create_note`   | Create a new note                         |
+| `read_note`     | Read a note by ID                         |
+| `update_note`   | Update title, body, or tags               |
+| `delete_note`   | Delete a note                             |
+| `search_notes`  | Full-text search                          |
+| `get_backlinks` | Get notes linking to a given note         |
+| `link_notes`    | Set outgoing links from source to targets |
+| `get_graph`     | Full node/edge graph data                 |
+
 
 ### Prompts
 
-| Prompt | Description |
-|--------|-------------|
-| `summarize_note` | Generate a summary of a note |
-| `relate_notes` | Analyze relationships between two notes |
-| `query_vault` | Ask a question using the vault as context |
+
+| Prompt           | Description                               |
+| ---------------- | ----------------------------------------- |
+| `summarize_note` | Generate a summary of a note              |
+| `relate_notes`   | Analyze relationships between two notes   |
+| `query_vault`    | Ask a question using the vault as context |
+
 
 ---
 
@@ -100,7 +137,7 @@ Build the standalone MCP binary:
 npm run build:mcp
 ```
 
-This produces `dist/mnemo-mcp.js`. Add it to your Claude Desktop config:
+This produces `dist/mnemo-mcp.js`. Add it to your Claude Desktop config (on Linux with the `.deb` installed you can use `"command": "mnemo"` and `"args": ["mcp", ...]` instead of `node` + the script path):
 
 ```json
 {
@@ -149,17 +186,19 @@ This produces `dist/mnemo-mcp-http.js`. Deploy it to any Node.js host and set th
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+N` | New note |
-| `Ctrl+P` | Command palette |
-| `Ctrl+G` | Toggle graph view |
-| `Ctrl+B` | Toggle sidebar |
-| `Ctrl+S` | Save (also auto-saves on edit) |
-| `Ctrl+Shift+S` | Save As (export `.md` file) |
-| `Ctrl+O` | Open / import `.md` file |
-| `Ctrl+Shift+H` | Toggle note header |
-| `Ctrl+Shift+L` | Toggle line numbers |
+
+| Shortcut       | Action                         |
+| -------------- | ------------------------------ |
+| `Ctrl+N`       | New note                       |
+| `Ctrl+P`       | Command palette                |
+| `Ctrl+G`       | Toggle graph view              |
+| `Ctrl+B`       | Toggle sidebar                 |
+| `Ctrl+S`       | Save (also auto-saves on edit) |
+| `Ctrl+Shift+S` | Save As (export `.md` file)    |
+| `Ctrl+O`       | Open / import `.md` file       |
+| `Ctrl+Shift+H` | Toggle note header             |
+| `Ctrl+Shift+L` | Toggle line numbers            |
+
 
 ---
 
@@ -172,7 +211,9 @@ src/
 │   ├── mcp/
 │   │   ├── server.ts            # MCP server (resources, tools, prompts)
 │   │   ├── stdio.ts             # Standalone stdio entry point
+│   │   ├── stdio-bootstrap.ts   # Shared MCP stdio bootstrap (CLI + mnemo-mcp.js)
 │   │   └── http.ts              # HTTP/SSE entry point (hosted platforms)
+│   ├── cli.ts                   # Node CLI bundle (mcp, mcp-http, note)
 │   └── store/
 │       ├── NoteStore.ts         # LocalNoteStore — SQLite via better-sqlite3
 │       └── TursoNoteStore.ts    # TursoNoteStore — cloud SQLite via @libsql/client
@@ -202,8 +243,9 @@ npm start              # Dev mode with hot reload
 npm run typecheck      # TypeScript type-check (zero errors enforced)
 npm run build:mcp      # Build stdio MCP server → dist/mnemo-mcp.js
 npm run build:mcp-http # Build HTTP MCP server → dist/mnemo-mcp-http.js
+npm run build:cli      # Build unified CLI bundle → dist/mnemo-cli.js
 npm run package        # Package Electron app for distribution
-npm run make           # Build platform installers
+npm run make           # Build platform installers (.deb + zip on Linux)
 ```
 
 ### Windows shell context menu (dev mode)
@@ -217,6 +259,10 @@ The packaged installer registers "Open in Mnemo" automatically via Squirrel hook
 ```
 
 Right-click any `.md` or `.txt` file in Explorer and choose **Open in Mnemo**.
+
+### Linux / GNOME (`.deb`)
+
+The Debian package registers **Mnemo** for `text/markdown` and `text/plain`. Use **Open With** in Files, or set the default app under **Settings → Default Applications**. The menu entry runs `mnemo %U`, which opens the Electron app and forwards file paths.
 
 ---
 
@@ -376,11 +422,13 @@ certbot --nginx -d mnemo.yourdomain.com
 
 Point your AI client at the SSE endpoint with your API key as a Bearer token:
 
-| Field | Value |
-|-------|-------|
-| SSE URL | `https://mcp.yourdomain.com/sse` |
-| Auth header | `Authorization: Bearer <MCP_API_KEY>` |
+
+| Field            | Value                                                |
+| ---------------- | ---------------------------------------------------- |
+| SSE URL          | `https://mcp.yourdomain.com/sse`                     |
+| Auth header      | `Authorization: Bearer <MCP_API_KEY>`                |
 | Message endpoint | `https://mcp.yourdomain.com/messages?sessionId=<id>` |
+
 
 ### 8. Health check
 
@@ -406,6 +454,7 @@ To return to local-only storage, delete or comment out both lines.
 **Alternatively**, set the variables in your shell before launching:
 
 **Windows (PowerShell):**
+
 ```powershell
 $env:MNEMO_TURSO_URL = "libsql://your-db.turso.io"
 $env:MNEMO_TURSO_TOKEN = "your-turso-token"
@@ -413,6 +462,7 @@ npm start
 ```
 
 **macOS / Linux:**
+
 ```bash
 MNEMO_TURSO_URL="libsql://your-db.turso.io" \
 MNEMO_TURSO_TOKEN="your-turso-token" \
