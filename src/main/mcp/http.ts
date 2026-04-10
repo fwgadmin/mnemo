@@ -5,8 +5,8 @@
  * (ChatGPT, Gemini, etc.) can connect without needing local process access.
  *
  * Required environment variables:
- *   TURSO_URL         libSQL/Turso database URL
- *   TURSO_AUTH_TOKEN  Turso auth token
+ *   TURSO_URL or LIBSQL_URL         libSQL database URL (Turso Cloud, self-hosted sqld, etc.)
+ *   TURSO_AUTH_TOKEN or LIBSQL_AUTH_TOKEN  Database auth token
  *   MCP_API_KEY       Bearer token that clients must send
  *
  * Optional:
@@ -19,11 +19,14 @@ import { createMcpServer } from './server';
 
 const PORT = parseInt(process.env['PORT'] ?? '3001', 10);
 const API_KEY = process.env['MCP_API_KEY'];
-const TURSO_URL = process.env['TURSO_URL'];
-const TURSO_AUTH_TOKEN = process.env['TURSO_AUTH_TOKEN'];
+const TURSO_URL = process.env['TURSO_URL']?.trim() || process.env['LIBSQL_URL']?.trim();
+const TURSO_AUTH_TOKEN =
+  process.env['TURSO_AUTH_TOKEN']?.trim() || process.env['LIBSQL_AUTH_TOKEN']?.trim();
 
 if (!TURSO_URL || !TURSO_AUTH_TOKEN) {
-  console.error('ERROR: TURSO_URL and TURSO_AUTH_TOKEN environment variables are required.');
+  console.error(
+    'ERROR: Set TURSO_URL and TURSO_AUTH_TOKEN (or LIBSQL_URL and LIBSQL_AUTH_TOKEN) for your libSQL endpoint.',
+  );
   process.exit(1);
 }
 if (!API_KEY) {

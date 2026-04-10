@@ -1,18 +1,19 @@
 import type { ReactNode } from 'react';
 
-/** IDE shell: optional left sidebar | tab bar + main + optional right rail */
+/** IDE shell: optional left sidebar | note tabs + main + optional right rail */
 export function IdeLayout({
   sidebar,
   sidebarVisible,
-  tabBar,
   children,
+  tabBar,
   rail,
   edgePeek,
 }: {
   sidebar: ReactNode;
   sidebarVisible: boolean;
-  tabBar: ReactNode;
   children: ReactNode;
+  /** Horizontal note tabs above the editor */
+  tabBar?: ReactNode;
   rail?: ReactNode;
   /** Shown along the left edge of the editor when the sidebar is hidden */
   edgePeek?: ReactNode;

@@ -35,7 +35,7 @@ function printHelp(): void {
 
 Usage:
   mnemo mcp [options]        MCP server on stdio (Cursor, Claude Desktop, …)
-  mnemo mcp-http             HTTP/SSE MCP (needs TURSO_URL, TURSO_AUTH_TOKEN, MCP_API_KEY)
+  mnemo mcp-http             HTTP/SSE MCP (needs TURSO_URL + TURSO_AUTH_TOKEN or LIBSQL_* aliases, MCP_API_KEY)
   mnemo note <command> …     list | show | search | new | import | graph | autolink | categories | set-category | category …
 
   mnemo note categories [--flat]
@@ -56,11 +56,12 @@ Usage:
 MCP options:
   --db <path>     SQLite database (default: ./mnemo.db, or MNEMO_HOME/mnemo.db for note)
   --vault <path>  Vault directory
-  --turso-url / --turso-token   Turso instead of local SQLite
+  --turso-url / --turso-token   Remote libSQL (Turso or self-hosted) instead of local SQLite
 
 Note commands use XDG: ~/.local/share/mnemo/ unless MNEMO_HOME or --db/--vault is set.
-If you configured Turso in the app Settings, the same credentials are read from config.json
-(MNEMO_HOME, ~/.local/share/mnemo, or ~/.config/mnemo) or from MNEMO_TURSO_URL / MNEMO_TURSO_TOKEN.
+If you configured a remote database in the app Settings, the same credentials are read from config.json
+(MNEMO_HOME, ~/.local/share/mnemo, or ~/.config/mnemo) or from MNEMO_TURSO_URL / MNEMO_TURSO_TOKEN
+or MNEMO_LIBSQL_URL / MNEMO_LIBSQL_AUTH_TOKEN.
 
   mnemo note list [--category|-c "path"] [--exact] [-v|--verbose]
     -c, --category      Only notes under this folder (General, Unassigned, Work/…, or nested paths)

@@ -27,6 +27,12 @@ export function legacyElectronUserDataDir(): string {
   return path.join(config, name);
 }
 
+function hasRemoteCredentialsInFile(cfg: AppConfig): boolean {
+  const url = cfg.tursoUrl?.trim() || cfg.libsqlUrl?.trim();
+  const token = cfg.tursoToken?.trim() || cfg.libsqlAuthToken?.trim();
+  return Boolean(url && token);
+}
+
 /**
  * Read config.json from the same places the GUI might use (MNEMO_HOME, XDG data, legacy ~/.config).
  */
@@ -41,7 +47,7 @@ export function readAppConfigFile(): AppConfig {
     try {
       const raw = fs.readFileSync(p, 'utf-8');
       const cfg = JSON.parse(raw) as AppConfig;
-      if (cfg.tursoUrl && cfg.tursoToken) return cfg;
+      if (hasRemoteCredentialsInFile(cfg)) return cfg;
     } catch {
       /* try next */
     }
@@ -56,14 +62,32 @@ export function readAppConfigFile(): AppConfig {
   return {};
 }
 
-/** Same precedence as GUI initStore: argv flags, then config.json, then MNEMO_TURSO_* env. */
+/** Resolve remote libSQL URL + token from config (Turso- or libsql-prefixed keys) and env aliases. */
+export function getRemoteLibsqlCredentials(
+  cfg: AppConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): { url?: string; token?: string } {
+  const url =
+    cfg.tursoUrl?.trim() ||
+    cfg.libsqlUrl?.trim() ||
+    env['MNEMO_TURSO_URL']?.trim() ||
+    env['MNEMO_LIBSQL_URL']?.trim();
+  const token =
+    cfg.tursoToken?.trim() ||
+    cfg.libsqlAuthToken?.trim() ||
+    env['MNEMO_TURSO_TOKEN']?.trim() ||
+    env['MNEMO_LIBSQL_AUTH_TOKEN']?.trim();
+  return { url, token };
+}
+
+/** Same precedence as GUI initStore: argv flags, then config.json, then MNEMO_TURSO_* / MNEMO_LIBSQL_* env. */
 export function resolveTursoCredentials(parsed: {
   tursoUrl?: string;
   tursoToken?: string;
 }): { tursoUrl?: string; tursoToken?: string } {
   const cfg = readAppConfigFile();
-  const url = parsed.tursoUrl?.trim() || cfg.tursoUrl?.trim() || process.env['MNEMO_TURSO_URL']?.trim();
-  const token =
-    parsed.tursoToken?.trim() || cfg.tursoToken?.trim() || process.env['MNEMO_TURSO_TOKEN']?.trim();
+  const fromCfg = getRemoteLibsqlCredentials(cfg);
+  const url = parsed.tursoUrl?.trim() || fromCfg.url;
+  const token = parsed.tursoToken?.trim() || fromCfg.token;
   return { tursoUrl: url, tursoToken: token };
 }

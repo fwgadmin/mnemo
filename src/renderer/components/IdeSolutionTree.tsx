@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type DragEvent, type MouseEvent } from 'react';
+import { Fragment, useCallback, useEffect, useState, type DragEvent, type MouseEvent } from 'react';
 import type { NoteListItem } from '../../shared/types';
 import {
   ancestorPaths,
@@ -129,6 +129,9 @@ export default function IdeSolutionTree({
     const label =
       node.path === GENERAL_PATH ? 'General' : node.path === UNASSIGNED_PATH ? 'Unassigned' : node.segment;
     const stripe = colorForCategoryPath(node.path, categoryColors);
+    const stripeBorder = stripe
+      ? `color-mix(in srgb, ${stripe} 42%, var(--mnemo-accent) 58%)`
+      : 'color-mix(in srgb, var(--mnemo-border) 82%, var(--mnemo-accent) 18%)';
     const isDrag = dragOverCategory === node.path;
     const visibleCount =
       opts?.generalTopLevel && node.path === GENERAL_PATH
@@ -144,11 +147,18 @@ export default function IdeSolutionTree({
           onDrop={e => onDrop(e, node.path)}
           onDragLeave={onDragLeave}
           onContextMenu={e => onFolderContextMenu(e, node.path)}
-          className={`rounded-sm transition-colors ${isDrag ? 'bg-mnemo-active/40 ring-1 ring-mnemo-accent/30' : ''}`}
-          style={{ paddingLeft: indent }}
+          className={`rounded-sm transition-colors bg-mnemo-panel-elevated/50 border border-mnemo-border/50 ${
+            isDrag ? 'bg-mnemo-active/40 ring-1 ring-mnemo-accent/30' : ''
+          }`}
+          style={{
+            paddingLeft: indent,
+            borderLeftWidth: 3,
+            borderLeftStyle: 'solid',
+            borderLeftColor: stripeBorder,
+          }}
           title="Right-click for folder actions"
         >
-          <div className="flex min-h-[26px] items-center gap-0.5 pr-1">
+          <div className="flex min-h-[28px] items-center gap-0.5 pr-1">
             <button
               type="button"
               className={`flex h-6 w-5 shrink-0 items-center justify-center rounded text-[10px] text-mnemo-dim hover:bg-mnemo-hover hover:text-mnemo-text ${
@@ -172,30 +182,65 @@ export default function IdeSolutionTree({
                 aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${label}`}
               >
                 <span
-                  className={`min-w-0 flex-1 truncate text-[11px] font-medium ${stripe ? '' : 'text-mnemo-text'}`}
+                  className={`min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.05em] ${stripe ? '' : 'text-mnemo-muted'}`}
                   style={stripe ? { color: stripe } : undefined}
                 >
                   {label}
                 </span>
-                <span className="shrink-0 text-[9px] text-mnemo-dim tabular-nums">{visibleCount}</span>
+                <span className="shrink-0 text-[10px] text-mnemo-dim tabular-nums font-medium">{visibleCount}</span>
               </button>
             ) : (
               <>
-                <span className={`min-w-0 flex-1 truncate text-[11px] font-medium ${stripe ? '' : 'text-mnemo-text'}`} style={stripe ? { color: stripe } : undefined}>
+                <span
+                  className={`min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.05em] ${stripe ? '' : 'text-mnemo-muted'}`}
+                  style={stripe ? { color: stripe } : undefined}
+                >
                   {label}
                 </span>
-                <span className="shrink-0 text-[9px] text-mnemo-dim tabular-nums">{visibleCount}</span>
+                <span className="shrink-0 text-[10px] text-mnemo-dim tabular-nums font-medium">{visibleCount}</span>
               </>
             )}
           </div>
         </div>
 
         {isOpen && (
-          <div role="group">
+          <div
+            role="group"
+            onDragOver={e => onDragOver(e, node.path)}
+            onDrop={e => onDrop(e, node.path)}
+            onDragLeave={onDragLeave}
+            className={
+              isDrag ? 'rounded-b-sm bg-mnemo-active/15 ring-1 ring-inset ring-mnemo-accent/20' : undefined
+            }
+          >
             {childFolders.map(ch => renderNode(ch, depth + 1))}
             {notesHere.map(n => (
-              <div key={n.id}>{renderNote(n, depth + 1)}</div>
+              <Fragment key={n.id}>
+                <div
+                  className={`mx-0.5 min-h-[6px] rounded-sm transition-colors ${
+                    isDrag
+                      ? 'bg-mnemo-accent/20 ring-1 ring-mnemo-accent/40'
+                      : 'hover:bg-mnemo-hover/30'
+                  }`}
+                  onDragOver={e => onDragOver(e, node.path)}
+                  onDrop={e => onDrop(e, node.path)}
+                  onDragLeave={onDragLeave}
+                  aria-hidden
+                />
+                <div>{renderNote(n, depth + 1)}</div>
+              </Fragment>
             ))}
+            <div
+              className={`mx-0.5 min-h-[6px] rounded-sm transition-colors ${
+                isDrag
+                  ? 'bg-mnemo-accent/20 ring-1 ring-mnemo-accent/40'
+                  : 'hover:bg-mnemo-hover/30'
+              }`}
+              onDragOver={e => onDragOver(e, node.path)}
+              onDrop={e => onDrop(e, node.path)}
+              onDragLeave={onDragLeave}
+              aria-hidden
+            />
           </div>
         )}
       </div>

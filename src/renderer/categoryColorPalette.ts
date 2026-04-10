@@ -177,10 +177,10 @@ function pickAutoColorForKey(
 }
 
 /**
- * Merge user-stored colors with auto picks: any stored hex that fails contrast on the
- * panel is replaced. Keys without a stored color are omitted so `colorForCategoryPath`
- * can still inherit from a parent folder. `General` always gets a readable color so
- * the chain resolves for uncategorized notes.
+ * Merge user-stored colors with auto picks for paths the user never set.
+ * Explicit hex picks are used as stored (no contrast nudge) so the UI matches the picker.
+ * Auto colors for unset paths still use readability tweaks / swatches.
+ * `General` / `Unassigned` get a readable auto color when unset so the chain resolves.
  */
 export function buildEffectiveCategoryColors(
   explicit: Record<string, string>,
@@ -192,22 +192,18 @@ export function buildEffectiveCategoryColors(
 
   const merged: Record<string, string> = {};
   for (const [k, v] of Object.entries(explicit)) {
-    if (isReadableCategoryOnPanel(v, panelBg)) merged[k] = v;
-    else merged[k] = pickAutoColorForKey(k, swatches, accentFallback, panelBg);
+    if (!/^#[0-9A-Fa-f]{3,8}$/.test(v)) continue;
+    merged[k] = v;
   }
 
   const generalKey = categoryColorStorageKey(GENERAL_PATH);
   if (!merged[generalKey]) {
-    const g = explicit[generalKey];
-    if (g && isReadableCategoryOnPanel(g, panelBg)) merged[generalKey] = g;
-    else merged[generalKey] = pickAutoColorForKey(generalKey, swatches, accentFallback, panelBg);
+    merged[generalKey] = pickAutoColorForKey(generalKey, swatches, accentFallback, panelBg);
   }
 
   const unassignedKey = categoryColorStorageKey(UNASSIGNED_PATH);
   if (!merged[unassignedKey]) {
-    const u = explicit[unassignedKey];
-    if (u && isReadableCategoryOnPanel(u, panelBg)) merged[unassignedKey] = u;
-    else merged[unassignedKey] = pickAutoColorForKey(unassignedKey, swatches, accentFallback, panelBg);
+    merged[unassignedKey] = pickAutoColorForKey(unassignedKey, swatches, accentFallback, panelBg);
   }
 
   return merged;

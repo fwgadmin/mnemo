@@ -22,6 +22,11 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id)`,
   `CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id)`,
+  `CREATE TABLE IF NOT EXISTS app_kv (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
 ];
 
 const FTS_STATEMENTS = [
@@ -38,7 +43,9 @@ const FTS_STATEMENTS = [
   END`,
 ];
 
-/** Cloud-backed async store using Turso (libSQL). */
+/**
+ * Remote async store via @libsql/client (Turso Cloud, self-hosted libSQL/sqld, or any compatible endpoint).
+ */
 export class TursoNoteStore implements INoteStore {
   private client: Client;
   private vaultPath: string | undefined;
@@ -302,6 +309,24 @@ export class TursoNoteStore implements INoteStore {
       source: row['source'] as string,
       target: row['target'] as string,
     }));
+  }
+
+  /** Key-value settings mirrored with ui-preferences.json (e.g. full UI prefs JSON). */
+  async getKv(key: string): Promise<string | null> {
+    const r = await this.client.execute({
+      sql: 'SELECT value FROM app_kv WHERE key = ?',
+      args: [key],
+    });
+    return (r.rows[0]?.['value'] as string) ?? null;
+  }
+
+  async setKv(key: string, value: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.client.execute({
+      sql: `INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      args: [key, value, now],
+    });
   }
 
   /** No-op: HTTP client has no persistent connection to tear down. */

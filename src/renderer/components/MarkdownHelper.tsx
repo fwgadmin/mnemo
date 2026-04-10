@@ -88,11 +88,16 @@ export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
           <ShortcutRow keys="Ctrl+N"         action="New note" />
           <ShortcutRow keys="Ctrl+S"         action="Save" />
           <ShortcutRow keys="Ctrl+Shift+S"   action="Save As" />
+          <ShortcutRow keys="Alt+Shift+F"    action="Format note (Prettier)" />
           <ShortcutRow keys="Ctrl+O"         action="Open file" />
           <ShortcutRow keys="Ctrl+P"         action="Command palette" />
           <ShortcutRow keys="Ctrl+G"         action="Toggle graph" />
-          <ShortcutRow keys="Ctrl+M"         action="Toggle this panel" />
+          <ShortcutRow keys="Ctrl+M"         action="Toggle Markdown reference" />
+          <ShortcutRow keys="Ctrl+Shift+V"   action="Toggle preview (GFM, Mermaid)" />
           <ShortcutRow keys="Ctrl+B"         action="Toggle sidebar" />
+          <ShortcutRow keys="Ctrl+K"         action="Insert markdown link" />
+          <ShortcutRow keys="Ctrl+Shift+T"    action="Insert table" />
+          <ShortcutRow keys="Ctrl+Shift+I"   action="Insert image" />
           <ShortcutRow keys="Ctrl+Shift+H"   action="Toggle note header" />
           <ShortcutRow keys="Ctrl+Shift+L"   action="Toggle line numbers" />
           <ShortcutRow keys="Ctrl+Shift+N"   action="Toggle note #refs" />

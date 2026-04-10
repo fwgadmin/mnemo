@@ -35,7 +35,7 @@ export interface MnemoAPI {
     storeType(): Promise<'turso' | 'local'>;
     syncLocalNotes(): Promise<SyncResult>;
   };
-  /** Theme, layout, sidebar, category colors, IDE tabs — synced to ui-preferences.json (same as MCP) */
+  /** Theme, layout, sidebar, category colors — synced to ui-preferences.json (same as MCP) */
   preferences: {
     read(): Promise<MnemoUiPreferences>;
     save(partial: Partial<MnemoUiPreferences>): Promise<boolean>;

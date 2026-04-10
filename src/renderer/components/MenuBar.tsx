@@ -20,6 +20,7 @@ const MENUS: MenuDef[] = [
       { separator: true, label: '' },
       { label: 'Save', cmd: 'save', shortcut: 'Ctrl+S' },
       { label: 'Save As…', cmd: 'save-as', shortcut: 'Ctrl+Shift+S' },
+      { label: 'Format Note', cmd: 'format-markdown', shortcut: 'Alt+Shift+F' },
       { separator: true, label: '' },
       { label: 'Open…', cmd: 'open', shortcut: 'Ctrl+O' },
       { separator: true, label: '' },
@@ -30,12 +31,15 @@ const MENUS: MenuDef[] = [
     label: 'View',
     items: [
       { label: 'Toggle Sidebar', cmd: 'toggle-sidebar', shortcut: 'Ctrl+B' },
+      { label: 'Next Note', cmd: 'note-next', shortcut: 'Ctrl+Tab' },
+      { label: 'Previous Note', cmd: 'note-prev', shortcut: 'Ctrl+Shift+Tab' },
       { label: 'Toggle Note Header', cmd: 'toggle-header', shortcut: 'Ctrl+Shift+H' },
       { label: 'Toggle Line Numbers', cmd: 'toggle-line-numbers', shortcut: 'Ctrl+Shift+L' },
       { label: 'Toggle Note Index Numbers', cmd: 'toggle-note-refs', shortcut: 'Ctrl+Shift+N' },
       { separator: true, label: '' },
       { label: 'Toggle Graph', cmd: 'toggle-graph', shortcut: 'Ctrl+G' },
       { label: 'Markdown Helper', cmd: 'toggle-markdown-help', shortcut: 'Ctrl+M' },
+      { label: 'Markdown Preview', cmd: 'toggle-markdown-preview', shortcut: 'Ctrl+Shift+V' },
     ],
   },
   {

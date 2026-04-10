@@ -62,18 +62,18 @@ export const mnemoEditorTheme = EditorView.theme(
     '.cm-wikilink-bracket': {
       color: 'var(--mnemo-editor-meta)',
     },
+    '.cm-wikilink-muted': {
+      color: 'var(--mnemo-editor-meta)',
+      fontSize: '0.92em',
+    },
+    '.cm-wikilink-pipe': {
+      color: 'var(--mnemo-editor-meta)',
+      padding: '0 1px',
+    },
     '.cm-scroller': {
       overflow: 'auto',
     },
-    '.cm-scroller::-webkit-scrollbar': { width: '6px' },
-    '.cm-scroller::-webkit-scrollbar-track': { background: 'transparent' },
-    '.cm-scroller::-webkit-scrollbar-thumb': {
-      background: 'var(--mnemo-editor-scrollbar-thumb)',
-      borderRadius: '3px',
-    },
-    '.cm-scroller::-webkit-scrollbar-thumb:hover': {
-      background: 'var(--mnemo-editor-scrollbar-thumb-hover)',
-    },
+    /* Scrollbar chrome lives in styles.css (.cm-scroller) for WebKit + Firefox, semi-transparent overlay */
     '.cm-selectionMatch': {
       backgroundColor: 'var(--mnemo-editor-selection-match-bg)',
     },
