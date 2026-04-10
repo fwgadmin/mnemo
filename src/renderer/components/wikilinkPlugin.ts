@@ -1,29 +1,49 @@
 import { ViewPlugin, Decoration, DecorationSet, MatchDecorator, ViewUpdate } from '@codemirror/view';
 import type { EditorView } from '@codemirror/view';
+import { parseWikilinkInner } from '../../shared/wikilinks';
 
-/** Regex matching [[wikilink]] syntax */
 const wikilinkRe = /\[\[([^\]]+)\]\]/g;
 
-/** MatchDecorator that finds all [[wikilinks]] and applies decorations */
 const wikilinkMatcher = new MatchDecorator({
   regexp: wikilinkRe,
-  decoration: (match) => {
-    return Decoration.mark({
-      class: 'cm-wikilink-wrapper',
-      tagName: 'span',
-    });
-  },
   decorate: (add, from, to, match) => {
-    // Decorate the opening [[
+    const inner = match[1];
+    const innerStart = from + 2;
+    const innerEnd = to - 2;
+    const { target } = parseWikilinkInner(inner);
+
     add(from, from + 2, Decoration.mark({ class: 'cm-wikilink-bracket', tagName: 'span' }));
-    // Decorate the inner text (the actual link target)
-    add(from + 2, to - 2, Decoration.mark({ class: 'cm-wikilink', tagName: 'span' }));
-    // Decorate the closing ]]
-    add(to - 2, to, Decoration.mark({ class: 'cm-wikilink-bracket', tagName: 'span' }));
+
+    const pipeIdx = inner.indexOf('|');
+    if (pipeIdx !== -1) {
+      const pipePos = innerStart + pipeIdx;
+      add(innerStart, pipePos, Decoration.mark({ class: 'cm-wikilink-muted', tagName: 'span' }));
+      add(pipePos, pipePos + 1, Decoration.mark({ class: 'cm-wikilink-pipe', tagName: 'span' }));
+      add(
+        pipePos + 1,
+        innerEnd,
+        Decoration.mark({
+          class: 'cm-wikilink',
+          tagName: 'span',
+          attributes: { 'data-wikilink-target': target },
+        }),
+      );
+    } else {
+      add(
+        innerStart,
+        innerEnd,
+        Decoration.mark({
+          class: 'cm-wikilink',
+          tagName: 'span',
+          attributes: { 'data-wikilink-target': target },
+        }),
+      );
+    }
+
+    add(innerEnd, to, Decoration.mark({ class: 'cm-wikilink-bracket', tagName: 'span' }));
   },
 });
 
-/** ViewPlugin that maintains wikilink decorations */
 const wikilinkPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -36,11 +56,9 @@ const wikilinkPlugin = ViewPlugin.fromClass(
   },
   {
     decorations: (v) => v.decorations,
-  }
+  },
 );
 
-/** Convenience function to add wikilink decorations to an editor */
 export function wikilinkDecorations() {
   return wikilinkPlugin;
 }
-

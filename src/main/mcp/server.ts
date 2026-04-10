@@ -1,7 +1,7 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { INoteStore, MnemoUiPreferences } from '../../shared/types';
-import { mergeAndWriteUiPreferences, readUiPreferencesFromDisk } from '../uiPreferences';
+import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from '../uiPreferences';
 
 /**
  * Creates and configures the Mnemo MCP server.
@@ -34,14 +34,14 @@ export function createMcpServer(store: INoteStore): McpServer {
     'mnemo://preferences',
     {
       description:
-        'Mnemo UI preferences (theme, layout, sidebar, category colors, IDE tabs) — same as ui-preferences.json',
+        'Mnemo UI preferences (theme, layout, Markdown CSS overrides, category colors, IDE tabs, …) — merged from disk + Turso app_kv when connected; same shape as ui-preferences.json',
       mimeType: 'application/json',
     },
     async () => ({
       contents: [{
         uri: 'mnemo://preferences',
         mimeType: 'application/json',
-        text: JSON.stringify(readUiPreferencesFromDisk(), null, 2),
+        text: JSON.stringify(await readUiPreferencesMerged(store), null, 2),
       }],
     }),
   );
@@ -194,25 +194,27 @@ export function createMcpServer(store: INoteStore): McpServer {
     grouped: z.boolean().optional(),
     categoryScopeSubtree: z.boolean().optional(),
     categoryColors: z.record(z.string(), z.string()).optional(),
-    ideTabIds: z.array(z.string()).optional(),
+    markdownGlobal: z.record(z.string(), z.string()).optional(),
+    markdownByTheme: z.record(z.string(), z.record(z.string(), z.string())).optional(),
+    ideTabIds: z.array(z.string().uuid()).optional(),
   };
 
   mcp.tool(
     'get_ui_preferences',
-    'Read Mnemo UI preferences: theme, layout override, sidebar and editor toggles, note list grouping, category folder colors, IDE tab order. Same JSON as mnemo://preferences and ui-preferences.json beside config.',
+    'Read merged UI preferences (disk + Turso app_kv when using cloud DB): theme, layout, Markdown CSS overrides (markdownGlobal / markdownByTheme), category colors, IDE tab order, etc. Same JSON as mnemo://preferences.',
     {},
     async () => {
-      const prefs = readUiPreferencesFromDisk();
+      const prefs = await readUiPreferencesMerged(store);
       return { content: [{ type: 'text', text: JSON.stringify(prefs, null, 2) }] };
     },
   );
 
   mcp.tool(
     'set_ui_preferences',
-    'Merge partial UI preferences into ui-preferences.json (omit fields you do not want to change). The desktop app reloads from disk on next start; if it is open, preferences may sync when the app saves.',
+    'Merge partial UI preferences into ui-preferences.json and mirror the full merged JSON to Turso app_kv (key ui_preferences) when the store is Turso. Markdown map keys must be valid (--mnemo-editor-*, --mnemo-syntax-*).',
     uiPrefFields,
     async (args) => {
-      const merged = mergeAndWriteUiPreferences(args as Partial<MnemoUiPreferences>);
+      const merged = await mergeAndWriteUiPreferencesAsync(args as Partial<MnemoUiPreferences>, undefined, store);
       return { content: [{ type: 'text', text: JSON.stringify(merged, null, 2) }] };
     },
   );

@@ -17,7 +17,8 @@ import type { INoteStore, AppConfig, SyncResult, MnemoUiPreferences } from '../s
 import { IPC } from '../shared/types';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
-import { mergeAndWriteUiPreferences, readUiPreferencesFromDisk } from './uiPreferences';
+import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from './uiPreferences';
+import { getRemoteLibsqlCredentials } from './userConfig';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const matter = require('gray-matter');
@@ -179,9 +180,8 @@ function writeConfig(cfg: AppConfig): void {
 
 async function initStore(): Promise<void> {
   const cfg = readConfig();
-  // config.json takes priority; fall back to .env (dev mode)
-  const tursoUrl   = cfg.tursoUrl   || process.env['MNEMO_TURSO_URL'];
-  const tursoToken = cfg.tursoToken || process.env['MNEMO_TURSO_TOKEN'];
+  // config.json + env — Turso Cloud, self-hosted libSQL/sqld, or any @libsql/client endpoint
+  const { url: tursoUrl, token: tursoToken } = getRemoteLibsqlCredentials(cfg);
   if (tursoUrl && tursoToken) {
     const turso = new TursoNoteStore(tursoUrl, tursoToken);
     await turso.initSchema();
@@ -207,7 +207,6 @@ function createWindow(): BrowserWindow {
     title: 'Mnemo',
     icon: appIcon.isEmpty() ? undefined : appIcon,
     backgroundColor: '#0f0f0f',
-    autoHideMenuBar: true,
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,
@@ -231,6 +230,7 @@ function buildMenu(mainWindow: BrowserWindow): void {
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: send('save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: send('save-as') },
+        { label: 'Format Note', accelerator: 'Alt+Shift+F', click: send('format-markdown') },
         { type: 'separator' },
         { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: send('open') },
         { type: 'separator' },
@@ -241,12 +241,15 @@ function buildMenu(mainWindow: BrowserWindow): void {
       label: 'View',
       submenu: [
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: send('toggle-sidebar') },
+        { label: 'Next Note', accelerator: 'Ctrl+Tab', click: send('note-next') },
+        { label: 'Previous Note', accelerator: 'Ctrl+Shift+Tab', click: send('note-prev') },
         { label: 'Toggle Note Header', accelerator: 'CmdOrCtrl+Shift+H', click: send('toggle-header') },
         { label: 'Toggle Line Numbers', accelerator: 'CmdOrCtrl+Shift+L', click: send('toggle-line-numbers') },
         { label: 'Toggle Note Index Numbers', accelerator: 'CmdOrCtrl+Shift+N', click: send('toggle-note-refs') },
         { type: 'separator' },
         { label: 'Toggle Graph', accelerator: 'CmdOrCtrl+G', click: send('toggle-graph') },
         { label: 'Markdown Helper', accelerator: 'CmdOrCtrl+M', click: send('toggle-markdown-help') },
+        { label: 'Markdown Preview', accelerator: 'CmdOrCtrl+Shift+V', click: send('toggle-markdown-preview') },
       ],
     },
     {
@@ -264,6 +267,15 @@ function buildMenu(mainWindow: BrowserWindow): void {
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/** Native menu is only used on macOS (system menu bar). On Windows/Linux we omit it so Alt does not reveal a duplicate menu bar; shortcuts come from the renderer. */
+function applyApplicationMenu(mainWindow: BrowserWindow): void {
+  if (process.platform === 'darwin') {
+    buildMenu(mainWindow);
+  } else {
+    Menu.setApplicationMenu(null);
+  }
 }
 
 function registerIpcHandlers(): void {
@@ -366,7 +378,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.CONFIG_SYNC_LOCAL, async (): Promise<SyncResult> => {
     if (!(store instanceof TursoNoteStore)) {
-      throw new Error('Not connected to Turso — switch to Turso first.');
+      throw new Error('Not connected to a remote libSQL database — configure one in Settings first.');
     }
     const dbPath = path.join(app.getPath('userData'), 'mnemo.db');
     if (!fs.existsSync(dbPath)) return { synced: 0, skipped: 0 };
@@ -400,10 +412,12 @@ function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.UI_PREFERENCES_READ, () => readUiPreferencesFromDisk(app.getPath('userData')));
+  ipcMain.handle(IPC.UI_PREFERENCES_READ, () =>
+    readUiPreferencesMerged(store, app.getPath('userData')),
+  );
 
-  ipcMain.handle(IPC.UI_PREFERENCES_SAVE, (_event, partial: Partial<MnemoUiPreferences>) => {
-    mergeAndWriteUiPreferences(partial, app.getPath('userData'));
+  ipcMain.handle(IPC.UI_PREFERENCES_SAVE, async (_event, partial: Partial<MnemoUiPreferences>) => {
+    await mergeAndWriteUiPreferencesAsync(partial, app.getPath('userData'), store);
     return true;
   });
 }
@@ -416,7 +430,7 @@ app.whenReady().then(async () => {
   mcpServer = createMcpServer(store);
 
   const mainWindow = createWindow();
-  buildMenu(mainWindow);
+  applyApplicationMenu(mainWindow);
 
   // Send any externally-opened file once the renderer has fully loaded
   mainWindow.webContents.once('did-finish-load', () => {
@@ -428,7 +442,7 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       const w = createWindow();
-      buildMenu(w);
+      applyApplicationMenu(w);
     }
   });
 });

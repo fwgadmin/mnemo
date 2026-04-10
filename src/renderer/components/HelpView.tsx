@@ -112,7 +112,7 @@ export default function HelpView({ onClose }: HelpViewProps) {
                 a category — so uncategorized notes stay visible when you start using folders.
               </li>
               <li>
-                In grouped view or IDE Solution Explorer, right-click a category header for{' '}
+                In grouped view or IDE Explorer, right-click a category header for{' '}
                 <Mono>Rename</Mono>, <Mono>Promote</Mono>, <Mono>Demote</Mono>, and folder colors (see
                 Settings for details).
               </li>
@@ -141,6 +141,11 @@ export default function HelpView({ onClose }: HelpViewProps) {
               <Key>Ctrl+B</Key> or <Mono>View › Toggle Sidebar</Mono>. When hidden, hover the
               left edge to reveal a re-open strip.
             </KV>
+            <KV label="Switch notes">
+              <Key>Ctrl+Tab</Key> / <Key>Ctrl+Shift+Tab</Key>, or <Key>Ctrl+Page Down</Key> / <Key>Ctrl+Page Up</Key>, move
+              through the current note list (search results or full vault). <Key>Alt+↑</Key> / <Key>Alt+↓</Key> do the same when focus is
+              not in an input or the editor. Also under <Mono>View › Next/Previous Note</Mono>.
+            </KV>
             <KV label="Toggle Note Header">
               <Key>Ctrl+Shift+H</Key> or <Mono>View › Toggle Note Header</Mono> sets the default for all notes. For a single note,
               right-click it in the sidebar and choose <Mono>Hide editor header</Mono> or{' '}
@@ -148,8 +153,8 @@ export default function HelpView({ onClose }: HelpViewProps) {
               menu when the title field is hidden.
             </KV>
             <KV label="Themes &amp; layout">
-              <Key>Ctrl+,</Key> opens <Mono>Settings</Mono>: choose a theme (including dark/light with top bar or IDE tabs),
-              and override layout (classic sidebar, top navigation, or IDE tabs). Command palette (<Key>Ctrl+P</Key>){' '}
+              <Key>Ctrl+,</Key> opens <Mono>Settings</Mono>: choose a theme (including dark/light with top bar or IDE layout),
+              and override layout (classic sidebar, top navigation, or IDE). Command palette (<Key>Ctrl+P</Key>){' '}
               includes layout commands when you type <Mono>&gt;</Mono>.
             </KV>
             <KV label="Markdown helper">
@@ -171,7 +176,7 @@ export default function HelpView({ onClose }: HelpViewProps) {
                 rows={[
                   ['mnemo://notes', 'JSON list of all notes'],
                   ['mnemo://notes/{id}', 'Single note content as Markdown'],
-                  ['mnemo://preferences', 'UI preferences JSON (theme, layout, grouped categories, category colors, IDE tab order) — same as Settings / ui-preferences.json'],
+                  ['mnemo://preferences', 'UI preferences JSON (theme, layout, grouped categories, category colors) — same as Settings / ui-preferences.json'],
                 ]}
               />
             </SubSection>

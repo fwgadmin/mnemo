@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AppConfig, SyncResult } from '../../shared/types';
 import { THEMES, type LayoutPreset } from '../theme/themes';
+import MarkdownEditorSettings from './MarkdownEditorSettings';
 
 type LayoutOverride = 'inherit' | LayoutPreset;
 
@@ -13,6 +14,10 @@ interface Props {
   onLayoutOverrideChange: (v: LayoutOverride) => void;
   showNoteRefs: boolean;
   onShowNoteRefsChange: (v: boolean) => void;
+  markdownGlobal: Record<string, string>;
+  markdownByTheme: Record<string, Record<string, string>>;
+  onMarkdownGlobalChange: (v: Record<string, string>) => void;
+  onMarkdownThemeChange: (themeId: string, v: Record<string, string>) => void;
 }
 
 export default function SettingsView({
@@ -24,7 +29,12 @@ export default function SettingsView({
   onLayoutOverrideChange,
   showNoteRefs,
   onShowNoteRefsChange,
+  markdownGlobal,
+  markdownByTheme,
+  onMarkdownGlobalChange,
+  onMarkdownThemeChange,
 }: Props) {
+  const [markdownScope, setMarkdownScope] = useState<'global' | 'theme'>('global');
   const lightUi = themeId.startsWith('light');
   const successMsgClass = lightUi ? 'text-emerald-800' : 'text-emerald-300';
 
@@ -43,8 +53,8 @@ export default function SettingsView({
         window.mnemo.config.read(),
         window.mnemo.config.storeType(),
       ]);
-      setTursoUrl(cfg.tursoUrl ?? '');
-      setTursoToken(cfg.tursoToken ?? '');
+      setTursoUrl(cfg.tursoUrl ?? cfg.libsqlUrl ?? '');
+      setTursoToken(cfg.tursoToken ?? cfg.libsqlAuthToken ?? '');
       setStoreType(type);
     })();
   }, []);
@@ -60,7 +70,13 @@ export default function SettingsView({
       await window.mnemo.config.save(cfg);
       const type = await window.mnemo.config.storeType();
       setStoreType(type);
-      setStatus({ ok: true, msg: type === 'turso' ? 'Connected to Turso — loading notes…' : 'Saved — using local SQLite.' });
+      setStatus({
+        ok: true,
+        msg:
+          type === 'turso'
+            ? 'Connected to remote libSQL database — loading notes…'
+            : 'Saved — using local SQLite.',
+      });
       onSaved?.();
       // Close settings so the reloaded note list is immediately visible
       setTimeout(() => onClose(), 800);
@@ -117,7 +133,7 @@ export default function SettingsView({
               ))}
             </select>
             <p className="text-[10px] text-mnemo-dim mt-2 leading-relaxed">
-              Themes use CSS variables; &quot;Dark (top bar)&quot; uses horizontal navigation; &quot;Dark/Light (IDE tabs)&quot; adds a tab row above the editor. You can override layout below.
+              Themes use CSS variables; &quot;Dark (top bar)&quot; uses horizontal navigation; &quot;Dark/Light (IDE)&quot; uses a wide editor column with the sidebar. You can override layout below.
             </p>
           </div>
           <div>
@@ -131,7 +147,7 @@ export default function SettingsView({
               <option value="inherit">Match theme</option>
               <option value="sidebar">Classic sidebar</option>
               <option value="top">Top navigation</option>
-              <option value="ide">IDE tabs (sidebar + note tabs)</option>
+              <option value="ide">IDE (sidebar + editor)</option>
             </select>
           </div>
         </div>
@@ -155,14 +171,32 @@ export default function SettingsView({
         </label>
         <p className="text-xs text-mnemo-dim mt-4 leading-relaxed">
           <span className="text-mnemo-muted">Categories:</span>{' '}
-          In the sidebar, <strong>right-click</strong> a category header (grouped view or IDE Solution Explorer) for{' '}
+          In the sidebar, <strong>right-click</strong> a category header (grouped view or IDE Explorer) for{' '}
           <strong>Rename</strong>, <strong>Promote</strong> (move up one level), <strong>Demote</strong> (nest under a
           parent — including moving <strong>General</strong> under another folder), <strong>suggested colors</strong>, a{' '}
           <strong>custom color</strong> control, or <strong>Clear folder color</strong>. Top-level folders line up
           flat; only nested paths are indented. Subfolders inherit a
-          parent color until you set their own. Colors apply to folder labels and note titles; IDE tabs use the same
-          accent for the tab title.
+          parent color until you set their own. Colors apply to folder labels and note titles; the IDE layout uses the same
+          accent on the active note in the list.
         </p>
+      </section>
+
+      <section className="mb-8 max-w-2xl">
+        <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Markdown appearance</h2>
+        <MarkdownEditorSettings
+          scope={markdownScope}
+          onScopeChange={setMarkdownScope}
+          themeName={(THEMES.find(t => t.id === themeId) ?? THEMES[0])!.name}
+          values={markdownScope === 'global' ? markdownGlobal : (markdownByTheme[themeId] ?? {})}
+          onValuesChange={next => {
+            if (markdownScope === 'global') onMarkdownGlobalChange(next);
+            else onMarkdownThemeChange(themeId, next);
+          }}
+          onReset={() => {
+            if (markdownScope === 'global') onMarkdownGlobalChange({});
+            else onMarkdownThemeChange(themeId, {});
+          }}
+        />
       </section>
 
       {/* Connection status badge — light themes need darker green on solid tint for WCAG contrast */}
@@ -175,16 +209,21 @@ export default function SettingsView({
             : 'bg-mnemo-panel-elevated text-mnemo-muted border border-mnemo-border'
         }`}>
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${storeType === 'turso' ? (lightUi ? 'bg-emerald-600' : 'bg-emerald-400') : 'bg-mnemo-dim'}`} />
-          {storeType === 'turso' ? 'Connected to Turso' : 'Local SQLite'}
+          {storeType === 'turso' ? 'Remote libSQL' : 'Local SQLite'}
         </div>
       )}
 
       <section className="mb-8 max-w-lg">
-        <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Turso Cloud Sync</h2>
+        <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Remote database</h2>
         <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
-          Connect to a Turso database to sync notes across devices and share with MCP clients.
+          Mnemo uses the libSQL protocol (same stack as Turso). You can use{' '}
+          <strong className="text-mnemo-muted">Turso Cloud</strong>, a{' '}
+          <strong className="text-mnemo-muted">self-hosted libSQL / sqld</strong> instance on your VPS, or any
+          endpoint compatible with <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">@libsql/client</code>.
           Leave blank to use local SQLite only. Credentials are stored in{' '}
-          <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">%APPDATA%\Mnemo\config.json</code>.
+          <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">%APPDATA%\Mnemo\config.json</code>{' '}
+          as <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">tursoUrl</code> /{' '}
+          <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">tursoToken</code> (legacy names; values work for any libSQL host).
         </p>
 
         <div className="space-y-4">
@@ -195,14 +234,14 @@ export default function SettingsView({
               type="url"
               value={tursoUrl}
               onChange={e => setTursoUrl(e.target.value)}
-              placeholder="libsql://your-db.turso.io"
+              placeholder="libsql://….turso.io or https://db.example.com"
               className="w-full bg-mnemo-panel-elevated border border-mnemo-border rounded px-3 py-2 text-sm text-mnemo-text placeholder-mnemo-dim focus:outline-none focus:border-mnemo-border-strong font-mono"
               spellCheck={false}
             />
           </div>
 
           <div>
-            <label className="block text-xs text-mnemo-dim mb-1.5" htmlFor="turso-token">Auth Token</label>
+            <label className="block text-xs text-mnemo-dim mb-1.5" htmlFor="turso-token">Auth token</label>
             <div className="relative">
               <input
                 id="turso-token"
@@ -257,12 +296,12 @@ export default function SettingsView({
         <section className="mb-8 max-w-lg">
           <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Import Local Notes</h2>
           <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
-            Copy notes from your offline local database into Turso. Existing Turso notes are kept;
+            Copy notes from your offline local database into the remote database. Existing remote notes are kept;
             local notes are only written if they are newer. Safe to run more than once.
           </p>
           {syncResult && (
             <p className={`text-xs mb-3 ${successMsgClass}`}>
-              Done — {syncResult.synced} note{syncResult.synced !== 1 ? 's' : ''} synced to Turso.
+              Done — {syncResult.synced} note{syncResult.synced !== 1 ? 's' : ''} synced to remote database.
             </p>
           )}
           <button
@@ -282,21 +321,44 @@ export default function SettingsView({
             disabled={syncing || saving}
             className="px-4 py-1.5 bg-mnemo-panel-elevated hover:bg-mnemo-hover border border-mnemo-border-strong rounded text-sm text-mnemo-text transition-colors disabled:opacity-50"
           >
-            {syncing ? 'Syncing…' : 'Sync local notes to Turso'}
+            {syncing ? 'Syncing…' : 'Sync local notes to remote database'}
           </button>
         </section>
       )}
 
-      <section className="max-w-lg">
-        <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Getting Started with Turso</h2>
-        <ol className="text-xs text-mnemo-dim space-y-2 leading-relaxed list-decimal list-inside">
-          <li>Install the Turso CLI: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">npm i -g @turso/cli</code></li>
-          <li>Sign up / log in: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">turso auth signup</code></li>
-          <li>Create a database: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">turso db create mnemo</code></li>
-          <li>Get the URL: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">turso db show mnemo --url</code></li>
-          <li>Create a token: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">turso db tokens create mnemo</code></li>
-          <li>Paste both above and click <strong className="text-mnemo-muted">Save &amp; Reconnect</strong>.</li>
-        </ol>
+      <section className="max-w-lg space-y-6">
+        <div>
+          <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Turso Cloud (hosted)</h2>
+          <ol className="text-xs text-mnemo-dim space-y-2 leading-relaxed list-decimal list-inside">
+            <li>Install the Turso CLI: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">npm i -g @turso/cli</code></li>
+            <li>Sign up / log in: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">turso auth signup</code></li>
+            <li>Create a database: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">turso db create mnemo</code></li>
+            <li>Get the URL: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">turso db show mnemo --url</code></li>
+            <li>Create a token: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">turso db tokens create mnemo</code></li>
+            <li>Paste both above and click <strong className="text-mnemo-muted">Save &amp; Reconnect</strong>.</li>
+          </ol>
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-3">Self-hosted (VPS / your cloud)</h2>
+          <p className="text-xs text-mnemo-dim leading-relaxed mb-3">
+            Run a libSQL-compatible server (for example{' '}
+            <a
+              href="https://github.com/tursodatabase/libsql"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-mnemo-accent hover:underline"
+            >
+              libSQL / sqld
+            </a>
+            ) with TLS, expose the HTTP/libSQL endpoint, then paste that URL and a valid JWT or auth token here.
+            You can also set <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">libsqlUrl</code> /{' '}
+            <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">libsqlAuthToken</code> in{' '}
+            <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">config.json</code> instead of the Turso-named keys.
+            Environment: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">MNEMO_LIBSQL_URL</code> and{' '}
+            <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">MNEMO_LIBSQL_AUTH_TOKEN</code> (or the existing{' '}
+            <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">MNEMO_TURSO_*</code> names).
+          </p>
+        </div>
       </section>
     </div>
   );

@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { clampFixedContextMenu } from '../fixedMenuPosition';
 
 export type FolderColorMenuState = { path: string; x: number; y: number } | null;
 
@@ -52,6 +53,15 @@ export default function CategoryFolderColorMenu({
 }: CategoryFolderColorMenuProps) {
   const showRename = Boolean(onRequestRename);
   const menuRef = useRef<HTMLDivElement>(null);
+  const fallbackHex = '#6366f1';
+  const [customDraftHex, setCustomDraftHex] = useState(() =>
+    normalizePickerHex(currentColorHex ?? null, fallbackHex),
+  );
+
+  useEffect(() => {
+    if (!state) return;
+    setCustomDraftHex(normalizePickerHex(currentColorHex ?? null, fallbackHex));
+  }, [state?.path, currentColorHex, state]);
 
   useEffect(() => {
     if (!state) return;
@@ -73,13 +83,24 @@ export default function CategoryFolderColorMenu({
     };
   }, [state, onClose]);
 
+  const [screenPos, setScreenPos] = useState({ left: 0, top: 0 });
+
+  useLayoutEffect(() => {
+    if (!state) return;
+    setScreenPos({ left: state.x, top: state.y });
+    const el = menuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setScreenPos(clampFixedContextMenu(state.x, state.y, width, height));
+  }, [state]);
+
   if (!state) return null;
 
   return (
     <div
       ref={menuRef}
       className="fixed z-[100] min-w-[240px] max-w-[min(100vw-16px,320px)] bg-mnemo-panel-elevated border border-mnemo-border rounded-md shadow-lg py-1"
-      style={{ left: state.x, top: state.y }}
+      style={{ left: screenPos.left, top: screenPos.top }}
       onContextMenu={e => e.preventDefault()}
     >
       {showRename && (
@@ -150,17 +171,48 @@ export default function CategoryFolderColorMenu({
       )}
       <div className="px-2.5 py-2 border-t border-mnemo-border/80">
         <div className="text-[10px] uppercase tracking-wide text-mnemo-dim mb-1.5">Custom color</div>
+        <p className="text-[10px] text-mnemo-dim mb-2 leading-snug">
+          Choose a color in the picker, then apply — changes are not saved until you click Apply.
+        </p>
         <input
           type="color"
           aria-label="Pick a custom folder color"
           className="h-9 w-full cursor-pointer rounded border border-mnemo-border/70 bg-mnemo-panel"
-          value={normalizePickerHex(currentColorHex ?? null, '#6366f1')}
+          value={customDraftHex}
           onMouseDown={e => e.stopPropagation()}
           onChange={e => {
             e.stopPropagation();
-            onPickCustomColor(e.target.value);
+            setCustomDraftHex(e.target.value);
           }}
         />
+        <div className="mt-2 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            className="px-2.5 py-1 rounded text-[11px] font-medium border border-mnemo-border text-mnemo-muted hover:bg-mnemo-hover"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => {
+              e.stopPropagation();
+              setCustomDraftHex(normalizePickerHex(currentColorHex ?? null, fallbackHex));
+            }}
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            disabled={
+              customDraftHex.toLowerCase() ===
+              normalizePickerHex(currentColorHex ?? null, fallbackHex).toLowerCase()
+            }
+            className="px-2.5 py-1 rounded text-[11px] font-medium bg-mnemo-accent text-mnemo-bg-app hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => {
+              e.stopPropagation();
+              onPickCustomColor(customDraftHex);
+            }}
+          >
+            Apply
+          </button>
+        </div>
       </div>
       {canClear && (
         <button

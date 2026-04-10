@@ -19,6 +19,7 @@ Desktop.ini
 
 # IDE
 .vscode/
+.cursor/
 *.swp
 *.swo
 

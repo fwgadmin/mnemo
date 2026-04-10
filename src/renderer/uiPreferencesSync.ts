@@ -16,14 +16,15 @@ function readLayoutOverride(): MnemoUiPreferences['layoutOverride'] {
   return 'inherit';
 }
 
-function readIdeTabIds(): string[] {
+function readIdeTabIds(): string[] | undefined {
   try {
     const raw = localStorage.getItem('mnemo.ideTabIds');
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    if (!raw) return undefined;
+    const p = JSON.parse(raw) as unknown;
+    if (!Array.isArray(p)) return undefined;
+    return p.filter((x): x is string => typeof x === 'string');
   } catch {
-    return [];
+    return undefined;
   }
 }
 

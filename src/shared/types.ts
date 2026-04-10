@@ -71,10 +71,20 @@ export interface SyncResult {
   skipped: number;
 }
 
-/** Cloud/sync configuration stored in userData/config.json */
+/**
+ * Remote database credentials (userData/config.json).
+ * Mnemo uses @libsql/client — same protocol for Turso Cloud, self-hosted libSQL/sqld on a VPS, etc.
+ * `tursoUrl` / `tursoToken` are the canonical keys; `libsql*` are optional aliases for clarity.
+ */
 export interface AppConfig {
+  /** libSQL database URL (Turso `libsql://…`, or `https://…` for many self-hosted servers) */
   tursoUrl?: string;
+  /** Bearer / JWT token for the remote database */
   tursoToken?: string;
+  /** Alias of tursoUrl — merged at startup; use either pair */
+  libsqlUrl?: string;
+  /** Alias of tursoToken */
+  libsqlAuthToken?: string;
 }
 
 /** GUI layout override (Settings) — mirrors renderer */
@@ -83,6 +93,7 @@ export type LayoutOverridePreference = 'inherit' | 'sidebar' | 'top' | 'ide';
 /**
  * Customizable UI state shared by the Electron app (via IPC), on-disk JSON
  * (`ui-preferences.json` next to config), and MCP tools (`get_ui_preferences` / `set_ui_preferences`).
+ * When the app uses a remote libSQL (Turso) store, the merged snapshot is also written to `app_kv` under key `ui_preferences`.
  */
 export interface MnemoUiPreferences {
   themeId?: string;
@@ -97,7 +108,13 @@ export interface MnemoUiPreferences {
   categoryScopeSubtree?: boolean;
   /** Folder path → #hex color */
   categoryColors?: Record<string, string>;
-  /** IDE layout: open tab order */
+  /**
+   * Markdown editor appearance: CSS custom properties (--mnemo-editor-*, --mnemo-syntax-*).
+   * `markdownGlobal` applies to every theme; `markdownByTheme[themeId]` merges on top for that theme.
+   */
+  markdownGlobal?: Record<string, string>;
+  markdownByTheme?: Record<string, Record<string, string>>;
+  /** Open note tab IDs in IDE layout (order preserved) */
   ideTabIds?: string[];
 }
 
@@ -134,7 +151,7 @@ export const IPC = {
   FILE_SAVE_AS: 'file:saveAs',
   FILE_OPEN: 'file:open',
   FILE_OPENED_EXTERNALLY: 'file:openedExternally',
-  // Config (Turso credentials, stored in userData/config.json)
+  // Config (remote libSQL URL + token; stored in userData/config.json)
   CONFIG_READ: 'config:read',
   CONFIG_SAVE: 'config:save',
   CONFIG_STORE_TYPE: 'config:storeType',

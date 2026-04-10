@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { Fragment, useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import type { NoteListItem } from '../../shared/types';
 import {
   GENERAL_PATH,
@@ -50,6 +50,10 @@ export interface SidebarProps {
   categoryColors?: Record<string, string>;
   /** Explicit colors + theme-contrast auto + General fallback — use for stripes and labels. */
   resolvedCategoryColors?: Record<string, string>;
+  /** Panel background for category stripe border (vs label) — from active theme. */
+  themePanelBg?: string;
+  /** Accent for stripe hue when label color is achromatic gray. */
+  themeAccent?: string;
   /** Theme-based suggested swatches for folder color menu. */
   categoryColorSwatches?: string[];
   onSetCategoryColor?: (path: string, color: string | null) => void;
@@ -97,6 +101,13 @@ export default function Sidebar({
   const [categoryEditId, setCategoryEditId] = useState<string | null>(null);
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [showJumpSection, setShowJumpSection] = useState(() => {
+    try {
+      return localStorage.getItem('mnemo.showJumpSection') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const searchRef = useRef<HTMLInputElement>(null);
   const [folderColorMenu, setFolderColorMenu] = useState<FolderColorMenuState>(null);
   const [folderRename, setFolderRename] = useState<{ path: string; x: number; y: number } | null>(null);
@@ -224,6 +235,7 @@ export default function Sidebar({
 
   const handleDragOver = useCallback((e: React.DragEvent, category: string) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setDragOverCategory(category);
   }, []);
@@ -231,6 +243,7 @@ export default function Sidebar({
   const handleDrop = useCallback(
     (e: React.DragEvent, category: string) => {
       e.preventDefault();
+      e.stopPropagation();
       setDragOverCategory(null);
       const noteId = e.dataTransfer.getData('text/plain');
       if (!noteId) return;
@@ -258,6 +271,8 @@ export default function Sidebar({
   const renderNoteItem = (note: NoteListItem, hideCategory = false, treeDepth?: number) => {
     const notePath = categoryPathFromTags(note.tags, vaultNotes);
     const rowAccent = colorForCategoryPath(notePath, resolvedCategoryColors);
+    /** Under grouped / tree, category color belongs on folder headers only — notes stay neutral for contrast with headers. */
+    const useAccentOnTitle = !hideCategory;
     const treeIndent =
       treeDepth !== undefined && treeDepth > 0 ? { paddingLeft: `${4 + treeDepth * 14}px` } : undefined;
     const mxClass = treeDepth !== undefined ? 'mx-0' : 'mx-1';
@@ -280,13 +295,13 @@ export default function Sidebar({
         `}
         style={treeIndent}
       >
-        <div className="font-medium truncate text-xs">
+        <div className="font-normal truncate text-[13px] leading-snug">
           {showNoteRefs && (
-            <span className="text-mnemo-dim mr-1.5 tabular-nums">{note.ref}</span>
+            <span className="text-mnemo-dim mr-1.5 tabular-nums text-xs">{note.ref}</span>
           )}
           <span
             className="truncate"
-            style={rowAccent ? { color: rowAccent } : undefined}
+            style={useAccentOnTitle && rowAccent ? { color: rowAccent } : undefined}
           >
             {note.title || 'Untitled'}
           </span>
@@ -414,8 +429,8 @@ export default function Sidebar({
     <div className="flex items-center justify-between px-4 py-3 border-b border-mnemo-border">
       {layout === 'ide' ? (
         <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-mnemo-dim">Solution Explorer</div>
-          <div className="text-xs font-semibold tracking-wide text-mnemo-muted truncate">MNEMO</div>
+          <div className="text-xs font-semibold tracking-wide text-mnemo-muted truncate leading-tight">MNEMO</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-mnemo-dim mt-0.5">Explorer</div>
         </div>
       ) : (
         <span className="text-sm font-semibold tracking-wide text-mnemo-muted">MNEMO</span>
@@ -438,6 +453,29 @@ export default function Sidebar({
           title="New Note"
         >
           +
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setShowJumpSection(v => {
+              const next = !v;
+              try {
+                localStorage.setItem('mnemo.showJumpSection', String(next));
+              } catch {
+                /* ignore quota */
+              }
+              return next;
+            });
+          }}
+          className={`w-6 h-6 flex items-center justify-center rounded text-xs transition-colors cursor-pointer ${
+            showJumpSection
+              ? 'bg-mnemo-active text-mnemo-accent'
+              : 'hover:bg-mnemo-hover text-mnemo-dim hover:text-mnemo-muted'
+          }`}
+          title={showJumpSection ? 'Hide category jump' : 'Show category jump'}
+          aria-pressed={showJumpSection}
+        >
+          ⌖
         </button>
         {(layout === 'sidebar' || layout === 'top' || layout === 'ide') && (
           <button
@@ -486,7 +524,7 @@ export default function Sidebar({
         notesByPath={notesByPath}
         activeNoteId={activeNoteId}
         vaultNotes={vaultNotes}
-        categoryColors={resolvedCategoryColors}
+                categoryColors={resolvedCategoryColors}
         onFolderContextMenu={openFolderContextMenu}
         dragOverCategory={dragOverCategory}
         onDragOver={handleDragOver}
@@ -508,9 +546,18 @@ export default function Sidebar({
                 : splitPath(path).join(' / ') || node?.segment || path;
           const isDrag = dragOverCategory === path;
           const stripe = colorForCategoryPath(path, resolvedCategoryColors);
+          /** Stripe is tuned for label contrast; left rule uses accent mix so it never reads as white on dark themes. */
+          const stripeBorder = stripe
+            ? `color-mix(in srgb, ${stripe} 42%, var(--mnemo-accent) 58%)`
+            : 'color-mix(in srgb, var(--mnemo-border) 82%, var(--mnemo-accent) 18%)';
           return (
             <div key={path}>
-              {idx > 0 && <div className="mx-3 my-2 border-t border-mnemo-border" aria-hidden />}
+              {idx > 0 && (
+                <div
+                  className="mx-3 my-2 border-t border-[color:var(--mnemo-sidebar-category-separator)]"
+                  aria-hidden
+                />
+              )}
               <div
                 role="group"
                 aria-label={`Category ${label}`}
@@ -522,25 +569,57 @@ export default function Sidebar({
                 }`}
               >
                 <div
-                  className="rounded-md bg-mnemo-category-bar/50"
-                  style={{ paddingLeft: 10 + depth * 10 }}
+                  className="rounded-md bg-mnemo-panel-elevated/80 border"
+                  style={{
+                    paddingLeft: 8 + depth * 10,
+                    borderColor: 'var(--mnemo-sidebar-category-edge)',
+                    borderLeftWidth: 3,
+                    borderLeftStyle: 'solid',
+                    borderLeftColor: stripeBorder,
+                  }}
                 >
                   <div
-                    className="flex items-center gap-2 py-1.5 pr-2 min-h-[28px] cursor-default"
+                    className="flex items-center gap-2 py-2 pr-2 min-h-[30px] cursor-default"
                     title="Right-click for folder actions"
                     onContextMenu={e => openFolderContextMenu(e, path)}
                   >
                     <span
-                      className={`text-[10px] font-semibold uppercase tracking-wide ${stripe ? '' : 'text-mnemo-muted'}`}
+                      className={`text-[11px] font-bold uppercase tracking-[0.06em] ${stripe ? '' : 'text-mnemo-muted'}`}
                       style={stripe ? { color: stripe } : undefined}
                     >
                       {label}
                     </span>
-                    <span className="text-[9px] text-mnemo-dim tabular-nums">{sectionNotes.length}</span>
+                    <span className="text-[10px] text-mnemo-dim tabular-nums font-medium">{sectionNotes.length}</span>
                   </div>
                 </div>
                 <div className="pt-0.5">
-                  {sectionNotes.map(n => renderNoteItem(n, true))}
+                  {sectionNotes.map((n, i) => (
+                    <Fragment key={n.id}>
+                      <div
+                        className={`mx-0.5 min-h-[6px] rounded-sm transition-colors ${
+                          dragOverCategory === path
+                            ? 'bg-mnemo-accent/20 ring-1 ring-mnemo-accent/40'
+                            : 'hover:bg-mnemo-hover/30'
+                        }`}
+                        onDragOver={e => handleDragOver(e, path)}
+                        onDrop={e => handleDrop(e, path)}
+                        onDragLeave={handleDragLeave}
+                        aria-hidden
+                      />
+                      {renderNoteItem(n, true)}
+                    </Fragment>
+                  ))}
+                  <div
+                    className={`mx-0.5 min-h-[6px] rounded-sm transition-colors ${
+                      dragOverCategory === path
+                        ? 'bg-mnemo-accent/20 ring-1 ring-mnemo-accent/40'
+                        : 'hover:bg-mnemo-hover/30'
+                    }`}
+                    onDragOver={e => handleDragOver(e, path)}
+                    onDrop={e => handleDrop(e, path)}
+                    onDragLeave={handleDragLeave}
+                    aria-hidden
+                  />
                 </div>
               </div>
             </div>
@@ -552,7 +631,7 @@ export default function Sidebar({
     );
 
   const notesPanel = (
-    <div className="flex-1 overflow-y-auto px-1 py-1 min-h-0">{noteListBody}</div>
+    <div className="mnemo-scrollbar-hover flex-1 overflow-y-auto px-1 py-1 min-h-0">{noteListBody}</div>
   );
 
   const footer = (
@@ -696,7 +775,7 @@ export default function Sidebar({
       <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden bg-mnemo-panel">
         <div className="shrink-0">
           {header}
-          {categoryStrip}
+          {showJumpSection && categoryStrip}
           {searchBar}
         </div>
         {navColumnVisible && (
@@ -712,7 +791,7 @@ export default function Sidebar({
                 {displayedNotes.length} shown
               </span>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto px-1 py-1">{noteListBody}</div>
+            <div className="mnemo-scrollbar-hover flex-1 min-h-0 overflow-y-auto px-1 py-1">{noteListBody}</div>
             <div className="shrink-0 px-3 py-1.5 border-t border-mnemo-border text-[10px] text-mnemo-dim flex flex-wrap gap-x-2 gap-y-0.5">
               <span>
                 {displayedNotes.length} note{displayedNotes.length !== 1 ? 's' : ''}
@@ -740,7 +819,7 @@ export default function Sidebar({
       }`}
     >
       {header}
-      {categoryStrip}
+      {showJumpSection && categoryStrip}
       {searchBar}
       {notesPanel}
       {footer}

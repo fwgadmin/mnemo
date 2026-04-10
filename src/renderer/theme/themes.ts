@@ -217,7 +217,7 @@ export const THEMES: ThemeDefinition[] = [
   },
   {
     id: 'ide-dark',
-    name: 'Dark (IDE tabs)',
+    name: 'Dark (IDE)',
     layout: 'ide',
     variables: {
       ...baseVars,
@@ -237,7 +237,7 @@ export const THEMES: ThemeDefinition[] = [
   },
   {
     id: 'ide-light',
-    name: 'Light (IDE tabs)',
+    name: 'Light (IDE)',
     layout: 'ide',
     variables: {
       ...baseVars,

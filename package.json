@@ -4,6 +4,20 @@
   "description": "AI-native memory layer — notes, embeddings, and MCP for intelligence systems",
   "main": ".webpack/main",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fwgadmin/mnemo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fwgadmin/mnemo/issues"
+  },
+  "homepage": "https://github.com/fwgadmin/mnemo#readme",
+  "files": [
+    "bin",
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
@@ -12,7 +26,8 @@
     "build:mcp-http": "npx webpack-cli --config webpack.mcp-http.config.js",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "build:cli": "npx webpack-cli --config webpack.cli.config.js"
+    "build:cli": "npx webpack-cli --config webpack.cli.config.js",
+    "prepublishOnly": "npm run typecheck && npm run build:cli && npm run build:mcp && npm run build:mcp-http"
   },
   "keywords": [
     "notes",
@@ -57,8 +72,13 @@
     "electron-squirrel-startup": "^1.0.1",
     "express": "^5.2.1",
     "gray-matter": "^4.0.3",
+    "mermaid": "^11.14.0",
+    "prettier": "^3.8.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
     "uuid": "^13.0.0",
     "zod": "^4.3.6"
   },
