@@ -21,6 +21,9 @@
 - **File associations** — right-click any `.md` or `.txt` file in Explorer to open it in Mnemo
 - **Multi-tenant** — tenant-scoped notes for separating knowledge bases
 - **Flat-file vault** — every note synced to `vault/` as Markdown with YAML frontmatter
+- **Categories** — first tag is the folder path (`General`, `Unassigned`, or nested paths); sidebar grouping, IDE Solution Explorer, folder colors, rename/promote/demote
+- **Themes & layouts** — CSS-variable themes; classic sidebar, top navigation, or IDE tabs with optional layout override in Settings
+- **CLI** — `mnemo note` includes list/show/search/new/import plus category tree, `set-category`, and folder rename/promote/demote (same semantics as the app)
 
 ---
 
@@ -74,10 +77,13 @@ sudo apt install -y build-essential python3
 | `mnemo`                                       | Open the graphical app (pass `.md` / `.txt` paths to import)                                  |
 | `mnemo mcp`                                   | MCP server on stdio (same flags as `dist/mnemo-mcp.js`)                                       |
 | `mnemo mcp-http`                              | HTTP/SSE server (requires `TURSO_URL`, `TURSO_AUTH_TOKEN`, `MCP_API_KEY`; uses system `node`) |
-| `mnemo note list` / `show` / `search` / `new` | Work with notes in the terminal                                                               |
+| `mnemo note list` / `show` / `search` / `new` / `import` / `graph` / `autolink` | Notes in the terminal |
+| `mnemo note categories` / `set-category` / `category …` | Category tree and folder operations (matches in-app behavior) |
 
 
 `mcp` and `note` run on the **same Electron runtime** as the app so SQLite native code matches. `mcp-http` uses your system Node.js.
+
+**Category CLI quick reference:** `mnemo note categories` prints the folder tree; `mnemo note set-category` takes a ref or UUID and a category (`General`, `Unassigned`, or a nested path); `mnemo note category rename`, `promote`, and `demote` bulk-move notes between folders. Use `-c` on `list`, `new`, and `import` with the same category names. Run `mnemo help` or `mnemo --help` for the full text.
 
 **Share one vault between GUI and CLI:** set `MNEMO_HOME` to a directory; both the app and `mnemo note` / `mnemo mcp` use it for `mnemo.db` and `vault/` (GUI reads this via `app.setPath('userData', …)`).
 
@@ -90,25 +96,28 @@ sudo apt install -y build-essential python3
 ### Resources
 
 
-| URI                  | Description             |
-| -------------------- | ----------------------- |
-| `mnemo://notes`      | JSON list of all notes  |
-| `mnemo://notes/{id}` | Single note as Markdown |
+| URI                    | Description |
+| ---------------------- | ----------- |
+| `mnemo://notes`        | JSON list of all notes |
+| `mnemo://notes/{id}`   | Single note as Markdown |
+| `mnemo://preferences`  | UI preferences (theme, layout, grouped categories, category colors, IDE tab order) — same JSON as `ui-preferences.json` beside config |
 
 
 ### Tools
 
 
-| Tool            | Description                               |
-| --------------- | ----------------------------------------- |
-| `create_note`   | Create a new note                         |
-| `read_note`     | Read a note by ID                         |
-| `update_note`   | Update title, body, or tags               |
-| `delete_note`   | Delete a note                             |
-| `search_notes`  | Full-text search                          |
-| `get_backlinks` | Get notes linking to a given note         |
-| `link_notes`    | Set outgoing links from source to targets |
-| `get_graph`     | Full node/edge graph data                 |
+| Tool                 | Description |
+| -------------------- | ----------- |
+| `create_note`        | Create a note; optional `tags` (first tag = category path; use `General` for that bucket) |
+| `read_note`          | Read a note by ID |
+| `update_note`        | Update title, body, tags (first tag = category), `hideHeader` |
+| `delete_note`        | Delete a note |
+| `search_notes`       | Full-text search |
+| `get_backlinks`      | Notes linking to a given note |
+| `link_notes`         | Set outgoing wikilinks from source to targets |
+| `get_graph`          | Nodes (`id`, `title`, `ref`) and link edges |
+| `get_ui_preferences` | Read merged UI preferences from disk |
+| `set_ui_preferences` | Merge partial preferences (theme, layout, editor toggles, grouped, category subtree scope, category colors, IDE tab IDs) |
 
 
 ### Prompts
@@ -198,6 +207,9 @@ This produces `dist/mnemo-mcp-http.js`. Deploy it to any Node.js host and set th
 | `Ctrl+O`       | Open / import `.md` file       |
 | `Ctrl+Shift+H` | Toggle note header             |
 | `Ctrl+Shift+L` | Toggle line numbers            |
+| `Ctrl+Shift+N` | Toggle note index numbers (#refs) |
+| `Ctrl+M`       | Toggle Markdown helper panel   |
+| `Ctrl+,`       | Settings (themes & layout)     |
 
 
 ---
@@ -214,6 +226,7 @@ src/
 │   │   ├── stdio-bootstrap.ts   # Shared MCP stdio bootstrap (CLI + mnemo-mcp.js)
 │   │   └── http.ts              # HTTP/SSE entry point (hosted platforms)
 │   ├── cli.ts                   # Node CLI bundle (mcp, mcp-http, note)
+│   ├── cliCategory.ts           # CLI category path helpers (parity with App tag rules)
 │   └── store/
 │       ├── NoteStore.ts         # LocalNoteStore — SQLite via better-sqlite3
 │       └── TursoNoteStore.ts    # TursoNoteStore — cloud SQLite via @libsql/client

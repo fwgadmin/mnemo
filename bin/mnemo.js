@@ -11,16 +11,52 @@ const root = path.join(__dirname, '..');
 const cliJs = path.join(root, 'dist', 'mnemo-cli.js');
 const httpJs = path.join(root, 'dist', 'mnemo-mcp-http.js');
 const electronBin = require('electron');
-const mainJs = path.join(root, '.webpack', 'x64', 'main', 'index.js');
+const forgeCli = path.join(root, 'node_modules', '@electron-forge', 'cli', 'dist', 'electron-forge.js');
 const nodePath = path.join(root, 'node_modules');
 
 let argv = process.argv.slice(2);
+
+/** Suppress Node’s built-in punycode DEP0040 when running Electron as Node (comes from deps, not app code). */
+function electronNodeOptions() {
+  const base = (process.env.NODE_OPTIONS || '').trim();
+  const flag = '--disable-warning=DEP0040';
+  if (base.includes('DEP0040')) return base;
+  return base ? `${base} ${flag}` : flag;
+}
+
+function printWrapperHelp() {
+  console.log(`Mnemo
+
+Usage:
+  mnemo [command] [arguments…]
+
+Commands:
+  gui [args…]          Start the desktop app (electron-forge start; pass args after -- to Electron)
+  note …               List, show, search, create, or import notes (needs: npm run build:cli)
+  mcp [options]        MCP server on stdio
+  mcp-http             HTTP/SSE MCP (needs: npm run build:mcp-http)
+
+Options:
+  -h, --help           Show this help (or full CLI help when dist/mnemo-cli.js exists)
+
+With no command, the GUI is started (same as "mnemo gui").
+
+Examples:
+  mnemo
+  mnemo gui
+  mnemo note list
+  mnemo note list -c "Work/Meetings" -v
+  mnemo note import ./doc.md -c "Work/Notes"
+  mnemo mcp
+`);
+}
 
 function runElectronAsNode(script, args) {
   const env = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
     NODE_PATH: nodePath,
+    NODE_OPTIONS: electronNodeOptions(),
   };
   const child = spawn(electronBin, [script, ...args], { stdio: 'inherit', cwd: root, env });
   child.on('exit', (code) => process.exit(code ?? 1));
@@ -31,7 +67,32 @@ function runNode(script, args) {
   child.on('exit', (code) => process.exit(code ?? 1));
 }
 
-if (argv.length >= 1) {
+function runGui(userArgs) {
+  if (!fs.existsSync(forgeCli)) {
+    console.error('electron-forge not found. Run npm install in the mnemo project directory.');
+    process.exit(1);
+  }
+  const forgeArgs = ['start'];
+  if (userArgs.length > 0) {
+    forgeArgs.push('--', ...userArgs);
+  }
+  const child = spawn(process.execPath, [forgeCli, ...forgeArgs], {
+    stdio: 'inherit',
+    cwd: root,
+    env: process.env,
+  });
+  child.on('exit', (code) => process.exit(code ?? 1));
+}
+
+if (argv[0] === '-h' || argv[0] === '--help' || argv[0] === 'help') {
+  if (fs.existsSync(cliJs)) {
+    runElectronAsNode(cliJs, ['--help']);
+  } else {
+    printWrapperHelp();
+    console.error('For note/mcp usage details, run: npm run build:cli');
+    process.exit(0);
+  }
+} else if (argv.length >= 1) {
   const cmd = argv[0];
   if (cmd === 'mcp' || cmd === 'note') {
     if (!fs.existsSync(cliJs)) {
@@ -39,29 +100,17 @@ if (argv.length >= 1) {
       process.exit(1);
     }
     runElectronAsNode(cliJs, argv);
-    return;
-  }
-  if (cmd === 'mcp-http') {
+  } else if (cmd === 'mcp-http') {
     if (!fs.existsSync(httpJs)) {
       console.error('Run: npm run build:mcp-http');
       process.exit(1);
     }
     runNode(httpJs, []);
-    return;
+  } else if (cmd === 'gui') {
+    runGui(argv.slice(1));
+  } else {
+    runGui(argv);
   }
-  if (cmd === 'gui') {
-    argv = argv.slice(1);
-  }
+} else {
+  runGui(argv);
 }
-
-if (!fs.existsSync(mainJs)) {
-  console.error('Webpack main not found. Run: npm start once to build, or npm run package');
-  process.exit(1);
-}
-
-const child = spawn(electronBin, [mainJs, ...argv], {
-  stdio: 'inherit',
-  cwd: root,
-  env: process.env,
-});
-child.on('exit', (code) => process.exit(code ?? 1));

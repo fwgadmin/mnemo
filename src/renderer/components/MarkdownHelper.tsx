@@ -6,13 +6,14 @@ interface MarkdownHelperProps {
 
 export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
   return (
-    <div className="w-72 min-w-[260px] border-l border-[#1e1e1e] flex flex-col overflow-hidden">
+    <div className="w-72 min-w-[260px] border-l border-mnemo-border flex flex-col overflow-hidden bg-mnemo-panel">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#1e1e1e] shrink-0">
-        <span className="text-[11px] font-medium tracking-wide text-[#888]">MARKDOWN REFERENCE</span>
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-mnemo-border shrink-0">
+        <span className="text-[11px] font-medium tracking-wide text-mnemo-muted">MARKDOWN REFERENCE</span>
         <button
+          type="button"
           onClick={onClose}
-          className="text-[#555] hover:text-[#aaa] text-xs cursor-pointer"
+          className="text-mnemo-dim hover:text-mnemo-muted text-xs cursor-pointer"
         >
           ✕
         </button>
@@ -47,28 +48,28 @@ export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
         </Group>
 
         <Group title="Code Blocks">
-          <div className="mt-1 rounded bg-[#0d0d0d] border border-[#1e1e1e] p-2 font-mono text-[10px] text-[#aaa] leading-relaxed">
-            <div className="text-[#555]">```javascript</div>
-            <div className="text-[#ccc]">const x = 42;</div>
-            <div className="text-[#555]">```</div>
+          <div className="mt-1 rounded bg-mnemo-app border border-mnemo-border p-2 font-mono text-[10px] text-mnemo-muted leading-relaxed">
+            <div className="text-mnemo-dim">```javascript</div>
+            <div className="text-mnemo-text">const x = 42;</div>
+            <div className="text-mnemo-dim">```</div>
           </div>
-          <div className="mt-1.5 text-[#555] leading-relaxed">
-            Common tags: <span className="text-[#7c7cff]">javascript</span>,{' '}
-            <span className="text-[#7c7cff]">typescript</span>,{' '}
-            <span className="text-[#7c7cff]">python</span>,{' '}
-            <span className="text-[#7c7cff]">sql</span>,{' '}
-            <span className="text-[#7c7cff]">bash</span>,{' '}
-            <span className="text-[#7c7cff]">json</span>,{' '}
-            <span className="text-[#7c7cff]">html</span>,{' '}
-            <span className="text-[#7c7cff]">css</span>,{' '}
-            <span className="text-[#7c7cff]">rust</span>,{' '}
-            <span className="text-[#7c7cff]">go</span>,{' '}
-            <span className="text-[#7c7cff]">yaml</span>
+          <div className="mt-1.5 text-mnemo-dim leading-relaxed">
+            Common tags: <span className="text-mnemo-accent">javascript</span>,{' '}
+            <span className="text-mnemo-accent">typescript</span>,{' '}
+            <span className="text-mnemo-accent">python</span>,{' '}
+            <span className="text-mnemo-accent">sql</span>,{' '}
+            <span className="text-mnemo-accent">bash</span>,{' '}
+            <span className="text-mnemo-accent">json</span>,{' '}
+            <span className="text-mnemo-accent">html</span>,{' '}
+            <span className="text-mnemo-accent">css</span>,{' '}
+            <span className="text-mnemo-accent">rust</span>,{' '}
+            <span className="text-mnemo-accent">go</span>,{' '}
+            <span className="text-mnemo-accent">yaml</span>
           </div>
         </Group>
 
         <Group title="Tables">
-          <div className="mt-1 rounded bg-[#0d0d0d] border border-[#1e1e1e] p-2 font-mono text-[10px] text-[#aaa] leading-relaxed whitespace-pre">
+          <div className="mt-1 rounded bg-mnemo-app border border-mnemo-border p-2 font-mono text-[10px] text-mnemo-muted leading-relaxed whitespace-pre">
 {`| Col A | Col B |
 |-------|-------|
 | val   | val   |`}
@@ -78,7 +79,7 @@ export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
         <Group title="Wikilinks">
           <Row syntax="[[Note Title]]"          result="link to note" />
           <Row syntax="[[Note Title|alias]]"    result="link with alias" />
-          <div className="mt-1 text-[#555]">
+          <div className="mt-1 text-mnemo-dim">
             If the target note doesn't exist, Mnemo creates it automatically.
           </div>
         </Group>
@@ -92,6 +93,18 @@ export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
           <ShortcutRow keys="Ctrl+G"         action="Toggle graph" />
           <ShortcutRow keys="Ctrl+M"         action="Toggle this panel" />
           <ShortcutRow keys="Ctrl+B"         action="Toggle sidebar" />
+          <ShortcutRow keys="Ctrl+Shift+H"   action="Toggle note header" />
+          <ShortcutRow keys="Ctrl+Shift+L"   action="Toggle line numbers" />
+          <ShortcutRow keys="Ctrl+Shift+N"   action="Toggle note #refs" />
+          <ShortcutRow keys="Ctrl+,"         action="Settings" />
+        </Group>
+
+        <Group title="More help">
+          <div className="text-mnemo-dim leading-relaxed">
+            Help → <span className="text-mnemo-accent">Documentation</span> (categories, Unassigned/General, MCP tools,
+            themes, layout, CLI). In the command palette, type <span className="text-mnemo-accent">&gt;</span> for layout
+            and grouped-category toggles.
+          </div>
         </Group>
 
       </div>
@@ -102,7 +115,7 @@ export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-[#555] mb-1.5 pb-1 border-b border-[#1a1a1a]">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-mnemo-dim mb-1.5 pb-1 border-b border-mnemo-border">
         {title}
       </div>
       {children}
@@ -113,8 +126,8 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 function Row({ syntax, result }: { syntax: string; result: string }) {
   return (
     <div className="flex items-baseline justify-between gap-2 py-[2px]">
-      <code className="text-[#a78bfa] font-mono text-[10px] shrink-0">{syntax}</code>
-      <span className="text-[#555] text-right truncate">{result}</span>
+      <code className="text-mnemo-accent font-mono text-[10px] shrink-0">{syntax}</code>
+      <span className="text-mnemo-dim text-right truncate">{result}</span>
     </div>
   );
 }
@@ -122,10 +135,10 @@ function Row({ syntax, result }: { syntax: string; result: string }) {
 function ShortcutRow({ keys, action }: { keys: string; action: string }) {
   return (
     <div className="flex items-center justify-between gap-2 py-[2px]">
-      <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-[#1a1a1a] border border-[#2a2a2a] text-[#ccc] font-mono leading-none shrink-0">
+      <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-mnemo-panel-elevated border border-mnemo-border text-mnemo-muted font-mono leading-none shrink-0">
         {keys}
       </kbd>
-      <span className="text-[#555] text-right">{action}</span>
+      <span className="text-mnemo-dim text-right">{action}</span>
     </div>
   );
 }

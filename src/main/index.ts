@@ -11,12 +11,13 @@ try {
 } catch {
   // .env is optional — ignore if absent
 }
-import { LocalNoteStore } from './store/NoteStore';
+import { LocalNoteStore, migrateNoteDatabaseHideHeader, migrateNoteDatabaseRef } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
-import type { INoteStore, AppConfig, SyncResult } from '../shared/types';
+import type { INoteStore, AppConfig, SyncResult, MnemoUiPreferences } from '../shared/types';
 import { IPC } from '../shared/types';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
+import { mergeAndWriteUiPreferences, readUiPreferencesFromDisk } from './uiPreferences';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const matter = require('gray-matter');
@@ -242,21 +243,22 @@ function buildMenu(mainWindow: BrowserWindow): void {
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: send('toggle-sidebar') },
         { label: 'Toggle Note Header', accelerator: 'CmdOrCtrl+Shift+H', click: send('toggle-header') },
         { label: 'Toggle Line Numbers', accelerator: 'CmdOrCtrl+Shift+L', click: send('toggle-line-numbers') },
+        { label: 'Toggle Note Index Numbers', accelerator: 'CmdOrCtrl+Shift+N', click: send('toggle-note-refs') },
         { type: 'separator' },
         { label: 'Toggle Graph', accelerator: 'CmdOrCtrl+G', click: send('toggle-graph') },
         { label: 'Markdown Helper', accelerator: 'CmdOrCtrl+M', click: send('toggle-markdown-help') },
       ],
     },
     {
-      label: 'Help',
-      submenu: [
-        { label: 'Documentation', click: send('show-help') },
-      ],
-    },
-    {
       label: 'Mnemo',
       submenu: [
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: send('settings') },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'Documentation', click: send('show-help') },
       ],
     },
   ];
@@ -296,7 +298,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.NOTE_GRAPH, async (_event, tenantId?: string) => {
     const [notes, links] = await Promise.all([store.list(tenantId), store.getAllLinks(tenantId)]);
     return {
-      nodes: notes.map(n => ({ id: n.id, title: n.title })),
+      nodes: notes.map(n => ({ id: n.id, title: n.title, ref: n.ref })),
       links,
     };
   });
@@ -369,13 +371,26 @@ function registerIpcHandlers(): void {
     const dbPath = path.join(app.getPath('userData'), 'mnemo.db');
     if (!fs.existsSync(dbPath)) return { synced: 0, skipped: 0 };
 
-    // Open local DB as read-only so we never mutate it during migration
     const Database = require('better-sqlite3');
-    const localDb = new Database(dbPath, { readonly: true });
+    const localDb = new Database(dbPath);
     try {
+      migrateNoteDatabaseRef(localDb);
+      migrateNoteDatabaseHideHeader(localDb);
       const notes = localDb
-        .prepare('SELECT id, title, body, tags, tenant_id, created_at, updated_at FROM notes')
-        .all() as Array<{ id: string; title: string; body: string; tags: string; tenant_id: string; created_at: string; updated_at: string }>;
+        .prepare(
+          'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',
+        )
+        .all() as Array<{
+          id: string;
+          title: string;
+          body: string;
+          tags: string;
+          tenant_id: string;
+          created_at: string;
+          updated_at: string;
+          ref: number | null;
+          hide_header: number;
+        }>;
       const links = localDb
         .prepare('SELECT source_id, target_id FROM note_links')
         .all() as Array<{ source_id: string; target_id: string }>;
@@ -383,6 +398,13 @@ function registerIpcHandlers(): void {
     } finally {
       localDb.close();
     }
+  });
+
+  ipcMain.handle(IPC.UI_PREFERENCES_READ, () => readUiPreferencesFromDisk(app.getPath('userData')));
+
+  ipcMain.handle(IPC.UI_PREFERENCES_SAVE, (_event, partial: Partial<MnemoUiPreferences>) => {
+    mergeAndWriteUiPreferences(partial, app.getPath('userData'));
+    return true;
   });
 }
 

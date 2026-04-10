@@ -2,6 +2,150 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --mnemo-bg-app: #0f0f0f;
+  --mnemo-bg-panel: #111111;
+  --mnemo-bg-panel-elevated: #1a1a1a;
+  --mnemo-bg-hover: #1a1a1a;
+  --mnemo-bg-active: #1a1a2e;
+  --mnemo-border: #1e1e1e;
+  --mnemo-border-strong: #333333;
+  --mnemo-text: #e4e4e7;
+  --mnemo-text-muted: #888888;
+  --mnemo-text-dim: #555555;
+  --mnemo-accent: #7c7cff;
+  --mnemo-category-bar: #141418;
+  --mnemo-radius: 6px;
+  --mnemo-sidebar-width: 16rem;
+
+  /*
+   * Editor (CodeMirror): markdown + fenced code + chrome. Tweak these for custom colors;
+   * or override per [data-theme] below. Syntax tokens use --mnemo-syntax-*.
+   */
+  --mnemo-editor-font-size: 14px;
+  --mnemo-editor-line-height: 1.7;
+  --mnemo-editor-font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  --mnemo-editor-mono-font-family: var(--mnemo-editor-font-family);
+  /* Markdown + body */
+  --mnemo-editor-foreground: var(--mnemo-text);
+  --mnemo-editor-heading: var(--mnemo-accent);
+  --mnemo-editor-heading-weight: 600;
+  --mnemo-editor-h1-size: 1.38em;
+  --mnemo-editor-h2-size: 1.22em;
+  --mnemo-editor-h3-size: 1.12em;
+  --mnemo-editor-h4-size: 1.06em;
+  --mnemo-editor-h5-size: 1.02em;
+  --mnemo-editor-h6-size: 1em;
+  --mnemo-editor-strong: var(--mnemo-text);
+  --mnemo-editor-emphasis: var(--mnemo-text-muted);
+  --mnemo-editor-strikethrough: var(--mnemo-text-dim);
+  --mnemo-editor-link: var(--mnemo-accent);
+  --mnemo-editor-quote: var(--mnemo-text-muted);
+  --mnemo-editor-code-fg: color-mix(in srgb, var(--mnemo-accent) 92%, white 8%);
+  --mnemo-editor-meta: var(--mnemo-text-dim);
+  --mnemo-editor-punctuation: var(--mnemo-text-muted);
+  --mnemo-editor-bracket: var(--mnemo-text-muted);
+  --mnemo-editor-separator: var(--mnemo-border-strong);
+  /* Chrome */
+  --mnemo-editor-caret: var(--mnemo-accent);
+  --mnemo-editor-selection-bg: color-mix(in srgb, var(--mnemo-accent) 32%, transparent);
+  --mnemo-editor-active-line-bg: color-mix(in srgb, var(--mnemo-text) 5%, transparent);
+  --mnemo-editor-gutter-fg: var(--mnemo-text-dim);
+  --mnemo-editor-gutter-active-fg: var(--mnemo-text-muted);
+  --mnemo-editor-scrollbar-thumb: var(--mnemo-border-strong);
+  --mnemo-editor-scrollbar-thumb-hover: var(--mnemo-text-muted);
+  --mnemo-editor-selection-match-bg: color-mix(in srgb, var(--mnemo-text) 12%, transparent);
+  --mnemo-editor-bracket-match-bg: color-mix(in srgb, var(--mnemo-accent) 28%, transparent);
+  --mnemo-editor-bracket-mismatch-bg: color-mix(in srgb, #f87171 35%, transparent);
+  /* Fenced code — dark palette */
+  --mnemo-syntax-keyword: #c678dd;
+  --mnemo-syntax-control-keyword: #c678dd;
+  --mnemo-syntax-definition-keyword: #e5c07b;
+  --mnemo-syntax-string: #98c379;
+  --mnemo-syntax-regexp: #56b6c2;
+  --mnemo-syntax-number: #d19a66;
+  --mnemo-syntax-comment: #7f848e;
+  --mnemo-syntax-variable: #e06c75;
+  --mnemo-syntax-function: #61afef;
+  --mnemo-syntax-property: #e5c07b;
+  --mnemo-syntax-type: #e5c07b;
+  --mnemo-syntax-operator: #56b6c2;
+  --mnemo-syntax-tag: #e06c75;
+  --mnemo-syntax-attribute: #d19a66;
+  --mnemo-syntax-atom: #d19a66;
+  --mnemo-syntax-bool: #d19a66;
+  --mnemo-syntax-invalid: #f87171;
+}
+
+/* Light themes — editor / syntax (shared across light variants) */
+[data-theme='light'],
+[data-theme='light-contrast'],
+[data-theme='light-warm'],
+[data-theme='light-paper'],
+[data-theme='light-blue'],
+[data-theme='light-top'] {
+  --mnemo-editor-code-fg: color-mix(in srgb, var(--mnemo-accent) 85%, var(--mnemo-text) 15%);
+  --mnemo-editor-selection-bg: color-mix(in srgb, var(--mnemo-accent) 22%, transparent);
+  --mnemo-editor-active-line-bg: color-mix(in srgb, var(--mnemo-text) 4%, transparent);
+  --mnemo-editor-selection-match-bg: color-mix(in srgb, var(--mnemo-text) 10%, transparent);
+  --mnemo-editor-bracket-match-bg: color-mix(in srgb, var(--mnemo-accent) 20%, transparent);
+  --mnemo-syntax-keyword: #7c3aed;
+  --mnemo-syntax-control-keyword: #7c3aed;
+  --mnemo-syntax-definition-keyword: #a16207;
+  --mnemo-syntax-string: #15803d;
+  --mnemo-syntax-regexp: #0f766e;
+  --mnemo-syntax-number: #c2410c;
+  --mnemo-syntax-comment: #737373;
+  --mnemo-syntax-variable: #b91c1c;
+  --mnemo-syntax-function: #1d4ed8;
+  --mnemo-syntax-property: #a16207;
+  --mnemo-syntax-type: #a16207;
+  --mnemo-syntax-operator: #0f766e;
+  --mnemo-syntax-tag: #be123c;
+  --mnemo-syntax-attribute: #c2410c;
+  --mnemo-syntax-atom: #c2410c;
+  --mnemo-syntax-bool: #c2410c;
+  --mnemo-syntax-invalid: #dc2626;
+}
+
+/* Sepia — warm paper + muted syntax */
+[data-theme='sepia'] {
+  --mnemo-editor-selection-bg: color-mix(in srgb, var(--mnemo-accent) 30%, transparent);
+  --mnemo-syntax-keyword: #f59e0b;
+  --mnemo-syntax-string: #84cc16;
+  --mnemo-syntax-regexp: #2dd4bf;
+  --mnemo-syntax-number: #fb923c;
+  --mnemo-syntax-comment: #a8a29e;
+  --mnemo-syntax-variable: #fca5a5;
+  --mnemo-syntax-function: #fcd34d;
+  --mnemo-syntax-property: #fdba74;
+  --mnemo-syntax-type: #fdba74;
+  --mnemo-syntax-operator: #5eead4;
+  --mnemo-syntax-tag: #fb7185;
+  --mnemo-syntax-attribute: #fdba74;
+  --mnemo-syntax-atom: #fdba74;
+  --mnemo-syntax-bool: #fdba74;
+  --mnemo-syntax-invalid: #f87171;
+}
+
+/* High-contrast dark — slightly cooler syntax */
+[data-theme='dark-contrast'] {
+  --mnemo-syntax-keyword: #d8b4fe;
+  --mnemo-syntax-string: #86efac;
+  --mnemo-syntax-regexp: #67e8f9;
+  --mnemo-syntax-number: #fcd34d;
+  --mnemo-syntax-comment: #a1a1aa;
+  --mnemo-syntax-variable: #fca5a5;
+  --mnemo-syntax-function: #93c5fd;
+  --mnemo-syntax-property: #fde047;
+  --mnemo-syntax-type: #fde047;
+  --mnemo-syntax-operator: #5eead4;
+  --mnemo-syntax-tag: #fb7185;
+  --mnemo-syntax-attribute: #fcd34d;
+  --mnemo-syntax-atom: #fcd34d;
+  --mnemo-syntax-bool: #fcd34d;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -10,10 +154,16 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-  background: #0f0f0f;
-  color: #e4e4e7;
+  background: var(--mnemo-bg-app);
+  color: var(--mnemo-text);
   overflow: hidden;
   height: 100vh;
+}
+
+/* Top layout: stronger menu bar separation from content */
+[data-layout='top'] .mnemo-menu-bar {
+  border-bottom-width: 2px;
+  border-bottom-color: color-mix(in srgb, var(--mnemo-accent) 42%, var(--mnemo-border));
 }
 
 #root {
@@ -29,9 +179,9 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--mnemo-border-strong);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: var(--mnemo-text-muted);
 }

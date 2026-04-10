@@ -8,20 +8,20 @@ export default function HelpView({ onClose }: HelpViewProps) {
       {/* Title bar */}
       <div className="px-8 pt-6 pb-2 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-[#e4e4e7]">Documentation</h1>
-          <div className="mt-1 text-[10px] text-[#555]">System · Read-only</div>
+          <h1 className="text-2xl font-semibold text-mnemo-text">Documentation</h1>
+          <div className="mt-1 text-[10px] text-mnemo-dim">System · Read-only</div>
         </div>
         <button
           onClick={onClose}
-          className="text-[#555] hover:text-[#aaa] text-xs px-3 py-1.5 rounded hover:bg-[#1e1e1e] transition-colors cursor-pointer"
+          className="text-mnemo-dim hover:text-mnemo-muted text-xs px-3 py-1.5 rounded hover:bg-mnemo-hover transition-colors cursor-pointer"
         >
           ✕ Close
         </button>
       </div>
-      <div className="mx-8 border-t border-[#1a1a1a] my-2" />
+      <div className="mx-8 border-t border-mnemo-border my-2" />
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-8 pb-8 text-[#ccc] text-sm leading-relaxed">
+      <div className="flex-1 overflow-y-auto px-8 pb-8 text-mnemo-text text-sm leading-relaxed">
         <div className="max-w-2xl">
 
           <Section title="What is Mnemo?">
@@ -67,9 +67,14 @@ export default function HelpView({ onClose }: HelpViewProps) {
             <p>
               Connect notes with double-bracket syntax: <Mono>{'[[Note Title]]'}</Mono>
             </p>
-            <ul className="mt-2 space-y-1 list-disc list-inside text-[#aaa]">
+            <ul className="mt-2 space-y-1 list-disc list-inside text-mnemo-text">
               <li>Click a wikilink to navigate to that note.</li>
               <li>If the target note does not exist, Mnemo creates it automatically.</li>
+              <li>
+                When you save, Mnemo also adds links from plain text: mention another note’s title by
+                words (word boundaries), or reference a note by number with <Mono>#42</Mono> or{' '}
+                <Mono>ref 42</Mono>.
+              </li>
               <li>Backlinks (notes that link <em>to</em> the current note) appear in the panel at the bottom of the editor.</li>
             </ul>
           </Section>
@@ -79,34 +84,52 @@ export default function HelpView({ onClose }: HelpViewProps) {
               Type in the search bar to filter notes by full-text search across title, body, and tags.
             </KV>
             <KV label="Command palette">
-              Press <Key>Ctrl+P</Key> to open the floating command palette — fuzzy search across all
-              notes. Type <Mono>&gt;</Mono> to switch to command mode and run actions.
+              Press <Key>Ctrl+P</Key> to open the floating command palette — search notes by title, snippet,
+              or tags. Type <Mono>&gt;</Mono> to filter commands (new note, save, layout, graph, settings, …).
             </KV>
           </Section>
 
           <Section title="Categories &amp; Tags">
             <p>
               Notes can be grouped in the sidebar by category. The <strong>first tag</strong> on a
-              note determines its category.
+              note determines its folder path (nested segments use <Mono>/</Mono>, e.g.{' '}
+              <Mono>Work/Meetings</Mono>).
             </p>
-            <ul className="mt-2 space-y-1 list-disc list-inside text-[#aaa]">
+            <ul className="mt-2 space-y-1 list-disc list-inside text-mnemo-text">
               <li>
-                Right-click any note and choose <Mono>Set Category</Mono> to assign or change it.
+                Right-click a note and choose <Mono>Set Category</Mono> to assign or change it (searchable
+                combobox: <Mono>General</Mono>, <Mono>Unassigned</Mono>, or any path).
               </li>
               <li>
                 Click the grid icon (<Mono>⊞</Mono>) in the sidebar header to toggle grouped view.
               </li>
-              <li>Notes without a tag appear under <Mono>General</Mono>.</li>
+              <li>
+                <strong>General</strong> is the default bucket when the vault has no other categories, or
+                when the first tag is explicitly <Mono>General</Mono>.
+              </li>
+              <li>
+                <strong>Unassigned</strong> lists notes with no first tag when at least one other note has
+                a category — so uncategorized notes stay visible when you start using folders.
+              </li>
+              <li>
+                In grouped view or IDE Solution Explorer, right-click a category header for{' '}
+                <Mono>Rename</Mono>, <Mono>Promote</Mono>, <Mono>Demote</Mono>, and folder colors (see
+                Settings for details).
+              </li>
               <li>Groups are collapsible — click the group heading to expand or collapse.</li>
             </ul>
+            <p className="mt-3 text-mnemo-dim text-xs leading-relaxed">
+              CLI: <Mono>mnemo note categories</Mono>, <Mono>mnemo note set-category</Mono>,{' '}
+              <Mono>mnemo note category rename|promote|demote</Mono> — same folder semantics as the app.
+            </p>
           </Section>
 
           <Section title="Graph View">
             <p>
               Press <Key>Ctrl+G</Key> or use <Mono>View › Toggle Graph</Mono> to open the
-              force-directed knowledge graph. Nodes are notes; edges are wikilinks.
+              force-directed knowledge graph. Nodes are notes; edges are outgoing links (wikilinks + inferred).
             </p>
-            <ul className="mt-2 space-y-1 list-disc list-inside text-[#aaa]">
+            <ul className="mt-2 space-y-1 list-disc list-inside text-mnemo-text">
               <li><strong>Click</strong> a node to open that note.</li>
               <li><strong>Drag</strong> to reposition nodes.</li>
               <li><strong>Scroll</strong> to zoom in/out.</li>
@@ -119,8 +142,18 @@ export default function HelpView({ onClose }: HelpViewProps) {
               left edge to reveal a re-open strip.
             </KV>
             <KV label="Toggle Note Header">
-              <Mono>View › Toggle Note Header</Mono> hides the title input and metadata bar,
-              reducing padding for a more focused writing area.
+              <Key>Ctrl+Shift+H</Key> or <Mono>View › Toggle Note Header</Mono> sets the default for all notes. For a single note,
+              right-click it in the sidebar and choose <Mono>Hide editor header</Mono> or{' '}
+              <Mono>Show editor header</Mono> (stored per note). Use <Mono>Rename note…</Mono> in that
+              menu when the title field is hidden.
+            </KV>
+            <KV label="Themes &amp; layout">
+              <Key>Ctrl+,</Key> opens <Mono>Settings</Mono>: choose a theme (including dark/light with top bar or IDE tabs),
+              and override layout (classic sidebar, top navigation, or IDE tabs). Command palette (<Key>Ctrl+P</Key>){' '}
+              includes layout commands when you type <Mono>&gt;</Mono>.
+            </KV>
+            <KV label="Markdown helper">
+              <Key>Ctrl+M</Key> toggles the Markdown reference side panel.
             </KV>
           </Section>
 
@@ -138,6 +171,7 @@ export default function HelpView({ onClose }: HelpViewProps) {
                 rows={[
                   ['mnemo://notes', 'JSON list of all notes'],
                   ['mnemo://notes/{id}', 'Single note content as Markdown'],
+                  ['mnemo://preferences', 'UI preferences JSON (theme, layout, grouped categories, category colors, IDE tab order) — same as Settings / ui-preferences.json'],
                 ]}
               />
             </SubSection>
@@ -146,14 +180,16 @@ export default function HelpView({ onClose }: HelpViewProps) {
               <Table
                 headers={['Tool', 'Description']}
                 rows={[
-                  ['create_note', 'Create a new note'],
+                  ['create_note', 'Create a note; optional tags (first tag = category path)'],
                   ['read_note', 'Read a note by ID'],
-                  ['update_note', 'Update title, body, or tags'],
+                  ['update_note', 'Update title, body, tags (first tag = category), hideHeader'],
                   ['delete_note', 'Delete a note'],
                   ['search_notes', 'Full-text search'],
                   ['get_backlinks', 'Get notes linking to a given note'],
                   ['link_notes', 'Set outgoing wikilinks from source to targets'],
-                  ['get_graph', 'Return the full node/edge graph'],
+                  ['get_graph', 'Full note graph (nodes include id, title, ref; edges are links)'],
+                  ['get_ui_preferences', 'Read UI preferences from disk'],
+                  ['set_ui_preferences', 'Merge partial UI preferences (theme, layoutOverride, grouped, categoryColors, …)'],
                 ]}
               />
             </SubSection>
@@ -170,35 +206,36 @@ export default function HelpView({ onClose }: HelpViewProps) {
             </SubSection>
 
             <SubSection title="Connecting to your vault">
-              <p className="text-[#aaa]">
+              <p className="text-mnemo-text">
                 MCP clients like Claude Desktop and Cursor don't connect to the running Mnemo
                 window — instead they <strong>spawn a separate lightweight subprocess</strong> that
                 speaks directly to your database. You need to build that subprocess once, then
                 point your client at it.
               </p>
-              <p className="mt-3 font-medium text-[#ccc]">Step 1 — build the MCP server file</p>
-              <p className="mt-1 text-[#aaa]">
+              <p className="mt-3 font-medium text-mnemo-text">Step 1 — build the MCP server file</p>
+              <p className="mt-1 text-mnemo-text">
                 In the Mnemo project folder, run:
               </p>
               <CodeBlock>{`npm run build:mcp`}</CodeBlock>
-              <p className="mt-1 text-[#aaa]">
+              <p className="mt-1 text-mnemo-text">
                 This produces <Mono>dist/mnemo-mcp.js</Mono> next to your source code. You only
                 need to do this once (or after updating Mnemo).
               </p>
 
-              <p className="mt-3 font-medium text-[#ccc]">Step 2 — find your data paths</p>
-              <p className="mt-1 text-[#aaa]">Your notes are stored in your OS app-data directory:</p>
+              <p className="mt-3 font-medium text-mnemo-text">Step 2 — find your data paths</p>
+              <p className="mt-1 text-mnemo-text">Your notes are stored in your OS app-data directory:</p>
               <Table
                 headers={['OS', 'Database', 'Vault']}
                 rows={[
                   ['Windows', '%APPDATA%\\Mnemo\\mnemo.db', '%APPDATA%\\Mnemo\\vault'],
                   ['macOS', '~/Library/Application Support/Mnemo/mnemo.db', '~/Library/Application Support/Mnemo/vault'],
-                  ['Linux', '~/.config/Mnemo/mnemo.db', '~/.config/Mnemo/vault'],
+                  ['Linux (Electron app)', '~/.config/Mnemo/mnemo.db', '~/.config/Mnemo/vault'],
+                  ['Linux (CLI / MCP default)', '~/.local/share/mnemo/mnemo.db', '~/.local/share/mnemo/vault'],
                 ]}
               />
 
-              <p className="mt-3 font-medium text-[#ccc]">Step 3 — configure your MCP client</p>
-              <p className="mt-1 text-[#aaa]">
+              <p className="mt-3 font-medium text-mnemo-text">Step 3 — configure your MCP client</p>
+              <p className="mt-1 text-mnemo-text">
                 Open your client's config file and add a <Mono>mnemo</Mono> entry. Config file
                 locations:
               </p>
@@ -211,7 +248,7 @@ export default function HelpView({ onClose }: HelpViewProps) {
                   ['VS Code (Copilot)', '.vscode/mcp.json in your project'],
                 ]}
               />
-              <p className="mt-2 font-medium text-[#ccc]">Windows</p>
+              <p className="mt-2 font-medium text-mnemo-text">Windows</p>
               <CodeBlock>{`{
   "mcpServers": {
     "mnemo": {
@@ -224,7 +261,7 @@ export default function HelpView({ onClose }: HelpViewProps) {
     }
   }
 }`}</CodeBlock>
-              <p className="mt-2 font-medium text-[#ccc]">macOS</p>
+              <p className="mt-2 font-medium text-mnemo-text">macOS</p>
               <CodeBlock>{`{
   "mcpServers": {
     "mnemo": {
@@ -237,7 +274,7 @@ export default function HelpView({ onClose }: HelpViewProps) {
     }
   }
 }`}</CodeBlock>
-              <p className="mt-2 font-medium text-[#ccc]">Linux</p>
+              <p className="mt-2 font-medium text-mnemo-text">Linux</p>
               <CodeBlock>{`{
   "mcpServers": {
     "mnemo": {
@@ -250,20 +287,20 @@ export default function HelpView({ onClose }: HelpViewProps) {
     }
   }
 }`}</CodeBlock>
-              <p className="mt-2 text-[#aaa]">
+              <p className="mt-2 text-mnemo-text">
                 The GUI app and the MCP subprocess <strong>share the same database</strong>, so
                 any notes created or edited by an AI agent appear immediately in the Mnemo window.
               </p>
             </SubSection>
 
             <SubSection title="About Prompts (summarize_note, relate_notes, query_vault)">
-              <p className="text-[#aaa]">
+              <p className="text-mnemo-text">
                 These are <strong>MCP Prompt templates</strong>, not self-executing tools. When
                 invoked, Mnemo fetches the requested note(s) from the database and assembles a
                 ready-to-send message — for example:
               </p>
               <CodeBlock>{`Please summarize the following note titled "My Note":\n\n[note body here]`}</CodeBlock>
-              <p className="mt-2 text-[#aaa]">
+              <p className="mt-2 text-mnemo-text">
                 That message is handed to whichever LLM your MCP client has connected (e.g.
                 Claude, GPT-4o). <strong>Mnemo itself performs no summarization</strong> — it only
                 prepares the prompt. Without a connected LLM, calling these prompts returns the
@@ -291,7 +328,7 @@ SELECT * FROM notes WHERE title LIKE '%mnemo%';
 \`\`\``}</CodeBlock>
 
             <SubSection title="Supported language tags">
-              <p className="text-[#aaa] mb-2">
+              <p className="text-mnemo-text mb-2">
                 Any language from the CodeMirror language-data registry is supported. Common ones:
               </p>
               <Table
@@ -350,15 +387,18 @@ SELECT * FROM notes WHERE title LIKE '%mnemo%';
                 ['Ctrl+P', 'Command palette'],
                 ['Ctrl+G', 'Toggle graph view'],
                 ['Ctrl+B', 'Toggle sidebar'],
+                ['Ctrl+M', 'Toggle Markdown helper panel'],
                 ['Ctrl+Shift+H', 'Toggle note header'],
                 ['Ctrl+Shift+L', 'Toggle line numbers'],
+                ['Ctrl+Shift+N', 'Toggle note index numbers (#refs)'],
+                ['Ctrl+,', 'Settings (themes, layout)'],
               ]}
             />
           </Section>
 
           <Section title="Data Storage">
             <p>Every note is stored in two places:</p>
-            <ul className="mt-2 space-y-1 list-disc list-inside text-[#aaa]">
+            <ul className="mt-2 space-y-1 list-disc list-inside text-mnemo-text">
               <li>
                 <strong>SQLite database</strong> — <Mono>%APPDATA%/Mnemo/mnemo.db</Mono> — powers
                 fast FTS5 search, link tracking, and metadata queries.
@@ -369,6 +409,11 @@ SELECT * FROM notes WHERE title LIKE '%mnemo%';
                 to back up or sync.
               </li>
             </ul>
+            <p className="mt-3 text-mnemo-dim text-xs leading-relaxed">
+              The <Mono>mnemo note</Mono> CLI and MCP stdio server default to XDG data{' '}
+              <Mono>~/.local/share/mnemo</Mono> (Linux) unless <Mono>MNEMO_HOME</Mono> is set. Set{' '}
+              <Mono>MNEMO_HOME</Mono> to your app userData directory so the terminal and GUI share one vault.
+            </p>
           </Section>
 
         </div>
@@ -382,7 +427,7 @@ SELECT * FROM notes WHERE title LIKE '%mnemo%';
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-8">
-      <h2 className="text-base font-semibold text-[#e4e4e7] mb-3 pb-1.5 border-b border-[#1e1e1e]">
+      <h2 className="text-base font-semibold text-mnemo-text mb-3 pb-1.5 border-b border-mnemo-border">
         {title}
       </h2>
       {children}
@@ -393,7 +438,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function SubSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mt-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-[#666] mb-2">{title}</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-mnemo-dim mb-2">{title}</h3>
       {children}
     </div>
   );
@@ -401,8 +446,8 @@ function SubSection({ title, children }: { title: string; children: React.ReactN
 
 function KV({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex gap-3 mt-2 text-[#aaa]">
-      <span className="min-w-[110px] text-[#666] text-xs pt-0.5">{label}</span>
+    <div className="flex gap-3 mt-2 text-mnemo-text">
+      <span className="min-w-[110px] text-mnemo-dim text-xs pt-0.5">{label}</span>
       <span className="flex-1 text-sm">{children}</span>
     </div>
   );
@@ -410,19 +455,19 @@ function KV({ label, children }: { label: string; children: React.ReactNode }) {
 
 function Key({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-[#1e1e1e] border border-[#333] text-[#ccc] font-mono leading-none">
+    <kbd className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-mnemo-panel-elevated border border-mnemo-border-strong text-mnemo-text font-mono leading-none">
       {children}
     </kbd>
   );
 }
 
 function Mono({ children }: { children: React.ReactNode }) {
-  return <code className="px-1 py-0.5 rounded text-[12px] bg-[#1a1a1a] text-[#a78bfa]">{children}</code>;
+  return <code className="px-1 py-0.5 rounded text-[12px] bg-mnemo-panel-elevated text-mnemo-accent">{children}</code>;
 }
 
 function CodeBlock({ children }: { children: React.ReactNode }) {
   return (
-    <pre className="mt-2 p-3 rounded bg-[#111] border border-[#1e1e1e] text-[11px] text-[#aaa] font-mono overflow-x-auto leading-relaxed whitespace-pre">
+    <pre className="mt-2 p-3 rounded bg-mnemo-panel border border-mnemo-border text-[11px] text-mnemo-text font-mono overflow-x-auto leading-relaxed whitespace-pre">
       {children}
     </pre>
   );
@@ -434,7 +479,7 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
       <thead>
         <tr>
           {headers.map(h => (
-            <th key={h} className="text-left text-[11px] uppercase tracking-wider text-[#555] pb-1.5 border-b border-[#1e1e1e] pr-6">
+            <th key={h} className="text-left text-[11px] uppercase tracking-wider text-mnemo-dim pb-1.5 border-b border-mnemo-border pr-6">
               {h}
             </th>
           ))}
@@ -442,9 +487,9 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} className="border-b border-[#111]">
+          <tr key={i} className="border-b border-mnemo-border">
             {row.map((cell, j) => (
-              <td key={j} className={`py-1.5 pr-6 ${j === 0 ? 'text-[#7c7cff] font-mono' : 'text-[#aaa]'}`}>
+              <td key={j} className={`py-1.5 pr-6 ${j === 0 ? 'text-mnemo-accent font-mono' : 'text-mnemo-text'}`}>
                 {cell}
               </td>
             ))}

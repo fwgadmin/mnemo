@@ -6,6 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { LocalNoteStore } from '../store/NoteStore';
 import { TursoNoteStore } from '../store/TursoNoteStore';
 import type { INoteStore } from '../../shared/types';
+import { resolveTursoCredentials } from '../userConfig';
 import { createMcpServer } from './server';
 
 export interface McpStdioArgs {
@@ -38,7 +39,9 @@ export function parseMcpStdioArgs(argv: string[]): McpStdioArgs {
 }
 
 export async function runMcpStdioServer(argv: string[]): Promise<void> {
-  const { dbPath, vaultPath, tursoUrl, tursoToken } = parseMcpStdioArgs(argv);
+  const parsed = parseMcpStdioArgs(argv);
+  const { dbPath, vaultPath } = parsed;
+  const { tursoUrl, tursoToken } = resolveTursoCredentials(parsed);
 
   let store: INoteStore;
   if (tursoUrl && tursoToken) {

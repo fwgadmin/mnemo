@@ -211,6 +211,9 @@ module.exports = {
     {
       name: '@electron-forge/plugin-webpack',
       config: {
+        // Default 3000 often conflicts (e.g. Next, Vite, other apps). Override with:
+        //   MNEMO_DEV_SERVER_PORT=3000 npm start
+        port: Number(process.env.MNEMO_DEV_SERVER_PORT || 13000),
         mainConfig: './webpack.main.config.js',
         renderer: {
           config: './webpack.renderer.config.js',

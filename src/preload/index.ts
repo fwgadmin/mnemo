@@ -1,6 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../shared/types';
-import type { Note, NoteListItem, SearchResult, CreateNoteInput, UpdateNoteInput, GraphData, AppConfig, SyncResult } from '../shared/types';
+import type {
+  Note,
+  NoteListItem,
+  SearchResult,
+  CreateNoteInput,
+  UpdateNoteInput,
+  GraphData,
+  AppConfig,
+  SyncResult,
+  MnemoUiPreferences,
+} from '../shared/types';
 
 export interface MnemoAPI {
   notes: {
@@ -24,6 +34,11 @@ export interface MnemoAPI {
     save(cfg: AppConfig): Promise<boolean>;
     storeType(): Promise<'turso' | 'local'>;
     syncLocalNotes(): Promise<SyncResult>;
+  };
+  /** Theme, layout, sidebar, category colors, IDE tabs — synced to ui-preferences.json (same as MCP) */
+  preferences: {
+    read(): Promise<MnemoUiPreferences>;
+    save(partial: Partial<MnemoUiPreferences>): Promise<boolean>;
   };
   onMenuCommand(callback: (command: string) => void): () => void;
   onFileOpenedExternally(callback: (data: { title: string; body: string }) => void): () => void;
@@ -51,6 +66,10 @@ const api: MnemoAPI = {
     save: (cfg: AppConfig) => ipcRenderer.invoke(IPC.CONFIG_SAVE, cfg),
     storeType: () => ipcRenderer.invoke(IPC.CONFIG_STORE_TYPE),
     syncLocalNotes: (): Promise<SyncResult> => ipcRenderer.invoke(IPC.CONFIG_SYNC_LOCAL),
+  },
+  preferences: {
+    read: () => ipcRenderer.invoke(IPC.UI_PREFERENCES_READ),
+    save: (partial: Partial<MnemoUiPreferences>) => ipcRenderer.invoke(IPC.UI_PREFERENCES_SAVE, partial),
   },
   onMenuCommand: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, command: string) => callback(command);
