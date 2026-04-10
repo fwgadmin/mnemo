@@ -14,6 +14,10 @@ import { cpp } from '@codemirror/lang-cpp';
 import { java } from '@codemirror/lang-java';
 import { xml } from '@codemirror/lang-xml';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, LanguageDescription } from '@codemirror/language';
+import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { mnemoEditorTheme, mnemoSyntaxHighlighting } from '../editor/mnemoCodeMirror';
+import { normalizeLineSeparators } from '../editor/lineSeparators';
+import { wikilinkDecorations } from './wikilinkPlugin';
 
 // Synchronously available languages — avoids async lezer mixed-tree issues
 const codeLanguages = [
@@ -29,9 +33,6 @@ const codeLanguages = [
   LanguageDescription.of({ name: 'Java',        alias: ['java'],             extensions: ['java'],          support: java() }),
   LanguageDescription.of({ name: 'XML',         alias: ['xml', 'svg'],       extensions: ['xml', 'svg'],    support: xml() }),
 ];
-import { oneDark } from '@codemirror/theme-one-dark';
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
-import { wikilinkDecorations } from './wikilinkPlugin';
 import type { Note } from '../../shared/types';
 
 interface EditorProps {
@@ -42,75 +43,6 @@ interface EditorProps {
   saveSignal?: number;
   showLineNumbers?: boolean;
 }
-
-/** Custom dark theme matching Mnemo's aesthetic */
-const mnemoTheme = EditorView.theme({
-  '&': {
-    backgroundColor: 'transparent',
-    color: '#ccc',
-    fontSize: '14px',
-    height: '100%',
-  },
-  '&.cm-focused': {
-    outline: 'none',
-  },
-  '.cm-content': {
-    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-    lineHeight: '1.7',
-    padding: '0',
-    paddingLeft: '6px',
-    caretColor: '#7c7cff',
-  },
-  '.cm-cursor': {
-    borderLeftColor: '#7c7cff',
-    borderLeftWidth: '2px',
-  },
-  '.cm-gutters': {
-    backgroundColor: 'transparent',
-    color: '#333',
-    border: 'none',
-    paddingRight: '8px',
-  },
-  '.cm-activeLineGutter': {
-    backgroundColor: 'transparent',
-    color: '#555',
-  },
-  '.cm-activeLine': {
-    backgroundColor: '#ffffff06',
-  },
-  '.cm-selectionBackground': {
-    backgroundColor: '#264f78 !important',
-  },
-  '&.cm-focused .cm-selectionBackground': {
-    backgroundColor: '#264f78 !important',
-  },
-  '.cm-line': {
-    padding: '0 0',
-  },
-  '.cm-wikilink': {
-    color: '#7c7cff',
-    textDecoration: 'underline',
-    textDecorationColor: '#7c7cff44',
-    textUnderlineOffset: '3px',
-    cursor: 'pointer',
-  },
-  '.cm-wikilink:hover': {
-    textDecorationColor: '#7c7cff',
-  },
-  '.cm-wikilink-bracket': {
-    color: '#555',
-  },
-  '.cm-scroller': {
-    overflow: 'auto',
-  },
-  '.cm-scroller::-webkit-scrollbar': { width: '6px' },
-  '.cm-scroller::-webkit-scrollbar-track': { background: 'transparent' },
-  '.cm-scroller::-webkit-scrollbar-thumb': { background: '#333', borderRadius: '3px' },
-  '.cm-scroller::-webkit-scrollbar-thumb:hover': { background: '#555' },
-  '.cm-selectionMatch': {
-    backgroundColor: '#ffffff15',
-  },
-}, { dark: true });
 
 export default function Editor({ note, onUpdate, onNavigate, showHeader = true, saveSignal, showLineNumbers = true }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -173,7 +105,7 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
     });
 
     const state = EditorState.create({
-      doc: note.body,
+      doc: normalizeLineSeparators(note.body),
       extensions: [
         lineNumbersCompartment.current.of(showLineNumbers ? [lineNumbers(), highlightActiveLineGutter()] : []),
         history(),
@@ -182,9 +114,9 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
         highlightActiveLine(),
         highlightSelectionMatches(),
         markdown({ base: markdownLanguage, codeLanguages }),
+        mnemoSyntaxHighlighting,
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        mnemoTheme,
-        oneDark,
+        mnemoEditorTheme,
         keymap.of([
           { key: 'Mod-s', run: () => { saveNow(); return true; } },
           ...defaultKeymap,
@@ -196,6 +128,7 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
         clickHandler,
         wikilinkDecorations(),
         EditorView.lineWrapping,
+        EditorView.clipboardInputFilter.of(text => normalizeLineSeparators(text)),
       ],
     });
 
@@ -227,7 +160,7 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
   const editorPx = showHeader ? 'pl-4 pr-2' : 'pl-3 pr-1';
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
       {showHeader && (
         <>
           <div className="px-4 pt-3 pb-1">
@@ -237,10 +170,10 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
               defaultValue={note.title}
               key={note.id}
               onChange={(e) => handleTitleChange(e.target.value)}
-              className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-[#e4e4e7] placeholder-[#444]"
+              className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-mnemo-text placeholder-mnemo-dim"
               placeholder="Untitled"
             />
-            <div className="flex items-center gap-3 mt-2 text-[10px] text-[#555]">
+            <div className="flex items-center gap-3 mt-2 text-[10px] text-mnemo-dim">
               <span>{new Date(note.modified).toLocaleDateString()}</span>
               <span>·</span>
               <span>{wordCount} word{wordCount !== 1 ? 's' : ''}</span>
@@ -258,10 +191,13 @@ export default function Editor({ note, onUpdate, onNavigate, showHeader = true, 
               )}
             </div>
           </div>
-          <div className="mx-4 border-t border-[#1a1a1a] my-1" />
+          <div className="mx-4 border-t border-mnemo-border my-1" />
         </>
       )}
-      <div ref={containerRef} className={`flex-1 overflow-hidden ${editorPx} ${showHeader ? 'pb-3' : 'py-3'}`} />
+      <div
+        ref={containerRef}
+        className={`flex-1 min-h-0 min-w-0 overflow-hidden ${editorPx} ${showHeader ? 'pb-3' : 'py-3'}`}
+      />
     </div>
   );
 }

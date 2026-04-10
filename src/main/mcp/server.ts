@@ -1,6 +1,7 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { INoteStore } from '../../shared/types';
+import type { INoteStore, MnemoUiPreferences } from '../../shared/types';
+import { mergeAndWriteUiPreferences, readUiPreferencesFromDisk } from '../uiPreferences';
 
 /**
  * Creates and configures the Mnemo MCP server.
@@ -24,6 +25,23 @@ export function createMcpServer(store: INoteStore): McpServer {
         uri: 'mnemo://notes',
         mimeType: 'application/json',
         text: JSON.stringify(await store.list(), null, 2),
+      }],
+    }),
+  );
+
+  mcp.resource(
+    'mnemo-preferences',
+    'mnemo://preferences',
+    {
+      description:
+        'Mnemo UI preferences (theme, layout, sidebar, category colors, IDE tabs) — same as ui-preferences.json',
+      mimeType: 'application/json',
+    },
+    async () => ({
+      contents: [{
+        uri: 'mnemo://preferences',
+        mimeType: 'application/json',
+        text: JSON.stringify(readUiPreferencesFromDisk(), null, 2),
       }],
     }),
   );
@@ -53,10 +71,20 @@ export function createMcpServer(store: INoteStore): McpServer {
 
   mcp.tool(
     'create_note',
-    'Create a new note in the vault',
-    { title: z.string(), body: z.string(), tags: z.array(z.string()).optional() },
+    'Create a new note in the vault. Optional tags: the first tag is the category folder (nested paths use /). Use the tag General for the General bucket; omit tags or leave the first tag empty for uncategorized notes (shown as Unassigned in the app when other categories exist).',
+    {
+      title: z.string(),
+      body: z.string(),
+      tags: z.array(z.string()).optional(),
+      hideHeader: z.boolean().optional(),
+    },
     async (args) => {
-      const note = await store.create({ title: args.title, body: args.body, tags: args.tags });
+      const note = await store.create({
+        title: args.title,
+        body: args.body,
+        tags: args.tags,
+        hideHeader: args.hideHeader,
+      });
       return { content: [{ type: 'text', text: JSON.stringify(note, null, 2) }] };
     },
   );
@@ -76,15 +104,22 @@ export function createMcpServer(store: INoteStore): McpServer {
 
   mcp.tool(
     'update_note',
-    'Update an existing note (title, body, and/or tags)',
+    'Update an existing note (title, body, tags, hideHeader). The first tag is the category folder (same rules as create_note).',
     {
       id: z.string(),
       title: z.string().optional(),
       body: z.string().optional(),
       tags: z.array(z.string()).optional(),
+      hideHeader: z.boolean().optional(),
     },
     async (args) => {
-      const note = await store.update({ id: args.id, title: args.title, body: args.body, tags: args.tags });
+      const note = await store.update({
+        id: args.id,
+        title: args.title,
+        body: args.body,
+        tags: args.tags,
+        hideHeader: args.hideHeader,
+      });
       if (!note) {
         return { content: [{ type: 'text', text: `Note ${args.id} not found` }], isError: true };
       }
@@ -142,10 +177,43 @@ export function createMcpServer(store: INoteStore): McpServer {
     async () => {
       const [notes, links] = await Promise.all([store.list(), store.getAllLinks()]);
       const graph = {
-        nodes: notes.map(n => ({ id: n.id, title: n.title })),
+        nodes: notes.map(n => ({ id: n.id, title: n.title, ref: n.ref })),
         links,
       };
       return { content: [{ type: 'text', text: JSON.stringify(graph, null, 2) }] };
+    },
+  );
+
+  const uiPrefFields = {
+    themeId: z.string().optional(),
+    layoutOverride: z.enum(['inherit', 'sidebar', 'top', 'ide']).optional(),
+    showSidebar: z.boolean().optional(),
+    showNoteHeader: z.boolean().optional(),
+    showLineNumbers: z.boolean().optional(),
+    showNoteRefs: z.boolean().optional(),
+    grouped: z.boolean().optional(),
+    categoryScopeSubtree: z.boolean().optional(),
+    categoryColors: z.record(z.string(), z.string()).optional(),
+    ideTabIds: z.array(z.string()).optional(),
+  };
+
+  mcp.tool(
+    'get_ui_preferences',
+    'Read Mnemo UI preferences: theme, layout override, sidebar and editor toggles, note list grouping, category folder colors, IDE tab order. Same JSON as mnemo://preferences and ui-preferences.json beside config.',
+    {},
+    async () => {
+      const prefs = readUiPreferencesFromDisk();
+      return { content: [{ type: 'text', text: JSON.stringify(prefs, null, 2) }] };
+    },
+  );
+
+  mcp.tool(
+    'set_ui_preferences',
+    'Merge partial UI preferences into ui-preferences.json (omit fields you do not want to change). The desktop app reloads from disk on next start; if it is open, preferences may sync when the app saves.',
+    uiPrefFields,
+    async (args) => {
+      const merged = mergeAndWriteUiPreferences(args as Partial<MnemoUiPreferences>);
+      return { content: [{ type: 'text', text: JSON.stringify(merged, null, 2) }] };
     },
   );
 

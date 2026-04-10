@@ -32,7 +32,7 @@ Usage:
 
 Commands:
   gui [args…]          Start the desktop app (electron-forge start; pass args after -- to Electron)
-  note …               List, show, search, or create notes (needs: npm run build:cli)
+  note …               List, show, search, create, or import notes (needs: npm run build:cli)
   mcp [options]        MCP server on stdio
   mcp-http             HTTP/SSE MCP (needs: npm run build:mcp-http)
 
@@ -45,6 +45,8 @@ Examples:
   mnemo
   mnemo gui
   mnemo note list
+  mnemo note list -c "Work/Meetings" -v
+  mnemo note import ./doc.md -c "Work/Notes"
   mnemo mcp
 `);
 }

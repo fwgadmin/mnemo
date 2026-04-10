@@ -38,7 +38,7 @@ export default function BacklinksPanel({ noteId, onSelectNote }: BacklinksPanelP
             <div
               key={bl.id}
               onClick={() => onSelectNote(bl.id)}
-              className="px-3 py-1.5 rounded-md cursor-pointer text-[#888] hover:text-[#ccc] hover:bg-[#1a1a1a] transition-colors"
+              className="px-3 py-1.5 rounded-md cursor-pointer text-mnemo-muted hover:text-mnemo-text hover:bg-mnemo-hover transition-colors"
             >
               <div className="text-xs font-medium truncate">{bl.title || 'Untitled'}</div>
               {bl.snippet && (

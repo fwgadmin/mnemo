@@ -23,6 +23,13 @@ export function migrateNoteDatabaseRef(db: Database.Database): void {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes (tenant_id, ref)');
 }
 
+/** Add hide_header (per-note editor chrome); safe to call on every open. */
+export function migrateNoteDatabaseHideHeader(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(notes)').all() as { name: string }[];
+  if (cols.some(c => c.name === 'hide_header')) return;
+  db.exec('ALTER TABLE notes ADD COLUMN hide_header INTEGER NOT NULL DEFAULT 0');
+}
+
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS notes (
   id          TEXT PRIMARY KEY,
@@ -82,6 +89,7 @@ export class LocalNoteStore implements INoteStore {
     this.db.pragma('foreign_keys = ON');
     this.initSchema();
     migrateNoteDatabaseRef(this.db);
+    migrateNoteDatabaseHideHeader(this.db);
   }
 
   private initSchema(): void {
@@ -102,11 +110,12 @@ export class LocalNoteStore implements INoteStore {
       .get(tenantId) as { n: number };
     const nextRef = nextRefRow.n;
 
+    const hideHeader = input.hideHeader ? 1 : 0;
     const stmt = this.db.prepare(`
-      INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, nextRef);
+    stmt.run(id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, nextRef, hideHeader);
 
     const note: Note = {
       id,
@@ -118,6 +127,7 @@ export class LocalNoteStore implements INoteStore {
       modified: now,
       tenantId,
       links: [],
+      hideHeader: !!input.hideHeader,
     };
 
     this.writeMdFile(note);
@@ -144,10 +154,11 @@ export class LocalNoteStore implements INoteStore {
     const title = input.title ?? existing.title;
     const body = input.body ?? existing.body;
     const tags = input.tags ?? existing.tags;
+    const hideHeader = input.hideHeader !== undefined ? input.hideHeader : existing.hideHeader;
 
     this.db.prepare(`
-      UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ? WHERE id = ?
-    `).run(title, body, JSON.stringify(tags), now, input.id);
+      UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ?, hide_header = ? WHERE id = ?
+    `).run(title, body, JSON.stringify(tags), now, hideHeader ? 1 : 0, input.id);
 
     const note: Note = {
       ...existing,
@@ -156,6 +167,7 @@ export class LocalNoteStore implements INoteStore {
       body,
       tags,
       modified: now,
+      hideHeader,
     };
 
     this.writeMdFile(note);
@@ -176,7 +188,7 @@ export class LocalNoteStore implements INoteStore {
 
   list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const rows = this.db.prepare(
-      'SELECT ref, id, title, body, tags, updated_at FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
+      'SELECT ref, id, title, body, tags, updated_at, hide_header FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
     ).all(tenantId) as any[];
 
     return Promise.resolve(rows.map(row => ({
@@ -186,6 +198,7 @@ export class LocalNoteStore implements INoteStore {
       tags: JSON.parse(row.tags),
       modified: row.updated_at,
       snippet: row.body.substring(0, 120),
+      hideHeader: (row.hide_header ?? 0) === 1,
     })));
   }
 
@@ -193,7 +206,7 @@ export class LocalNoteStore implements INoteStore {
     if (!query.trim()) return Promise.resolve([]);
 
     const rows = this.db.prepare(`
-      SELECT n.ref, n.id, n.title, n.body, notes_fts.rank
+      SELECT n.ref, n.id, n.title, n.body, n.hide_header, notes_fts.rank
       FROM notes_fts
       JOIN notes n ON n.rowid = notes_fts.rowid
       WHERE notes_fts MATCH ?
@@ -208,6 +221,7 @@ export class LocalNoteStore implements INoteStore {
       title: row.title,
       snippet: row.body.substring(0, 120),
       rank: row.rank,
+      hideHeader: (row.hide_header ?? 0) === 1,
     })));
   }
 
@@ -279,6 +293,7 @@ export class LocalNoteStore implements INoteStore {
       modified: row.updated_at,
       tenantId: row.tenant_id,
       links: this.getLinksForNote(row.id),
+      hideHeader: (row.hide_header ?? 0) === 1,
     };
   }
 
@@ -299,6 +314,7 @@ export class LocalNoteStore implements INoteStore {
       `created: "${note.created}"`,
       `modified: "${note.modified}"`,
       `tenantId: "${note.tenantId}"`,
+      `hideHeader: ${note.hideHeader}`,
       '---',
     ].join('\n');
 

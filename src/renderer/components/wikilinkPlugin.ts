@@ -44,16 +44,3 @@ export function wikilinkDecorations() {
   return wikilinkPlugin;
 }
 
-/** Extract all wikilink targets from a markdown string */
-export function extractWikilinks(text: string): string[] {
-  const links: string[] = [];
-  const re = /\[\[([^\]]+)\]\]/g;
-  let match;
-  while ((match = re.exec(text)) !== null) {
-    const target = match[1].trim();
-    if (target && !links.includes(target)) {
-      links.push(target);
-    }
-  }
-  return links;
-}

@@ -56,6 +56,7 @@ export class TursoNoteStore implements INoteStore {
       'write',
     );
     await this.migrateRefIfNeeded();
+    await this.migrateHideHeaderIfNeeded();
   }
 
   private async migrateRefIfNeeded(): Promise<void> {
@@ -90,6 +91,16 @@ export class TursoNoteStore implements INoteStore {
     });
   }
 
+  private async migrateHideHeaderIfNeeded(): Promise<void> {
+    const info = await this.client.execute({ sql: 'PRAGMA table_info(notes)', args: [] });
+    const has = info.rows.some(r => r['name'] === 'hide_header');
+    if (has) return;
+    await this.client.execute({
+      sql: 'ALTER TABLE notes ADD COLUMN hide_header INTEGER NOT NULL DEFAULT 0',
+      args: [],
+    });
+  }
+
   async create(input: CreateNoteInput): Promise<Note> {
     const now = new Date().toISOString();
     const id = uuidv4();
@@ -102,10 +113,11 @@ export class TursoNoteStore implements INoteStore {
     });
     const nextRef = maxRow.rows[0]?.['n'] as number;
 
+    const hideHeader = input.hideHeader ? 1 : 0;
     await this.client.execute({
-      sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, nextRef],
+      sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, nextRef, hideHeader],
     });
 
     const note: Note = {
@@ -118,6 +130,7 @@ export class TursoNoteStore implements INoteStore {
       modified: now,
       tenantId,
       links: [],
+      hideHeader: !!input.hideHeader,
     };
 
     this.writeMdFile(note);
@@ -152,13 +165,14 @@ export class TursoNoteStore implements INoteStore {
     const title = input.title ?? existing.title;
     const body = input.body ?? existing.body;
     const tags = input.tags ?? existing.tags;
+    const hideHeader = input.hideHeader !== undefined ? input.hideHeader : existing.hideHeader;
 
     await this.client.execute({
-      sql: `UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ? WHERE id = ?`,
-      args: [title, body, JSON.stringify(tags), now, input.id],
+      sql: `UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ?, hide_header = ? WHERE id = ?`,
+      args: [title, body, JSON.stringify(tags), now, hideHeader ? 1 : 0, input.id],
     });
 
-    const note: Note = { ...existing, ref: existing.ref, title, body, tags, modified: now };
+    const note: Note = { ...existing, ref: existing.ref, title, body, tags, modified: now, hideHeader };
     this.writeMdFile(note);
     return note;
   }
@@ -180,7 +194,7 @@ export class TursoNoteStore implements INoteStore {
 
   async list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT ref, id, title, body, tags, updated_at
+      sql: `SELECT ref, id, title, body, tags, updated_at, hide_header
             FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC`,
       args: [tenantId],
     });
@@ -191,6 +205,7 @@ export class TursoNoteStore implements INoteStore {
       tags: JSON.parse(row['tags'] as string),
       modified: row['updated_at'] as string,
       snippet: (row['body'] as string).substring(0, 120),
+      hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
     }));
   }
 
@@ -199,7 +214,7 @@ export class TursoNoteStore implements INoteStore {
 
     try {
       const result = await this.client.execute({
-        sql: `SELECT n.ref, n.id, n.title, n.body, notes_fts.rank
+        sql: `SELECT n.ref, n.id, n.title, n.body, n.hide_header, notes_fts.rank
               FROM notes_fts
               JOIN notes n ON n.rowid = notes_fts.rowid
               WHERE notes_fts MATCH ?
@@ -214,12 +229,13 @@ export class TursoNoteStore implements INoteStore {
         title: row['title'] as string,
         snippet: (row['body'] as string).substring(0, 120),
         rank: row['rank'] as number,
+        hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
       }));
     } catch {
       // FTS5 unavailable — fall back to LIKE
       const like = `%${query}%`;
       const result = await this.client.execute({
-        sql: `SELECT ref, id, title, body FROM notes
+        sql: `SELECT ref, id, title, body, hide_header FROM notes
               WHERE (title LIKE ? OR body LIKE ?) AND tenant_id = ?
               LIMIT 50`,
         args: [like, like, tenantId],
@@ -230,6 +246,7 @@ export class TursoNoteStore implements INoteStore {
         title: row['title'] as string,
         snippet: (row['body'] as string).substring(0, 120),
         rank: i,
+        hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
       }));
     }
   }
@@ -306,6 +323,7 @@ export class TursoNoteStore implements INoteStore {
       created_at: string;
       updated_at: string;
       ref: number | null;
+      hide_header: number;
     }>,
     links: Array<{ source_id: string; target_id: string }>,
   ): Promise<{ synced: number; skipped: number }> {
@@ -318,14 +336,15 @@ export class TursoNoteStore implements INoteStore {
     for (let i = 0; i < notes.length; i += CHUNK) {
       const chunk = notes.slice(i, i + CHUNK);
       const statements = chunk.map(n => ({
-        sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET
-                title      = excluded.title,
-                body       = excluded.body,
-                tags       = excluded.tags,
-                updated_at = excluded.updated_at,
-                ref        = COALESCE(excluded.ref, notes.ref)
+                title       = excluded.title,
+                body        = excluded.body,
+                tags        = excluded.tags,
+                updated_at  = excluded.updated_at,
+                ref         = COALESCE(excluded.ref, notes.ref),
+                hide_header = excluded.hide_header
               WHERE excluded.updated_at > notes.updated_at`,
         args: [
           n.id,
@@ -336,6 +355,7 @@ export class TursoNoteStore implements INoteStore {
           n.created_at,
           n.updated_at,
           n.ref,
+          n.hide_header ?? 0,
         ] as import('@libsql/client').InValue[],
       }));
       await this.client.batch(statements, 'write');
@@ -369,6 +389,7 @@ export class TursoNoteStore implements INoteStore {
       modified: row['updated_at'] as string,
       tenantId: row['tenant_id'] as string,
       links,
+      hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
     };
   }
 
@@ -382,6 +403,7 @@ export class TursoNoteStore implements INoteStore {
       `tags: [${note.tags.map(t => `"${t}"`).join(', ')}]`,
       `created: ${note.created}`,
       `modified: ${note.modified}`,
+      `hideHeader: ${note.hideHeader}`,
       '---',
       '',
       note.body,

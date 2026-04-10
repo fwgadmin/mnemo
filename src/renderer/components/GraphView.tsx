@@ -6,6 +6,8 @@ import type { GraphData } from '../../shared/types';
 interface GraphViewProps {
   onSelectNote: (id: string) => void;
   activeNoteId: string | null;
+  /** When false, graph labels omit stable #ref (CLI-oriented) */
+  showNoteRefs?: boolean;
 }
 
 interface GraphNode extends SimulationNodeDatum {
@@ -19,7 +21,7 @@ interface GraphLink extends SimulationLinkDatum<GraphNode> {
   target: string | GraphNode;
 }
 
-export default function GraphView({ onSelectNote, activeNoteId }: GraphViewProps) {
+export default function GraphView({ onSelectNote, activeNoteId, showNoteRefs = false }: GraphViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const simRef = useRef<ReturnType<typeof forceSimulation<GraphNode>> | null>(null);
@@ -131,7 +133,9 @@ export default function GraphView({ onSelectNote, activeNoteId }: GraphViewProps
         ctx.fillStyle = '#ccc';
         ctx.textAlign = 'center';
         ctx.fillText(
-          `${node.ref} · ${node.title || 'Untitled'}`,
+          showNoteRefs
+            ? `${node.ref} · ${node.title || 'Untitled'}`
+            : (node.title || 'Untitled'),
           node.x,
           node.y - radius - 6,
         );
@@ -139,7 +143,7 @@ export default function GraphView({ onSelectNote, activeNoteId }: GraphViewProps
     }
 
     ctx.restore();
-  }, [activeNoteId, hoveredNode]);
+  }, [activeNoteId, hoveredNode, showNoteRefs]);
 
   // Keep drawRef in sync so ResizeObserver can always call the latest draw
   useEffect(() => { drawRef.current = draw; }, [draw]);
@@ -217,7 +221,7 @@ export default function GraphView({ onSelectNote, activeNoteId }: GraphViewProps
   };
 
   return (
-    <div ref={containerRef} className="w-full h-full relative bg-[#0a0a0a]">
+    <div ref={containerRef} className="w-full h-full relative bg-mnemo-app">
       <canvas
         ref={canvasRef}
         className="w-full h-full cursor-crosshair"
