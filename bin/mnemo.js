@@ -31,13 +31,15 @@ Usage:
   mnemo [command] [arguments…]
 
 Commands:
-  gui [args…]          Start the desktop app (electron-forge start; pass args after -- to Electron)
-  note …               List, show, search, create, or import notes (needs: npm run build:cli)
-  mcp [options]        MCP server on stdio
-  mcp-http             HTTP/SSE MCP (needs: npm run build:mcp-http)
+  gui [args…]          Start the desktop app (dev tree: electron-forge start; pass args after -- to Electron)
+  note …               Vault CLI (list, show, search, new, import, graph, categories, …)
+  completion bash|zsh|fish   Print shell tab-completion script to stdout
+  mcp [options]        MCP server on stdio (Cursor, Claude Desktop, …)
+  mcp-http             HTTP/SSE MCP for remote libSQL (env: TURSO_*, MCP_API_KEY)
 
 Options:
-  -h, --help           Show this help (or full CLI help when dist/mnemo-cli.js exists)
+  -h, --help           Full CLI help (same content as Help → Documentation in the app) when
+                       dist/mnemo-cli.js exists (after npm run build:cli)
 
 With no command, the GUI is started (same as "mnemo gui").
 
@@ -46,8 +48,13 @@ Examples:
   mnemo gui
   mnemo note list
   mnemo note list -c "Work/Meetings" -v
+  mnemo note search "nginx"
+  mnemo note new --title "Todo" --body "- [ ] item" -c General
+  mnemo note show 3
   mnemo note import ./doc.md -c "Work/Notes"
   mnemo mcp
+
+Documentation: in-app Help → Documentation; CLI: mnemo --help. Shared source: src/shared/userGuide.ts
 `);
 }
 
@@ -94,7 +101,7 @@ if (argv[0] === '-h' || argv[0] === '--help' || argv[0] === 'help') {
   }
 } else if (argv.length >= 1) {
   const cmd = argv[0];
-  if (cmd === 'mcp' || cmd === 'note') {
+  if (cmd === 'mcp' || cmd === 'note' || cmd === 'completion') {
     if (!fs.existsSync(cliJs)) {
       console.error('Run: npm run build:cli   (missing dist/mnemo-cli.js)');
       process.exit(1);

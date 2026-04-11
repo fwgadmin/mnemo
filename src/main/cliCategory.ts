@@ -33,6 +33,26 @@ export function tagsForCategoryPath(categoryPath: string, otherTags: string[]): 
   return [normalizePath(categoryPath) || GENERAL_PATH, ...otherTags];
 }
 
+/** Plain objects for `mnemo note categories --json`. */
+export function exportCategoryTreeJson(notes: NoteListItem[], flat: boolean): unknown {
+  const root = buildCategoryTree(notes);
+  const nodes = flattenTreeDFS(root);
+  if (flat) {
+    return nodes.map(n => ({
+      path: n.path,
+      direct: n.directNoteCount,
+      subtree: n.subtreeNoteCount,
+    }));
+  }
+  return nodes.map(n => ({
+    path: n.path,
+    depth: n.depth,
+    segment: n.segment,
+    direct: n.directNoteCount,
+    subtree: n.subtreeNoteCount,
+  }));
+}
+
 export function printCategoryTree(notes: NoteListItem[], flat: boolean): void {
   const root = buildCategoryTree(notes);
   if (flat) {
@@ -73,7 +93,8 @@ export async function renameCategoryFolder(
   store: INoteStore,
   oldPathRaw: string,
   newPathRaw: string,
-): Promise<void> {
+  opts?: { silent?: boolean },
+): Promise<{ updated: number; oldPath: string; newPath: string }> {
   const oldPath = parseCliCategoryPath(oldPathRaw);
   const newPath = parseCliCategoryPath(newPathRaw);
   if (oldPath === newPath) {
@@ -96,24 +117,32 @@ export async function renameCategoryFolder(
     await store.update({ id: n.id, tags: newTags });
     updated++;
   }
-  console.log(`Renamed category: ${updated} note(s) moved from "${oldPath}" to "${newPath}".`);
+  if (!opts?.silent) {
+    console.log(`Renamed category: ${updated} note(s) moved from "${oldPath}" to "${newPath}".`);
+  }
+  return { updated, oldPath, newPath };
 }
 
-export async function promoteCategoryFolder(store: INoteStore, pathRaw: string): Promise<void> {
+export async function promoteCategoryFolder(
+  store: INoteStore,
+  pathRaw: string,
+  opts?: { silent?: boolean },
+): Promise<{ updated: number; oldPath: string; newPath: string }> {
   const p = parseCliCategoryPath(pathRaw);
   const next = promoteCategoryPath(p);
   if (next === null) {
     console.error(`Cannot promote "${p}" (already at top level or invalid).`);
     process.exit(1);
   }
-  await renameCategoryFolder(store, p, next);
+  return renameCategoryFolder(store, p, next, opts);
 }
 
 export async function demoteCategoryFolder(
   store: INoteStore,
   pathRaw: string,
   parentRaw: string,
-): Promise<void> {
+  opts?: { silent?: boolean },
+): Promise<{ updated: number; oldPath: string; newPath: string }> {
   const path = parseCliCategoryPath(pathRaw);
   const parent = parseCliCategoryPath(parentRaw);
   if (!isValidDemoteParent(path, parent)) {
@@ -121,5 +150,5 @@ export async function demoteCategoryFolder(
     process.exit(1);
   }
   const next = pathNestedUnderParent(path, parent);
-  await renameCategoryFolder(store, path, next);
+  return renameCategoryFolder(store, path, next, opts);
 }

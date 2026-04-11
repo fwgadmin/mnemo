@@ -31,7 +31,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare Windows code signing certificate
+        if: ${{ secrets.WINDOWS_CERTIFICATE_PFX_B64 != '' }}
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PFX_B64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_B64 }}
+        run: |
+          $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_B64)
+          $path = Join-Path $env:GITHUB_WORKSPACE 'certificate.pfx'
+          [IO.File]::WriteAllBytes($path, $bytes)
+          "WINDOWS_CERTIFICATE_FILE=$path" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Create Windows installers
+        env:
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_SERVER: ${{ vars.WINDOWS_TIMESTAMP_SERVER }}
         run: npm run make
 
       - name: Zip Windows out/make

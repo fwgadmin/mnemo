@@ -1,3 +1,19 @@
+import {
+  KEYBOARD_SHORTCUTS_HEADERS,
+  KEYBOARD_SHORTCUTS_ROWS,
+  MCP_CLIENT_CONFIG_HEADERS,
+  MCP_CLIENT_CONFIG_ROWS,
+  MCP_PROMPTS_HEADERS,
+  MCP_PROMPTS_ROWS,
+  MCP_RESOURCES_HEADERS,
+  MCP_RESOURCES_ROWS,
+  MCP_STDIO_DEFAULT_NOTE,
+  MCP_TOOLS_HEADERS,
+  MCP_TOOLS_ROWS,
+  USER_GUIDE_PATHS_HEADERS,
+  USER_GUIDE_PATHS_ROWS,
+} from '../../shared/userGuide';
+
 interface HelpViewProps {
   onClose: () => void;
 }
@@ -171,43 +187,15 @@ export default function HelpView({ onClose }: HelpViewProps) {
             </p>
 
             <SubSection title="Resources">
-              <Table
-                headers={['URI', 'Description']}
-                rows={[
-                  ['mnemo://notes', 'JSON list of all notes'],
-                  ['mnemo://notes/{id}', 'Single note content as Markdown'],
-                  ['mnemo://preferences', 'UI preferences JSON (theme, layout, grouped categories, category colors) — same as Settings / ui-preferences.json'],
-                ]}
-              />
+              <Table headers={[...MCP_RESOURCES_HEADERS]} rows={MCP_RESOURCES_ROWS} />
             </SubSection>
 
             <SubSection title="Tools">
-              <Table
-                headers={['Tool', 'Description']}
-                rows={[
-                  ['create_note', 'Create a note; optional tags (first tag = category path)'],
-                  ['read_note', 'Read a note by ID'],
-                  ['update_note', 'Update title, body, tags (first tag = category), hideHeader'],
-                  ['delete_note', 'Delete a note'],
-                  ['search_notes', 'Full-text search'],
-                  ['get_backlinks', 'Get notes linking to a given note'],
-                  ['link_notes', 'Set outgoing wikilinks from source to targets'],
-                  ['get_graph', 'Full note graph (nodes include id, title, ref; edges are links)'],
-                  ['get_ui_preferences', 'Read UI preferences from disk'],
-                  ['set_ui_preferences', 'Merge partial UI preferences (theme, layoutOverride, grouped, categoryColors, …)'],
-                ]}
-              />
+              <Table headers={[...MCP_TOOLS_HEADERS]} rows={MCP_TOOLS_ROWS} />
             </SubSection>
 
             <SubSection title="Prompts">
-              <Table
-                headers={['Prompt', 'Description']}
-                rows={[
-                  ['summarize_note', 'Generate a concise summary of a note'],
-                  ['relate_notes', 'Analyze relationships between two notes'],
-                  ['query_vault', 'Answer a question using the full vault as context'],
-                ]}
-              />
+              <Table headers={[...MCP_PROMPTS_HEADERS]} rows={MCP_PROMPTS_ROWS} />
             </SubSection>
 
             <SubSection title="Connecting to your vault">
@@ -229,30 +217,15 @@ export default function HelpView({ onClose }: HelpViewProps) {
 
               <p className="mt-3 font-medium text-mnemo-text">Step 2 — find your data paths</p>
               <p className="mt-1 text-mnemo-text">Your notes are stored in your OS app-data directory:</p>
-              <Table
-                headers={['OS', 'Database', 'Vault']}
-                rows={[
-                  ['Windows', '%APPDATA%\\Mnemo\\mnemo.db', '%APPDATA%\\Mnemo\\vault'],
-                  ['macOS', '~/Library/Application Support/Mnemo/mnemo.db', '~/Library/Application Support/Mnemo/vault'],
-                  ['Linux (Electron app)', '~/.config/Mnemo/mnemo.db', '~/.config/Mnemo/vault'],
-                  ['Linux (CLI / MCP default)', '~/.local/share/mnemo/mnemo.db', '~/.local/share/mnemo/vault'],
-                ]}
-              />
+              <Table headers={[...USER_GUIDE_PATHS_HEADERS]} rows={USER_GUIDE_PATHS_ROWS} />
+              <p className="mt-2 text-mnemo-dim text-xs leading-relaxed">{MCP_STDIO_DEFAULT_NOTE}</p>
 
               <p className="mt-3 font-medium text-mnemo-text">Step 3 — configure your MCP client</p>
               <p className="mt-1 text-mnemo-text">
                 Open your client's config file and add a <Mono>mnemo</Mono> entry. Config file
                 locations:
               </p>
-              <Table
-                headers={['Client', 'Config file']}
-                rows={[
-                  ['Claude Desktop (Windows)', '%APPDATA%\\Claude\\claude_desktop_config.json'],
-                  ['Claude Desktop (macOS)', '~/Library/Application Support/Claude/claude_desktop_config.json'],
-                  ['Cursor', '.cursor/mcp.json in your project, or global settings → MCP'],
-                  ['VS Code (Copilot)', '.vscode/mcp.json in your project'],
-                ]}
-              />
+              <Table headers={[...MCP_CLIENT_CONFIG_HEADERS]} rows={MCP_CLIENT_CONFIG_ROWS} />
               <p className="mt-2 font-medium text-mnemo-text">Windows</p>
               <CodeBlock>{`{
   "mcpServers": {
@@ -382,23 +355,7 @@ SELECT * FROM notes WHERE title LIKE '%mnemo%';
           </Section>
 
           <Section title="Keyboard Shortcuts">
-            <Table
-              headers={['Shortcut', 'Action']}
-              rows={[
-                ['Ctrl+N', 'New note'],
-                ['Ctrl+S', 'Save immediately'],
-                ['Ctrl+Shift+S', 'Save As (export .md)'],
-                ['Ctrl+O', 'Open / import .md file'],
-                ['Ctrl+P', 'Command palette'],
-                ['Ctrl+G', 'Toggle graph view'],
-                ['Ctrl+B', 'Toggle sidebar'],
-                ['Ctrl+M', 'Toggle Markdown helper panel'],
-                ['Ctrl+Shift+H', 'Toggle note header'],
-                ['Ctrl+Shift+L', 'Toggle line numbers'],
-                ['Ctrl+Shift+N', 'Toggle note index numbers (#refs)'],
-                ['Ctrl+,', 'Settings (themes, layout)'],
-              ]}
-            />
+            <Table headers={[...KEYBOARD_SHORTCUTS_HEADERS]} rows={KEYBOARD_SHORTCUTS_ROWS} />
           </Section>
 
           <Section title="Data Storage">

@@ -21,70 +21,72 @@ import {
   parseCliCategoryPath,
   tagsForCategoryPath,
   printCategoryTree,
+  exportCategoryTreeJson,
   setNoteCategory,
   renameCategoryFolder,
   promoteCategoryFolder,
   demoteCategoryFolder,
 } from './cliCategory';
+import { ensureDefaultCliConfig, loadCliConfig } from './cliConfig';
+import { printCompletionScript } from './cliCompletion';
 import { formatGraphOutput, parseGraphArgs } from './graphCli';
 import { extractWikilinks } from '../shared/wikilinks';
 import { inferLinkTargetIds, mergeOutgoingLinkTargets } from '../shared/linkInference';
+import { formatCliHelpText } from '../shared/userGuide';
 
 function printHelp(): void {
-  console.log(`Mnemo CLI (Node)
+  console.log(formatCliHelpText());
+}
 
-Usage:
-  mnemo mcp [options]        MCP server on stdio (Cursor, Claude Desktop, …)
-  mnemo mcp-http             HTTP/SSE MCP (needs TURSO_URL + TURSO_AUTH_TOKEN or LIBSQL_* aliases, MCP_API_KEY)
-  mnemo note <command> …     list | show | search | new | import | graph | autolink | categories | set-category | category …
+function printJson(value: unknown): void {
+  console.log(JSON.stringify(value));
+}
 
-  mnemo note categories [--flat]
-    Print folder tree (direct + subtree note counts). --flat: one path per line (tab-separated).
+/** Remove `--json` / `--no-json` from argv; last flag wins for the boolean. */
+function stripJsonFlags(argv: string[]): { flag: boolean | null; argv: string[] } {
+  const out: string[] = [];
+  let flag: boolean | null = null;
+  for (const a of argv) {
+    if (a === '--json') {
+      flag = true;
+      continue;
+    }
+    if (a === '--no-json') {
+      flag = false;
+      continue;
+    }
+    out.push(a);
+  }
+  return { flag, argv: out };
+}
 
-  mnemo note set-category <ref | uuid> <category>
-    Set category (first tag). Use General, Unassigned, or a path like Work/Meetings.
+/**
+ * `--json` / `--no-json` > MNEMO_OUTPUT=json > ~/.config/mnemo/cli.json > text.
+ */
+function resolveJsonOutput(argv: string[]): { outJson: boolean; argv: string[] } {
+  ensureDefaultCliConfig();
+  const cfg = loadCliConfig();
+  const { flag, argv: stripped } = stripJsonFlags(argv);
+  let outJson: boolean;
+  if (flag !== null) {
+    outJson = flag;
+  } else if (process.env.MNEMO_OUTPUT?.toLowerCase().trim() === 'json') {
+    outJson = true;
+  } else if (cfg.output === 'json') {
+    outJson = true;
+  } else {
+    outJson = false;
+  }
+  return { outJson, argv: stripped };
+}
 
-  mnemo note category rename <oldPath> <newPath>
-    Move every note in oldPath to newPath (same semantics as in-app Rename folder).
-
-  mnemo note category promote <path>
-    Move one level up (e.g. Work/Meetings → Meetings).
-
-  mnemo note category demote <path> --under <parentPath>
-    Nest path under parent (e.g. Work + Archive → Archive/Work).
-
-MCP options:
-  --db <path>     SQLite database (default: ./mnemo.db, or MNEMO_HOME/mnemo.db for note)
-  --vault <path>  Vault directory
-  --turso-url / --turso-token   Remote libSQL (Turso or self-hosted) instead of local SQLite
-
-Note commands use XDG: ~/.local/share/mnemo/ unless MNEMO_HOME or --db/--vault is set.
-If you configured a remote database in the app Settings, the same credentials are read from config.json
-(MNEMO_HOME, ~/.local/share/mnemo, or ~/.config/mnemo) or from MNEMO_TURSO_URL / MNEMO_TURSO_TOKEN
-or MNEMO_LIBSQL_URL / MNEMO_LIBSQL_AUTH_TOKEN.
-
-  mnemo note list [--category|-c "path"] [--exact] [-v|--verbose]
-    -c, --category      Only notes under this folder (General, Unassigned, Work/…, or nested paths)
-    --exact, --shallow  With -c: exact folder only (no notes from subfolders)
-    -v, --verbose       Include category column in output (matches in-app General / Unassigned / paths)
-  mnemo note show <ref | uuid>   ref = stable number from list (1-based)
-  mnemo note search <query>
-  mnemo note new --title "T" [--body "markdown"] [--category|-c "path"]
-    -c, --category    General, Unassigned, or nested path (same as set-category)
-
-  mnemo note import <file> [--title "T"] [--category "path"]
-    -t, --title       Note title (default: filename without extension, or "Imported note" for stdin)
-    -c, --category    General, Unassigned, or nested path (stored as first tag; / for nesting)
-    Use "-" as <file> to read body from stdin (e.g. cat x.md | mnemo note import - -c Docs)
-
-  mnemo note graph [--format tree|edges|dot|mermaid|json]
-    Link graph (wikilinks + inferred mentions). Default: ASCII tree. --format dot for graphviz.
-
-  mnemo note autolink [--dry-run|-n]
-    Recompute outgoing links for every note: [[wikilinks]] plus inferred title mentions (#ref, plain titles).
-
-For the graphical app from a dev tree, run: mnemo   or   npm start
-`);
+function cmdCompletion(rest: string[]): void {
+  const shell = rest[0];
+  if (shell !== 'bash' && shell !== 'zsh' && shell !== 'fish') {
+    console.error('Usage: mnemo completion bash|zsh|fish');
+    process.exit(1);
+  }
+  printCompletionScript(shell);
 }
 
 function resolveBundledScript(name: 'mnemo-mcp-http.js'): string {
@@ -265,9 +267,25 @@ async function openStoreForNote(argv: string[]): Promise<INoteStore> {
   return new LocalNoteStore(dbPath, vaultPath);
 }
 
+function noteJsonShow(note: Note): Record<string, unknown> {
+  return {
+    id: note.id,
+    ref: note.ref,
+    title: note.title,
+    body: note.body,
+    tags: note.tags,
+    created: note.created,
+    modified: note.modified,
+    tenantId: note.tenantId,
+    links: note.links,
+    hideHeader: note.hideHeader,
+  };
+}
+
 async function cmdNote(argv: string[]): Promise<void> {
-  const sub = argv[0];
-  const rest = argv.slice(1);
+  const { outJson, argv: noteArgv } = resolveJsonOutput(argv);
+  const sub = noteArgv[0];
+  const rest = noteArgv.slice(1);
   const store = await openStoreForNote(rest);
   const args = stripStoreArgs(rest);
 
@@ -281,12 +299,28 @@ async function cmdNote(argv: string[]): Promise<void> {
           const folderPath = trimmed ? normalizePath(trimmed) || GENERAL_PATH : GENERAL_PATH;
           notes = filterNotesByCategory(notes, folderPath, includeDescendants);
         }
-        for (const n of notes) {
-          if (verbose) {
-            const cat = categoryPathFromTags(n.tags, notes);
-            console.log(`${n.ref}\t${n.modified}\t${n.title}\t${cat}\t${n.id}`);
-          } else {
-            console.log(`${n.ref}\t${n.modified}\t${n.title}\t${n.id}`);
+        if (outJson) {
+          const rows = notes.map((n) => {
+            const row: Record<string, unknown> = {
+              ref: n.ref,
+              modified: n.modified,
+              title: n.title,
+              id: n.id,
+            };
+            if (verbose) {
+              row.category = categoryPathFromTags(n.tags, notes);
+            }
+            return row;
+          });
+          printJson({ notes: rows });
+        } else {
+          for (const n of notes) {
+            if (verbose) {
+              const cat = categoryPathFromTags(n.tags, notes);
+              console.log(`${n.ref}\t${n.modified}\t${n.title}\t${cat}\t${n.id}`);
+            } else {
+              console.log(`${n.ref}\t${n.modified}\t${n.title}\t${n.id}`);
+            }
           }
         }
         break;
@@ -302,8 +336,12 @@ async function cmdNote(argv: string[]): Promise<void> {
           console.error('Note not found.');
           process.exit(1);
         }
-        console.log(`# ${note.title}\n`);
-        console.log(note.body);
+        if (outJson) {
+          printJson({ note: noteJsonShow(note) });
+        } else {
+          console.log(`# ${note.title}\n`);
+          console.log(note.body);
+        }
         break;
       }
       case 'search': {
@@ -313,9 +351,21 @@ async function cmdNote(argv: string[]): Promise<void> {
           process.exit(1);
         }
         const hits = await store.search(q);
-        for (const h of hits) {
-          const snip = h.snippet.replace(/\s+/g, ' ').trim();
-          console.log(`${h.ref}\t${h.rank}\t${h.title}\t${h.id}\n  ${snip}`);
+        if (outJson) {
+          printJson({
+            hits: hits.map((h) => ({
+              ref: h.ref,
+              rank: h.rank,
+              title: h.title,
+              id: h.id,
+              snippet: h.snippet.replace(/\s+/g, ' ').trim(),
+            })),
+          });
+        } else {
+          for (const h of hits) {
+            const snip = h.snippet.replace(/\s+/g, ' ').trim();
+            console.log(`${h.ref}\t${h.rank}\t${h.title}\t${h.id}\n  ${snip}`);
+          }
         }
         break;
       }
@@ -330,7 +380,11 @@ async function cmdNote(argv: string[]): Promise<void> {
           tags = tagsForCategoryPath(parseCliCategoryPath(category), []);
         }
         const note = await store.create({ title, body, tags });
-        console.log(`${note.ref}\t${note.id}`);
+        if (outJson) {
+          printJson({ ref: note.ref, id: note.id, title: note.title });
+        } else {
+          console.log(`${note.ref}\t${note.id}`);
+        }
         break;
       }
       case 'import': {
@@ -370,7 +424,11 @@ async function cmdNote(argv: string[]): Promise<void> {
           tags = [];
         }
         const note = await store.create({ title, body, tags });
-        console.log(`${note.ref}\t${note.id}`);
+        if (outJson) {
+          printJson({ ref: note.ref, id: note.id, title: note.title });
+        } else {
+          console.log(`${note.ref}\t${note.id}`);
+        }
         break;
       }
       case 'graph': {
@@ -378,22 +436,30 @@ async function cmdNote(argv: string[]): Promise<void> {
         const list = await store.list();
         const links = await store.getAllLinks();
         const graphNodes = list.map(n => ({ id: n.id, ref: n.ref, title: n.title }));
-        console.log(formatGraphOutput(format, graphNodes, links));
+        if (outJson) {
+          printJson({ format, nodes: graphNodes, links });
+        } else {
+          console.log(formatGraphOutput(format, graphNodes, links));
+        }
         break;
       }
       case 'categories': {
         let flat = false;
-        const rest: string[] = [];
+        const restCat: string[] = [];
         for (const a of args) {
           if (a === '--flat') flat = true;
-          else rest.push(a);
+          else restCat.push(a);
         }
-        if (rest.length) {
+        if (restCat.length) {
           console.error('Usage: mnemo note categories [--flat]');
           process.exit(1);
         }
         const notes = await store.list();
-        printCategoryTree(notes, flat);
+        if (outJson) {
+          printJson({ flat, categories: exportCategoryTreeJson(notes, flat) });
+        } else {
+          printCategoryTree(notes, flat);
+        }
         break;
       }
       case 'set-category': {
@@ -414,7 +480,11 @@ async function cmdNote(argv: string[]): Promise<void> {
         }
         const vaultList = await store.list();
         await setNoteCategory(store, vaultList, idNote.id, categoryRaw);
-        console.log('Updated category.');
+        if (outJson) {
+          printJson({ ok: true, noteId: idNote.id });
+        } else {
+          console.log('Updated category.');
+        }
         break;
       }
       case 'category': {
@@ -430,7 +500,10 @@ async function cmdNote(argv: string[]): Promise<void> {
             console.error('Usage: mnemo note category rename <oldPath> <newPath>');
             process.exit(1);
           }
-          await renameCategoryFolder(store, oldP, newP);
+          const r = await renameCategoryFolder(store, oldP, newP, { silent: outJson });
+          if (outJson) {
+            printJson({ ok: true, op: 'rename', ...r });
+          }
           break;
         }
         if (op === 'promote') {
@@ -439,7 +512,10 @@ async function cmdNote(argv: string[]): Promise<void> {
             console.error('Usage: mnemo note category promote <path>');
             process.exit(1);
           }
-          await promoteCategoryFolder(store, p);
+          const r = await promoteCategoryFolder(store, p, { silent: outJson });
+          if (outJson) {
+            printJson({ ok: true, op: 'promote', ...r });
+          }
           break;
         }
         if (op === 'demote') {
@@ -448,7 +524,12 @@ async function cmdNote(argv: string[]): Promise<void> {
             console.error('Usage: mnemo note category demote <path> --under <parentPath>');
             process.exit(1);
           }
-          await demoteCategoryFolder(store, parsed.folderPath, parsed.parentPath);
+          const r = await demoteCategoryFolder(store, parsed.folderPath, parsed.parentPath, {
+            silent: outJson,
+          });
+          if (outJson) {
+            printJson({ ok: true, op: 'demote', ...r });
+          }
           break;
         }
         console.error('Unknown category subcommand. Use: rename, promote, demote');
@@ -482,14 +563,18 @@ async function cmdNote(argv: string[]): Promise<void> {
           notesChanged++;
           if (!dryRun) await store.updateLinks(note.id, merged);
         }
-        console.log(
-          dryRun
-            ? `Dry run: ${notesChanged} note(s) would change (${newEdges} new outgoing link(s)); omit --dry-run to write.`
-            : `Updated ${notesChanged} note(s); ${newEdges} new outgoing link edge(s) written.`,
-        );
+        if (outJson) {
+          printJson({ dryRun, notesChanged, newEdges });
+        } else {
+          console.log(
+            dryRun
+              ? `Dry run: ${notesChanged} note(s) would change (${newEdges} new outgoing link(s)); omit --dry-run to write.`
+              : `Updated ${notesChanged} note(s); ${newEdges} new outgoing link edge(s) written.`,
+          );
+        }
         break;
       }
-        default:
+      default:
         console.error(
           'Unknown note subcommand. Use: list, show, search, new, import, graph, autolink, categories, set-category, category …',
         );
@@ -527,6 +612,11 @@ async function main(): Promise<void> {
 
   if (cmd === 'mcp-http') {
     cmdMcpHttp();
+    return;
+  }
+
+  if (cmd === 'completion') {
+    cmdCompletion(rest);
     return;
   }
 

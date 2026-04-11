@@ -25,7 +25,7 @@ run_cli() {
 
 if [[ $# -ge 1 ]]; then
   case "$1" in
-    mcp|note)
+    mcp|note|completion)
       run_cli "$@"
       ;;
     mcp-http)
