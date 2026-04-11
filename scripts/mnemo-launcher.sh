@@ -8,6 +8,9 @@ CLI_JS="$HERE/mnemo-cli.js"
 HTTP_JS="$HERE/mnemo-mcp-http.js"
 NODE_PATH="$HERE/node_modules"
 
+# Chromium’s setuid sandbox helper is not root-owned in shipped bundles; Electron aborts without this.
+export ELECTRON_DISABLE_SANDBOX=1
+
 if [[ ! -x "$ELECTRON" ]]; then
   echo "Mnemo: expected Electron binary at $ELECTRON" >&2
   exit 1

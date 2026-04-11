@@ -1,6 +1,6 @@
 {
   "name": "mnemo-note",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "AI-native memory layer — notes, embeddings, and MCP for intelligence systems",
   "main": ".webpack/main",
   "license": "MIT",
@@ -20,7 +20,7 @@
     "README.md"
   ],
   "scripts": {
-    "start": "electron-forge start",
+    "start": "node scripts/start-electron-forge.js",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "build:mcp": "npx webpack-cli --config webpack.mcp.config.js",
