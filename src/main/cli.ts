@@ -30,8 +30,7 @@ import {
 import { ensureDefaultCliConfig, loadCliConfig } from './cliConfig';
 import { printCompletionScript } from './cliCompletion';
 import { formatGraphOutput, parseGraphArgs } from './graphCli';
-import { extractWikilinks } from '../shared/wikilinks';
-import { inferLinkTargetIds, mergeOutgoingLinkTargets } from '../shared/linkInference';
+import { recomputeAutolinks } from './autolinkRecompute';
 import { CLI_HELP_TOPICS, formatCliHelpOverview, formatCliHelpTopic } from '../shared/userGuide';
 import { formatListLine, formatShowHuman } from './cliOutput';
 import {
@@ -530,7 +529,12 @@ async function cmdEditWithStore(
     await store.update({ id: note.id, title: title.trim(), body });
     if (categoryAfterSave !== undefined) {
       const vaultList = await store.list();
-      await setNoteCategory(store, vaultList, note.id, categoryAfterSave);
+      try {
+        await setNoteCategory(store, vaultList, note.id, categoryAfterSave);
+      } catch (e) {
+        console.error(e instanceof Error ? e.message : String(e));
+        process.exit(1);
+      }
     }
     const updated = await store.read(note.id);
     if (outJson) {
@@ -1071,7 +1075,12 @@ async function cmdNote(argv: string[]): Promise<void> {
           process.exit(1);
         }
         const vaultList = await store.list();
-        await setNoteCategory(store, vaultList, idNote.id, categoryRaw);
+        try {
+          await setNoteCategory(store, vaultList, idNote.id, categoryRaw);
+        } catch (e) {
+          console.error(e instanceof Error ? e.message : String(e));
+          process.exit(1);
+        }
         if (outJson) {
           printJson({ ok: true, noteId: idNote.id });
         } else {
@@ -1092,9 +1101,14 @@ async function cmdNote(argv: string[]): Promise<void> {
             console.error('Usage: mnemo note category rename <oldPath> <newPath>');
             process.exit(1);
           }
-          const r = await renameCategoryFolder(store, oldP, newP, { silent: outJson });
-          if (outJson) {
-            printJson({ ok: true, op: 'rename', ...r });
+          try {
+            const r = await renameCategoryFolder(store, oldP, newP, { silent: outJson });
+            if (outJson) {
+              printJson({ ok: true, op: 'rename', ...r });
+            }
+          } catch (e) {
+            console.error(e instanceof Error ? e.message : String(e));
+            process.exit(1);
           }
           break;
         }
@@ -1104,9 +1118,14 @@ async function cmdNote(argv: string[]): Promise<void> {
             console.error('Usage: mnemo note category promote <path>');
             process.exit(1);
           }
-          const r = await promoteCategoryFolder(store, p, { silent: outJson });
-          if (outJson) {
-            printJson({ ok: true, op: 'promote', ...r });
+          try {
+            const r = await promoteCategoryFolder(store, p, { silent: outJson });
+            if (outJson) {
+              printJson({ ok: true, op: 'promote', ...r });
+            }
+          } catch (e) {
+            console.error(e instanceof Error ? e.message : String(e));
+            process.exit(1);
           }
           break;
         }
@@ -1116,11 +1135,16 @@ async function cmdNote(argv: string[]): Promise<void> {
             console.error('Usage: mnemo note category demote <path> --under <parentPath>');
             process.exit(1);
           }
-          const r = await demoteCategoryFolder(store, parsed.folderPath, parsed.parentPath, {
-            silent: outJson,
-          });
-          if (outJson) {
-            printJson({ ok: true, op: 'demote', ...r });
+          try {
+            const r = await demoteCategoryFolder(store, parsed.folderPath, parsed.parentPath, {
+              silent: outJson,
+            });
+            if (outJson) {
+              printJson({ ok: true, op: 'demote', ...r });
+            }
+          } catch (e) {
+            console.error(e instanceof Error ? e.message : String(e));
+            process.exit(1);
           }
           break;
         }
@@ -1132,29 +1156,7 @@ async function cmdNote(argv: string[]): Promise<void> {
         for (const a of args) {
           if (a === '--dry-run' || a === '-n') dryRun = true;
         }
-        const list = await store.list();
-        const index = list.map((n) => ({ id: n.id, title: n.title, ref: n.ref }));
-        let notesChanged = 0;
-        let newEdges = 0;
-        for (const item of list) {
-          const note = await store.read(item.id);
-          if (!note) continue;
-          const explicitIds: string[] = [];
-          for (const t of extractWikilinks(note.body)) {
-            const r = await store.resolveTitle(t);
-            if (r) explicitIds.push(r);
-          }
-          const inferredIds = inferLinkTargetIds(note.body, note.id, index);
-          const merged = mergeOutgoingLinkTargets(explicitIds, inferredIds, note.id);
-          const prev = new Set(note.links);
-          const next = new Set(merged);
-          const same =
-            prev.size === next.size && [...prev].every((id) => next.has(id));
-          if (same) continue;
-          newEdges += merged.filter((id) => !prev.has(id)).length;
-          notesChanged++;
-          if (!dryRun) await store.updateLinks(note.id, merged);
-        }
+        const { notesChanged, newEdges } = await recomputeAutolinks(store, dryRun);
         if (outJson) {
           printJson({ dryRun, notesChanged, newEdges });
         } else {

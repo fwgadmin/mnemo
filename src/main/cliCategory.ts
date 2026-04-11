@@ -79,8 +79,7 @@ export async function setNoteCategory(
 ): Promise<void> {
   const note = await store.read(noteId);
   if (!note) {
-    console.error('Note not found.');
-    process.exit(1);
+    throw new Error('Note not found.');
   }
   const item = vaultList.find(n => n.id === noteId);
   const otherTags = item ? item.tags.slice(1) : note.tags.slice(1);
@@ -98,8 +97,7 @@ export async function renameCategoryFolder(
   const oldPath = parseCliCategoryPath(oldPathRaw);
   const newPath = parseCliCategoryPath(newPathRaw);
   if (oldPath === newPath) {
-    console.error('Old and new paths are the same.');
-    process.exit(1);
+    throw new Error('Old and new paths are the same.');
   }
   const initialList = await store.list();
   let updated = 0;
@@ -131,8 +129,7 @@ export async function promoteCategoryFolder(
   const p = parseCliCategoryPath(pathRaw);
   const next = promoteCategoryPath(p);
   if (next === null) {
-    console.error(`Cannot promote "${p}" (already at top level or invalid).`);
-    process.exit(1);
+    throw new Error(`Cannot promote "${p}" (already at top level or invalid).`);
   }
   return renameCategoryFolder(store, p, next, opts);
 }
@@ -146,8 +143,7 @@ export async function demoteCategoryFolder(
   const path = parseCliCategoryPath(pathRaw);
   const parent = parseCliCategoryPath(parentRaw);
   if (!isValidDemoteParent(path, parent)) {
-    console.error(`Invalid demote: cannot nest "${path}" under "${parent}".`);
-    process.exit(1);
+    throw new Error(`Invalid demote: cannot nest "${path}" under "${parent}".`);
   }
   const next = pathNestedUnderParent(path, parent);
   return renameCategoryFolder(store, path, next, opts);

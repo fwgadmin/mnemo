@@ -99,6 +99,13 @@ export default function HelpView({ onClose }: HelpViewProps) {
             <KV label="Sidebar search">
               Type in the search bar to filter notes by full-text search across title, body, and tags.
             </KV>
+            <KV label="Reload list from database">
+              Click the <Mono>↻</Mono> button in the sidebar header (next to <Mono>+</Mono>) or run{' '}
+              <Mono>Reload Note List</Mono> from the command palette (<Key>Ctrl+P</Key>, then <Mono>&gt;</Mono>). That
+              re-fetches notes and categories from the database and reloads the open note from disk — useful after
+              changes from another machine, MCP, or the CLI. The app also checks periodically in the background when
+              the window is visible (list only; it does not overwrite unsaved editor text until you refresh manually).
+            </KV>
             <KV label="Command palette">
               Press <Key>Ctrl+P</Key> to open the floating command palette — search notes by title, snippet,
               or tags. Type <Mono>&gt;</Mono> to filter commands (new note, save, layout, graph, settings, …).
@@ -153,6 +160,10 @@ export default function HelpView({ onClose }: HelpViewProps) {
           </Section>
 
           <Section title="View Options">
+            <KV label="Fullscreen">
+              Press <Key>F11</Key> to toggle OS fullscreen (Linux and Windows). On macOS, use <Mono>View › Toggle Full Screen</Mono>{' '}
+              (<Key>Ctrl+Cmd+F</Key>) or <Key>F11</Key> — the app does not use a global menu bar on Linux/Windows, so fullscreen must be wired in-app.
+            </KV>
             <KV label="Toggle Sidebar">
               <Key>Ctrl+B</Key> or <Mono>View › Toggle Sidebar</Mono>. When hidden, hover the
               left edge to reveal a re-open strip.
@@ -266,8 +277,11 @@ export default function HelpView({ onClose }: HelpViewProps) {
   }
 }`}</CodeBlock>
               <p className="mt-2 text-mnemo-text">
-                The GUI app and the MCP subprocess <strong>share the same database</strong>, so
-                any notes created or edited by an AI agent appear immediately in the Mnemo window.
+                The GUI app and the MCP subprocess <strong>share the same database</strong>. With a <strong>local</strong>{' '}
+                SQLite file, changes from MCP or the CLI show up as soon as the app reloads the list. With <strong>remote
+                libSQL</strong> (Turso), updates from other devices or agents sync over the network; use the sidebar{' '}
+                <Mono>↻</Mono> button or <Mono>Reload Note List</Mono> from the command palette to pull the latest notes
+                and categories, or wait for the automatic background check.
               </p>
             </SubSection>
 

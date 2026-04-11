@@ -291,6 +291,14 @@ function buildMenu(mainWindow: BrowserWindow): void {
         { label: 'Toggle Graph', accelerator: 'CmdOrCtrl+G', click: send('toggle-graph') },
         { label: 'Markdown Helper', accelerator: 'CmdOrCtrl+M', click: send('toggle-markdown-help') },
         { label: 'Markdown Preview', accelerator: 'CmdOrCtrl+Shift+V', click: send('toggle-markdown-preview') },
+        { type: 'separator' },
+        {
+          label: 'Toggle Full Screen',
+          accelerator: process.platform === 'darwin' ? 'Ctrl+Command+F' : 'F11',
+          click: () => {
+            mainWindow.setFullScreen(!mainWindow.isFullScreen());
+          },
+        },
       ],
     },
     {
@@ -338,6 +346,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.NOTE_LIST, (_event, tenantId?: string) => {
     return store.list(tenantId);
+  });
+
+  ipcMain.handle(IPC.NOTE_VAULT_SNAPSHOT, (_event, tenantId?: string) => {
+    return store.getVaultSnapshot(tenantId);
   });
 
   ipcMain.handle(IPC.NOTE_SEARCH, (_event, query: string, tenantId?: string) => {
@@ -460,6 +472,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.UI_PREFERENCES_SAVE, async (_event, partial: Partial<MnemoUiPreferences>) => {
     await mergeAndWriteUiPreferencesAsync(partial, app.getPath('userData'), store);
     return true;
+  });
+
+  ipcMain.handle(IPC.WINDOW_TOGGLE_FULLSCREEN, event => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    win.setFullScreen(!win.isFullScreen());
   });
 }
 

@@ -2,7 +2,15 @@ import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import type { Note, NoteListItem, CreateNoteInput, UpdateNoteInput, SearchResult, INoteStore } from '../../shared/types';
+import type {
+  Note,
+  NoteListItem,
+  CreateNoteInput,
+  UpdateNoteInput,
+  SearchResult,
+  INoteStore,
+  VaultSnapshot,
+} from '../../shared/types';
 
 /** Add `ref` column + backfill; safe to call on every open. Exported for Turso sync from local file. */
 export function migrateNoteDatabaseRef(db: Database.Database): void {
@@ -274,6 +282,24 @@ export class LocalNoteStore implements INoteStore {
       WHERE n.tenant_id = ?
     `).all(tenantId) as any[];
     return Promise.resolve(rows as Array<{ source: string; target: string }>);
+  }
+
+  getVaultSnapshot(tenantId: string = 'default'): Promise<VaultSnapshot> {
+    const row = this.db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM notes WHERE tenant_id = ?) AS note_count,
+        (SELECT MAX(updated_at) FROM notes WHERE tenant_id = ?) AS max_u,
+        (SELECT COUNT(*) FROM note_links nl INNER JOIN notes n ON n.id = nl.source_id WHERE n.tenant_id = ?) AS link_count
+    `).get(tenantId, tenantId, tenantId) as {
+      note_count: number;
+      max_u: string | null;
+      link_count: number;
+    };
+    return Promise.resolve({
+      noteCount: row.note_count,
+      maxUpdatedAt: row.max_u,
+      linkCount: row.link_count,
+    });
   }
 
   close(): void {

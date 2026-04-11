@@ -40,6 +40,9 @@ const MENUS: MenuDef[] = [
       { label: 'Toggle Graph', cmd: 'toggle-graph', shortcut: 'Ctrl+G' },
       { label: 'Markdown Helper', cmd: 'toggle-markdown-help', shortcut: 'Ctrl+M' },
       { label: 'Markdown Preview', cmd: 'toggle-markdown-preview', shortcut: 'Ctrl+Shift+V' },
+      { separator: true, label: '' },
+      { label: 'Reload Note List', cmd: 'refresh-notes' },
+      { label: 'Toggle Full Screen', cmd: 'toggle-fullscreen', shortcut: 'F11' },
     ],
   },
   {

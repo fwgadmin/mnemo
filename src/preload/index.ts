@@ -10,6 +10,7 @@ import type {
   AppConfig,
   SyncResult,
   MnemoUiPreferences,
+  VaultSnapshot,
 } from '../shared/types';
 
 export interface MnemoAPI {
@@ -19,6 +20,7 @@ export interface MnemoAPI {
     update(input: UpdateNoteInput): Promise<Note | null>;
     delete(id: string): Promise<boolean>;
     list(tenantId?: string): Promise<NoteListItem[]>;
+    vaultSnapshot(tenantId?: string): Promise<VaultSnapshot>;
     search(query: string, tenantId?: string): Promise<SearchResult[]>;
     getBacklinks(noteId: string): Promise<NoteListItem[]>;
     getGraph(tenantId?: string): Promise<GraphData>;
@@ -45,6 +47,8 @@ export interface MnemoAPI {
   };
   onMenuCommand(callback: (command: string) => void): () => void;
   onFileOpenedExternally(callback: (data: { title: string; body: string }) => void): () => void;
+  /** Toggle OS fullscreen (maps to F11 in renderer on Linux/Windows). */
+  toggleFullscreen(): Promise<void>;
 }
 
 const api: MnemoAPI = {
@@ -54,6 +58,7 @@ const api: MnemoAPI = {
     update: (input) => ipcRenderer.invoke(IPC.NOTE_UPDATE, input),
     delete: (id) => ipcRenderer.invoke(IPC.NOTE_DELETE, id),
     list: (tenantId) => ipcRenderer.invoke(IPC.NOTE_LIST, tenantId),
+    vaultSnapshot: (tenantId) => ipcRenderer.invoke(IPC.NOTE_VAULT_SNAPSHOT, tenantId),
     search: (query, tenantId) => ipcRenderer.invoke(IPC.NOTE_SEARCH, query, tenantId),
     getBacklinks: (noteId) => ipcRenderer.invoke(IPC.NOTE_BACKLINKS, noteId),
     getGraph: (tenantId) => ipcRenderer.invoke(IPC.NOTE_GRAPH, tenantId),
@@ -84,6 +89,7 @@ const api: MnemoAPI = {
     ipcRenderer.on(IPC.FILE_OPENED_EXTERNALLY, handler);
     return () => ipcRenderer.off(IPC.FILE_OPENED_EXTERNALLY, handler);
   },
+  toggleFullscreen: () => ipcRenderer.invoke(IPC.WINDOW_TOGGLE_FULLSCREEN),
 };
 
 contextBridge.exposeInMainWorld('mnemo', api);

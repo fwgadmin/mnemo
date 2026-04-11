@@ -30,14 +30,22 @@ export const MCP_RESOURCES_ROWS: string[][] = [
 export const MCP_TOOLS_HEADERS = ['Tool', 'Description'] as const;
 export const MCP_TOOLS_ROWS: string[][] = [
   ['create_note', 'Create a note; optional tags (first tag = category path)'],
-  ['read_note', 'Read a note by ID'],
-  ['update_note', 'Update title, body, tags (first tag = category), hideHeader'],
-  ['delete_note', 'Delete a note'],
+  ['read_note', 'Read a note by UUID id or numeric ref'],
+  ['update_note', 'Update title, body, tags, hideHeader (target by id or ref)'],
+  ['delete_note', 'Delete by id or ref'],
   ['search_notes', 'Full-text search'],
-  ['get_backlinks', 'Get notes linking to a given note'],
+  ['list_notes', 'List notes with optional category filter and page/limit'],
+  ['get_categories', 'Category tree with counts (like mnemo note categories)'],
+  ['set_note_category', 'Move a note to a folder (id or ref + category path)'],
+  ['rename_category', 'Rename a category folder for all notes in it'],
+  ['promote_category', 'Move a category one level up'],
+  ['demote_category', 'Nest a category under a parent folder'],
+  ['resolve_note_title', 'Resolve a title string to note UUID'],
+  ['recompute_autolinks', 'Refresh outgoing links from wikilinks + inference'],
+  ['get_backlinks', 'Get notes linking to a given note (id or ref)'],
   ['link_notes', 'Set outgoing wikilinks from source to targets'],
   ['get_graph', 'Full note graph (nodes include id, title, ref; edges are links)'],
-  ['get_ui_preferences', 'Read UI preferences from disk'],
+  ['get_ui_preferences', 'Read merged UI preferences (same as mnemo://preferences)'],
   ['set_ui_preferences', 'Merge partial UI preferences (theme, layoutOverride, grouped, categoryColors, …)'],
 ];
 
@@ -65,6 +73,7 @@ export const KEYBOARD_SHORTCUTS_ROWS: string[][] = [
   ['Ctrl+P', 'Command palette'],
   ['Ctrl+G', 'Toggle graph view'],
   ['Ctrl+B', 'Toggle sidebar'],
+  ['F11', 'Toggle fullscreen (Linux / Windows; macOS: View menu or F11)'],
   ['Ctrl+M', 'Toggle Markdown helper panel'],
   ['Ctrl+Shift+H', 'Toggle note header'],
   ['Ctrl+Shift+L', 'Toggle line numbers'],
@@ -168,7 +177,7 @@ function sectionVaultCommands(): string {
 
   mnemo note list [--category <folder path>] [--exact|--shallow] [-v|--verbose] [--ids]
                   [--pager-size N] [--plain] [--from N] [--page N] [--limit N] [--json|--no-json]
-    In a normal terminal, list opens an interactive pager (50 notes per page by default): ↑↓ move, Enter opens the note in your editor, ←→ change page, q quit.
+    In a normal terminal, list opens an interactive pager (50 notes per page by default): ↑↓ move, Enter opens the note in your editor, ←→ change page, q quit. The visible rows scroll so the highlighted line stays on screen when the terminal is shorter than a page; pagination hints stay at the bottom.
     Sorted by modified time (newest first). [ref] is the id you pass to mnemo show / mnemo edit.
     --category, -c   Only notes in that folder. Paths nest with slashes (e.g. Work/Meetings). Same as the first tag in the app.
     --exact          With --category: this folder only, not subfolders.

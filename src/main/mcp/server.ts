@@ -1,7 +1,61 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { INoteStore, MnemoUiPreferences } from '../../shared/types';
+import type { INoteStore, MnemoUiPreferences, NoteListItem } from '../../shared/types';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from '../uiPreferences';
+import { recomputeAutolinks } from '../autolinkRecompute';
+import {
+  categoryPathFromTags,
+  filterNotesByCategory,
+  GENERAL_PATH,
+  normalizePath,
+} from '../../renderer/categoryPath';
+import {
+  exportCategoryTreeJson,
+  setNoteCategory,
+  renameCategoryFolder,
+  promoteCategoryFolder,
+  demoteCategoryFolder,
+} from '../cliCategory';
+
+/** Shape for tools: pass exactly one of `id` or `ref` (validated in handler; MCP SDK needs a raw Zod shape). */
+const idOrRefShape = {
+  id: z.string().optional(),
+  ref: z.number().int().positive().optional(),
+};
+
+function idOrRefError(args: { id?: string; ref?: number }): string | null {
+  const hasId = args.id != null && args.id.length > 0;
+  const hasRef = args.ref != null;
+  if (hasId === hasRef) return 'Provide exactly one of id or ref';
+  return null;
+}
+
+async function resolveToNoteId(
+  store: INoteStore,
+  args: { id?: string; ref?: number },
+): Promise<{ ok: true; id: string } | { ok: false; text: string }> {
+  const hasId = args.id != null && args.id.length > 0;
+  const hasRef = args.ref != null;
+  if (hasId === hasRef) {
+    return { ok: false, text: 'Provide exactly one of id or ref' };
+  }
+  if (hasId) {
+    const n = await store.read(args.id!);
+    if (!n) return { ok: false, text: `Note ${args.id} not found` };
+    return { ok: true, id: n.id };
+  }
+  const n = await store.readByRef(args.ref!);
+  if (!n) return { ok: false, text: `No note with ref ${args.ref}` };
+  return { ok: true, id: n.id };
+}
+
+function sortListLikeCli(notes: NoteListItem[]): NoteListItem[] {
+  return [...notes].sort((a, b) => {
+    const cmp = a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0;
+    if (cmp !== 0) return cmp;
+    return (a.ref ?? 0) - (b.ref ?? 0);
+  });
+}
 
 /**
  * Creates and configures the Mnemo MCP server.
@@ -91,37 +145,55 @@ export function createMcpServer(store: INoteStore): McpServer {
 
   mcp.tool(
     'read_note',
-    'Read a note by ID',
-    { id: z.string() },
+    'Read a note by UUID id or by numeric ref (same refs as list/show). Provide exactly one of id or ref.',
+    idOrRefShape,
     async (args) => {
-      const note = await store.read(args.id);
-      if (!note) {
-        return { content: [{ type: 'text', text: `Note ${args.id} not found` }], isError: true };
+      const bad = idOrRefError(args);
+      if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
+      let note = null;
+      if (args.id != null && args.id.length > 0) {
+        note = await store.read(args.id);
+        if (!note) {
+          return { content: [{ type: 'text', text: `Note ${args.id} not found` }], isError: true };
+        }
+      } else if (args.ref != null) {
+        note = await store.readByRef(args.ref);
+        if (!note) {
+          return { content: [{ type: 'text', text: `No note with ref ${args.ref}` }], isError: true };
+        }
       }
       return { content: [{ type: 'text', text: JSON.stringify(note, null, 2) }] };
     },
   );
 
+  const updateNoteShape = {
+    ...idOrRefShape,
+    title: z.string().optional(),
+    body: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    hideHeader: z.boolean().optional(),
+  };
+
   mcp.tool(
     'update_note',
-    'Update an existing note (title, body, tags, hideHeader). The first tag is the category folder (same rules as create_note).',
-    {
-      id: z.string(),
-      title: z.string().optional(),
-      body: z.string().optional(),
-      tags: z.array(z.string()).optional(),
-      hideHeader: z.boolean().optional(),
-    },
+    'Update an existing note (title, body, tags, hideHeader). Target by UUID id or numeric ref. The first tag is the category folder (same rules as create_note).',
+    updateNoteShape,
     async (args) => {
+      const bad = idOrRefError(args);
+      if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
+      const resolved = await resolveToNoteId(store, { id: args.id, ref: args.ref });
+      if (!resolved.ok) {
+        return { content: [{ type: 'text', text: resolved.text }], isError: true };
+      }
       const note = await store.update({
-        id: args.id,
+        id: resolved.id,
         title: args.title,
         body: args.body,
         tags: args.tags,
         hideHeader: args.hideHeader,
       });
       if (!note) {
-        return { content: [{ type: 'text', text: `Note ${args.id} not found` }], isError: true };
+        return { content: [{ type: 'text', text: `Note ${resolved.id} not found` }], isError: true };
       }
       return { content: [{ type: 'text', text: JSON.stringify(note, null, 2) }] };
     },
@@ -129,12 +201,18 @@ export function createMcpServer(store: INoteStore): McpServer {
 
   mcp.tool(
     'delete_note',
-    'Delete a note by ID',
-    { id: z.string() },
+    'Delete a note by UUID id or numeric ref',
+    idOrRefShape,
     async (args) => {
-      const deleted = await store.delete(args.id);
+      const bad = idOrRefError(args);
+      if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
+      const resolved = await resolveToNoteId(store, args);
+      if (!resolved.ok) {
+        return { content: [{ type: 'text', text: resolved.text }], isError: true };
+      }
+      const deleted = await store.delete(resolved.id);
       return {
-        content: [{ type: 'text', text: deleted ? `Deleted ${args.id}` : `Note ${args.id} not found` }],
+        content: [{ type: 'text', text: deleted ? `Deleted ${resolved.id}` : `Note ${resolved.id} not found` }],
         isError: !deleted,
       };
     },
@@ -151,11 +229,189 @@ export function createMcpServer(store: INoteStore): McpServer {
   );
 
   mcp.tool(
-    'get_backlinks',
-    'Get all notes that link to the given note',
-    { id: z.string() },
+    'list_notes',
+    'List notes with optional category filter and paging (same sort as CLI: modified desc, then ref). Omit categoryPath for all notes. Use page only with limit.',
+    {
+      categoryPath: z.string().optional(),
+      includeDescendants: z.boolean().optional(),
+      page: z.number().int().positive().optional(),
+      limit: z.number().int().positive().optional(),
+    },
     async (args) => {
-      const backlinks = await store.getBacklinks(args.id);
+      const includeDescendants = args.includeDescendants ?? true;
+      if (args.page != null && args.limit == null) {
+        return {
+          content: [{ type: 'text', text: 'list_notes: page requires limit' }],
+          isError: true,
+        };
+      }
+      let notes = await store.list();
+      if (args.categoryPath != null && args.categoryPath.trim() !== '') {
+        const trimmed = args.categoryPath.trim();
+        const folderPath = normalizePath(trimmed) || GENERAL_PATH;
+        notes = filterNotesByCategory(notes, folderPath, includeDescendants);
+      } else if (args.categoryPath != null) {
+        notes = filterNotesByCategory(notes, GENERAL_PATH, includeDescendants);
+      }
+      const sorted = sortListLikeCli(notes);
+      const total = sorted.length;
+      let slice = sorted;
+      if (args.limit != null) {
+        const lim = args.limit;
+        const page = args.page ?? 1;
+        const start = (page - 1) * lim;
+        slice = sorted.slice(start, start + lim);
+      }
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                total,
+                notes: slice.map((n) => ({
+                  id: n.id,
+                  ref: n.ref,
+                  title: n.title,
+                  modified: n.modified,
+                  snippet: n.snippet,
+                  tags: n.tags,
+                  categoryPath: categoryPathFromTags(n.tags, sorted),
+                })),
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  mcp.tool(
+    'get_categories',
+    'Category tree with note counts (same data as `mnemo note categories`). Use flat:true for path\\tdirect\\tsubtree style rows.',
+    { flat: z.boolean().optional() },
+    async (args) => {
+      const flat = args.flat ?? false;
+      const notes = await store.list();
+      const tree = exportCategoryTreeJson(notes, flat);
+      return { content: [{ type: 'text', text: JSON.stringify(tree, null, 2) }] };
+    },
+  );
+
+  const setCategoryShape = {
+    ...idOrRefShape,
+    categoryPath: z.string(),
+  };
+
+  mcp.tool(
+    'set_note_category',
+    'Move a note to a category folder (General, Unassigned, or nested path like Work/Meetings). Same as `mnemo note set-category`. Preserves secondary tags.',
+    setCategoryShape,
+    async (args) => {
+      const bad = idOrRefError(args);
+      if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
+      const resolved = await resolveToNoteId(store, { id: args.id, ref: args.ref });
+      if (!resolved.ok) {
+        return { content: [{ type: 'text', text: resolved.text }], isError: true };
+      }
+      const vaultList = await store.list();
+      try {
+        await setNoteCategory(store, vaultList, resolved.id, args.categoryPath);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { content: [{ type: 'text', text: msg }], isError: true };
+      }
+      const note = await store.read(resolved.id);
+      return { content: [{ type: 'text', text: JSON.stringify(note, null, 2) }] };
+    },
+  );
+
+  mcp.tool(
+    'rename_category',
+    'Rename a category folder for all notes in that folder (same as `mnemo note category rename`).',
+    { oldPath: z.string(), newPath: z.string() },
+    async (args) => {
+      try {
+        const r = await renameCategoryFolder(store, args.oldPath, args.newPath, { silent: true });
+        return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { content: [{ type: 'text', text: msg }], isError: true };
+      }
+    },
+  );
+
+  mcp.tool(
+    'promote_category',
+    'Move a category one level toward General (`mnemo note category promote`).',
+    { path: z.string() },
+    async (args) => {
+      try {
+        const r = await promoteCategoryFolder(store, args.path, { silent: true });
+        return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { content: [{ type: 'text', text: msg }], isError: true };
+      }
+    },
+  );
+
+  mcp.tool(
+    'demote_category',
+    'Nest a category under a parent (`mnemo note category demote`).',
+    { folderPath: z.string(), parentPath: z.string() },
+    async (args) => {
+      try {
+        const r = await demoteCategoryFolder(store, args.folderPath, args.parentPath, { silent: true });
+        return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { content: [{ type: 'text', text: msg }], isError: true };
+      }
+    },
+  );
+
+  mcp.tool(
+    'resolve_note_title',
+    'Resolve a note title to its UUID (wikilink target resolution; first exact match in vault).',
+    { title: z.string() },
+    async (args) => {
+      const raw = args.title.trim();
+      if (!raw) {
+        return { content: [{ type: 'text', text: 'Empty title' }], isError: true };
+      }
+      const id = await store.resolveTitle(raw);
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ title: raw, id }, null, 2) }],
+      };
+    },
+  );
+
+  mcp.tool(
+    'recompute_autolinks',
+    'Recompute outgoing wikilinks for every note from [[Title]] and title-inference (same as `mnemo note autolink`).',
+    { dryRun: z.boolean().optional() },
+    async (args) => {
+      const dryRun = args.dryRun ?? false;
+      const result = await recomputeAutolinks(store, dryRun);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  mcp.tool(
+    'get_backlinks',
+    'Get all notes that link to the given note (target by UUID id or numeric ref)',
+    idOrRefShape,
+    async (args) => {
+      const bad = idOrRefError(args);
+      if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
+      const resolved = await resolveToNoteId(store, args);
+      if (!resolved.ok) {
+        return { content: [{ type: 'text', text: resolved.text }], isError: true };
+      }
+      const backlinks = await store.getBacklinks(resolved.id);
       return { content: [{ type: 'text', text: JSON.stringify(backlinks, null, 2) }] };
     },
   );

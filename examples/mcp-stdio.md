@@ -77,3 +77,5 @@ To force a dedicated data dir:
 Same idea: add a server entry whose **command** is `mnemo` and **args** are `["mcp"]` (or the full path to `mnemo` on Windows).
 
 Verify tools appear in the client after restart. Use `mnemo --help` for the full CLI surface.
+
+The MCP server exposes **note list**, **categories**, **read/update by ref or id**, **autolink recompute**, and other tools — see `mnemo help mcp` or **Help → Documentation** in the desktop app for the current table. The GUI and MCP share the same database; with **Turso**, refresh the app list (sidebar **↻**) to see changes made from another machine or agent.
