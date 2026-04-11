@@ -27,6 +27,10 @@ Desktop.ini
 .env
 .env.*
 
+# Code signing (never commit)
+certificate.pfx
+electron-windows-sign.log
+
 # Logs
 *.log
 npm-debug.log*

@@ -15,6 +15,25 @@ function copyDir(src, dest) {
 }
 
 /**
+ * Optional Windows Authenticode signing. CI writes `certificate.pfx` and sets
+ * `WINDOWS_CERTIFICATE_FILE`; see `docs/CODE_SIGNING.md`.
+ * @returns {null | { certificateFile: string, certificatePassword: string, hashes: string[], timestampServer: string }}
+ */
+function getWindowsCodeSigningOptions() {
+  const certPath = process.env.WINDOWS_CERTIFICATE_FILE;
+  if (!certPath || !fs.existsSync(certPath)) return null;
+  return {
+    certificateFile: certPath,
+    certificatePassword: process.env.WINDOWS_CERTIFICATE_PASSWORD ?? '',
+    hashes: ['sha256'],
+    timestampServer:
+      process.env.WINDOWS_TIMESTAMP_SERVER || 'http://timestamp.digicert.com',
+  };
+}
+
+const winSign = getWindowsCodeSigningOptions();
+
+/**
  * Minimal node_modules beside mnemo-cli.js so ELECTRON_RUN_AS_NODE + NODE_PATH works
  * (better-sqlite3 must match Electron's ABI; other deps are copied from a temp npm install).
  */
@@ -157,6 +176,16 @@ module.exports = {
         role: 'Editor',
       },
     ],
+    ...(winSign
+      ? {
+          windowsSign: {
+            certificateFile: winSign.certificateFile,
+            certificatePassword: winSign.certificatePassword,
+            hashes: winSign.hashes,
+            timestampServer: winSign.timestampServer,
+          },
+        }
+      : {}),
   },
   rebuildConfig: {},
   makers: [
@@ -173,6 +202,12 @@ module.exports = {
         // noMsi creates only the Squirrel setup .exe; set to false if you also
         // want an .msi side-by-side (requires WiX toolset on the build machine).
         noMsi: true,
+        ...(winSign
+          ? {
+              certificateFile: winSign.certificateFile,
+              certificatePassword: winSign.certificatePassword,
+            }
+          : {}),
       },
     },
     {
