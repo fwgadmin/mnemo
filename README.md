@@ -277,6 +277,25 @@ npm run package        # Package Electron app for distribution
 npm run make           # Build platform installers (see below)
 ```
 
+## GitHub releases (automated)
+
+Tagged **desktop** releases ship installers through GitHub — no manual upload of `MnemoSetup.exe` or `.deb` files.
+
+1. **Bump the app version** in **`package.json`** (and commit) so the packaged Electron app reports the right version.
+2. **Create and push a version tag** (annotated recommended):
+   ```bash
+   git tag -a v1.2.3 -m "Release 1.2.3"
+   git push origin v1.2.3
+   ```
+3. The **Release** workflow (`.github/workflows/release.yml`) runs on every push of a tag matching **`v*`**:
+   - **Windows** (`windows-latest`): `npm ci` → `npm run make` → zip of **`out/make/`** → **`mnemo-<tag>-windows-x64.zip`** (contains Squirrel **`MnemoSetup.exe`**, `RELEASES`, `.nupkg`, and the Forge zip output).
+   - **Linux** (`ubuntu-latest`): installs **fakeroot** / **dpkg** / build deps → `npm run make` → **`mnemo-<tag>-linux-amd64.zip`** (`.deb` under `deb/`, zip targets, etc.).
+4. **`softprops/action-gh-release`** creates or updates the **GitHub Release** for that tag, enables **Generate release notes**, sets **latest** when appropriate, and **attaches both zip files** to the release page.
+
+If you already created an empty release for the tag in the UI, the workflow still **adds the zip assets** when it finishes.
+
+**npm (CLI / MCP)** is separate: publish with **`npm publish`** when ready (`prepublishOnly` builds `dist/`). The desktop zips are **not** the npm tarball.
+
 ### Windows release build
 
 Desktop installers for Windows are produced with **Electron Forge** and the **Squirrel** maker (`@electron-forge/maker-squirrel` in `forge.config.js`).
@@ -288,7 +307,7 @@ Desktop installers for Windows are produced with **Electron Forge** and the **Sq
    npm install
    npm run make
    ```
-4. **Build in CI (no Windows machine):** The workflow **Build Windows installer** (`.github/workflows/windows-build.yml`) runs on **`windows-latest`**, executes **`npm ci`** and **`npm run make`**, and uploads everything under **`out/make/`** as a workflow artifact (retained 90 days). In GitHub: **Actions** → select a successful run → scroll to **Artifacts** → download **`mnemo-windows-…`**. Unzip to find **`MnemoSetup.exe`**, the Squirrel **`RELEASES`** / **`.nupkg`** files, and the **zip** portable layout. Triggers: **workflow_dispatch** (manual **Run workflow**), pushes to **`main`** / **`master`** that change listed paths, and pull requests targeting those branches.
+4. **Build in CI (no Windows machine):** The workflow **Build Windows installer** (`.github/workflows/windows-build.yml`) runs on **`windows-latest`**, executes **`npm ci`** and **`npm run make`**, and uploads everything under **`out/make/`** as a workflow artifact (retained 90 days). In GitHub: **Actions** → select a successful run → scroll to **Artifacts** → download **`mnemo-windows-…`**. Unzip to find **`MnemoSetup.exe`**, the Squirrel **`RELEASES`** / **`.nupkg`** files, and the **zip** portable layout. For **official releases**, push a **`v*`** tag and use the **Release** workflow — it attaches **`mnemo-<tag>-windows-x64.zip`** (and the Linux zip) to the [GitHub Releases](https://github.com/fwgadmin/mnemo/releases) page (see **GitHub releases (automated)** above). Triggers for the Windows-only workflow: **workflow_dispatch**, pushes to **`main`** / **`master`** that change listed paths, and pull requests targeting those branches.
 5. **Artifacts (local or CI):** Look under **`out/make/`** — typically **`MnemoSetup.exe`** (Squirrel) and a **zip** of the unpacked app (`maker-zip` also targets `win32`). Version comes from **`package.json`** → bump it before tagging a release.
 6. **Code signing:** Not configured in-repo; for public distribution you usually sign **`Mnemo.exe`** / the installer with a Windows code-signing certificate (see Electron Forge docs and `@electron/windows-sign`).
 7. **App behavior:** Install/update shortcuts and **“Open in Mnemo”** context-menu registration use **`electron-squirrel-startup`** and the Squirrel hooks in `src/main/index.ts` — no extra step after a normal install.
@@ -360,7 +379,7 @@ Copy-Item dist\mnemo-mcp-http.js dist\deploy\
 @'
 {
   "name": "mnemo-mcp-http",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "main": "mnemo-mcp-http.js",
   "dependencies": {
     "express": "*",
@@ -534,6 +553,8 @@ This project is open source under the **[MIT License](LICENSE)** (see the `LICEN
 2. Confirm the package name on npm is free, or change `"name"` in `package.json` (e.g. to a scoped name like `@your-org/mnemo` and set `"publishConfig": { "access": "public" }` for scoped packages).
 3. From the repo root, run `npm publish`. The `prepublishOnly` script runs typecheck and builds CLI/MCP bundles into `dist/` before the tarball is created.
 4. Inspect the tarball first with `npm pack --dry-run` if you want to verify contents.
+
+**GitHub desktop installers** (Windows/Linux zips on the Releases page) are produced only by the **Release** CI workflow when you push a **`v*`** tag — not by `npm publish`. Publish npm and tag the repo in whichever order fits your release checklist.
 
 The published artifact is intentionally limited (`bin/`, `dist/`, `LICENSE`, `README.md` per `package.json` `files`) so the desktop Electron app sources are not uploaded as part of the npm package; consumers get the CLI/MCP entrypoints and install dependencies from `package.json`.
 
