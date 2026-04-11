@@ -121,7 +121,8 @@ export interface MnemoUiPreferences {
 /**
  * Cheap vault-wide stats for GUI polling (Turso / multi-device sync) without loading full list.
  * Fingerprint = counts + max timestamp + linkCount + contentBytes + appKvMaxUpdatedAt so body/title/tag edits
- * and app_kv changes (e.g. ui_preferences: category colors, theme) bump the snapshot.
+ * and app_kv changes (e.g. ui_preferences: category colors, theme) bump the snapshot, even if updated_at ties
+ * or sync paths are quirky.
  */
 export interface VaultSnapshot {
   noteCount: number;
