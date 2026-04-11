@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback, type RefObject } from 'react';
 import { GENERAL_PATH, normalizePath, UNASSIGNED_PATH } from '../categoryPath';
 
 interface CategoryComboboxProps {
@@ -15,6 +15,9 @@ interface CategoryComboboxProps {
   /** Label for the “new path” row when allowCreate (default Create “…”). Use renameDestination for folder rename. */
   newPathLabel?: 'create' | 'renameDestination';
   className?: string;
+  /** After focus, place caret at end of text (folder rename). */
+  selectionOnFocus?: 'end';
+  inputRef?: RefObject<HTMLInputElement | null>;
 }
 
 /** Searchable dropdown for category paths; Enter commits; allows creating new paths when allowCreate */
@@ -27,14 +30,29 @@ export default function CategoryCombobox({
   commitBehavior = 'suggest',
   newPathLabel = 'create',
   className = '',
+  selectionOnFocus,
+  inputRef: inputRefProp,
 }: CategoryComboboxProps) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState(value);
   const boxRef = useRef<HTMLDivElement>(null);
+  const innerInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = inputRefProp ?? innerInputRef;
 
   useEffect(() => {
     setInput(value);
   }, [value]);
+
+  useEffect(() => {
+    if (selectionOnFocus !== 'end') return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    const len = el.value.length;
+    requestAnimationFrame(() => {
+      el.setSelectionRange(len, len);
+    });
+  }, [value, selectionOnFocus, inputRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -76,13 +94,23 @@ export default function CategoryCombobox({
   return (
     <div ref={boxRef} className={`relative ${className}`}>
       <input
+        ref={inputRef}
         type="text"
         value={input}
         onChange={e => {
           setInput(e.target.value);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setOpen(true);
+          if (selectionOnFocus === 'end') {
+            const el = inputRef.current;
+            if (el) {
+              const len = el.value.length;
+              requestAnimationFrame(() => el.setSelectionRange(len, len));
+            }
+          }
+        }}
         onKeyDown={e => {
           if (e.key === 'Enter') {
             e.preventDefault();

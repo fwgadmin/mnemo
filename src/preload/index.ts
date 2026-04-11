@@ -29,7 +29,11 @@ export interface MnemoAPI {
   };
   file: {
     saveAs(data: { title: string; body: string }): Promise<{ saved: boolean; filePath?: string }>;
-    open(): Promise<Array<{ title: string; body: string }> | null>;
+    open(): Promise<Array<{ title: string; body: string; path: string }> | null>;
+    /** Read UTF-8 file at absolute path (IDE file tabs). */
+    readPath(absPath: string): Promise<string | null>;
+    /** Write UTF-8 to absolute path (IDE file tabs). */
+    writePath(absPath: string, body: string): Promise<boolean>;
   };
   config: {
     read(): Promise<AppConfig>;
@@ -49,6 +53,16 @@ export interface MnemoAPI {
   onFileOpenedExternally(callback: (data: { title: string; body: string }) => void): () => void;
   /** Toggle OS fullscreen (maps to F11 in renderer on Linux/Windows). */
   toggleFullscreen(): Promise<void>;
+  workspace: {
+    chooseFolder(): Promise<
+      | { ok: true; path: string; imported: number; updated: number }
+      | { ok: false; path: null }
+    >;
+    sync(): Promise<
+      | { ok: true; imported: number; updated: number }
+      | { ok: false; error: string }
+    >;
+  };
 }
 
 const api: MnemoAPI = {
@@ -68,6 +82,9 @@ const api: MnemoAPI = {
   file: {
     saveAs: (data) => ipcRenderer.invoke(IPC.FILE_SAVE_AS, data),
     open: () => ipcRenderer.invoke(IPC.FILE_OPEN),
+    readPath: (absPath: string) => ipcRenderer.invoke(IPC.FILE_READ_PATH, absPath),
+    writePath: (absPath: string, body: string) =>
+      ipcRenderer.invoke(IPC.FILE_WRITE_PATH, absPath, body),
   },
   config: {
     read: () => ipcRenderer.invoke(IPC.CONFIG_READ),
@@ -90,6 +107,10 @@ const api: MnemoAPI = {
     return () => ipcRenderer.off(IPC.FILE_OPENED_EXTERNALLY, handler);
   },
   toggleFullscreen: () => ipcRenderer.invoke(IPC.WINDOW_TOGGLE_FULLSCREEN),
+  workspace: {
+    chooseFolder: () => ipcRenderer.invoke(IPC.WORKSPACE_CHOOSE_FOLDER),
+    sync: () => ipcRenderer.invoke(IPC.WORKSPACE_SYNC),
+  },
 };
 
 contextBridge.exposeInMainWorld('mnemo', api);

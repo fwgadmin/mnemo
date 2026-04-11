@@ -23,6 +23,11 @@ export interface Note {
   links: string[];
   /** When true, editor omits the title row and metadata (per-note; global "Show note header" still applies when false). */
   hideHeader: boolean;
+  /**
+   * When set, this tab edits this path on disk (IDE file tabs). Not stored in the vault until synced/imported.
+   * Tab id uses `encodeFileTabId(filePath)`.
+   */
+  filePath?: string;
 }
 
 export interface NoteListItem {
@@ -116,6 +121,11 @@ export interface MnemoUiPreferences {
   markdownByTheme?: Record<string, Record<string, string>>;
   /** Open note tab IDs in IDE layout (order preserved) */
   ideTabIds?: string[];
+  /**
+   * Optional absolute path to a project folder. Markdown files are imported into the vault (category `Workspace/…`)
+   * and kept in sync via **File → Open Workspace Folder…** / **Sync workspace**.
+   */
+  workspaceFolder?: string;
 }
 
 /**
@@ -176,6 +186,9 @@ export const IPC = {
   // File operations
   FILE_SAVE_AS: 'file:saveAs',
   FILE_OPEN: 'file:open',
+  /** Read/write a single file by absolute path (IDE filesystem-backed tabs; local-first). */
+  FILE_READ_PATH: 'file:readPath',
+  FILE_WRITE_PATH: 'file:writePath',
   FILE_OPENED_EXTERNALLY: 'file:openedExternally',
   // Config (remote libSQL URL + token; stored in userData/config.json)
   CONFIG_READ: 'config:read',
@@ -189,4 +202,7 @@ export const IPC = {
   MENU_COMMAND: 'menu:command',
   /** Toggle BrowserWindow fullscreen (F11 on Linux/Windows — no app menu accelerators there). */
   WINDOW_TOGGLE_FULLSCREEN: 'window:toggleFullscreen',
+  /** Pick a folder and import/sync markdown into the vault (`Workspace/…` categories). */
+  WORKSPACE_CHOOSE_FOLDER: 'workspace:chooseFolder',
+  WORKSPACE_SYNC: 'workspace:sync',
 } as const;

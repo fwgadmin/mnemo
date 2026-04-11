@@ -4,6 +4,7 @@ import {
   useEffect,
   useCallback,
   useImperativeHandle,
+  useState,
 } from 'react';
 import { EditorState, Compartment, Prec } from '@codemirror/state';
 import {
@@ -40,6 +41,7 @@ import { mnemoEditorTheme, mnemoSyntaxHighlighting } from '../editor/mnemoCodeMi
 import { normalizeLineSeparators } from '../editor/lineSeparators';
 import { formatMarkdown } from '../editor/formatMarkdown';
 import { wikilinkDecorations } from './wikilinkPlugin';
+import { clampFixedContextMenu } from '../fixedMenuPosition';
 import type { Note } from '../../shared/types';
 
 /** Sync parsers first (instant highlight); language-data fills in the long tail via async load. */
@@ -143,6 +145,56 @@ function insertMarkdownImage(view: EditorView): boolean {
   return true;
 }
 
+function wrapSelectionMarkdown(view: EditorView, before: string, after: string): void {
+  const sel = view.state.selection.main;
+  const text = view.state.sliceDoc(sel.from, sel.to);
+  const insert = text ? `${before}${text}${after}` : `${before}${after}`;
+  view.dispatch({ changes: { from: sel.from, to: sel.to, insert } });
+}
+
+async function clipboardWriteText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
+async function clipboardReadText(): Promise<string> {
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    return '';
+  }
+}
+
+function editorCopy(view: EditorView): void {
+  const sel = view.state.selection.main;
+  const text = view.state.sliceDoc(sel.from, sel.to);
+  void clipboardWriteText(text);
+}
+
+function editorCut(view: EditorView): void {
+  const sel = view.state.selection.main;
+  const text = view.state.sliceDoc(sel.from, sel.to);
+  void clipboardWriteText(text);
+  view.dispatch({ changes: { from: sel.from, to: sel.to, insert: '' } });
+}
+
+async function editorPaste(view: EditorView): Promise<void> {
+  const text = normalizeLineSeparators(await clipboardReadText());
+  if (!text) return;
+  const sel = view.state.selection.main;
+  view.dispatch({ changes: { from: sel.from, to: sel.to, insert: text } });
+}
+
 export interface EditorHandle {
   formatDocument: () => Promise<void>;
   getBody: () => string;
@@ -195,6 +247,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const onUpdateRef = useRef(onUpdate);
   const onEditorLiveBodyRef = useRef(onEditorLiveBody);
   const lineNumbersCompartment = useRef(new Compartment());
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const setCtxMenuRef = useRef(setCtxMenu);
+  setCtxMenuRef.current = setCtxMenu;
 
   useEffect(() => {
     onUpdateRef.current = onUpdate;
@@ -234,6 +289,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     }
     return false;
   }, [onNavigate]);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCtxMenu(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [ctxMenu]);
 
   useImperativeHandle(
     ref,
@@ -302,6 +366,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     const clickHandler = EditorView.domEventHandlers({
       click: (e, view) => handleClick(e, view),
+      contextmenu: (e) => {
+        e.preventDefault();
+        setCtxMenuRef.current({ x: e.clientX, y: e.clientY });
+        return true;
+      },
     });
 
     const gutterExtensions = showLineNumbers
@@ -437,8 +506,23 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const wordCount = note.body.trim() ? note.body.trim().split(/\s+/).length : 0;
   const editorPx = showHeader ? 'pl-4 pr-2' : 'pl-3 pr-1';
 
+  const ctxPos = ctxMenu
+    ? clampFixedContextMenu(ctxMenu.x, ctxMenu.y, 200, 220)
+    : { left: 0, top: 0 };
+
+  const closeCtx = () => setCtxMenu(null);
+
+  const runWithView = (fn: (v: EditorView) => void) => {
+    const v = viewRef.current;
+    if (!v) return;
+    v.focus();
+    fn(v);
+    saveNow();
+    closeCtx();
+  };
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0 relative">
       {showHeader && (
         <>
           <div className="px-4 pt-3 pb-1">
@@ -447,10 +531,19 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
               type="text"
               defaultValue={note.title}
               key={note.id}
+              readOnly={!!note.filePath}
               onChange={(e) => handleTitleChange(e.target.value)}
-              className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-mnemo-text placeholder-mnemo-dim"
+              className={`w-full text-2xl font-semibold bg-transparent border-none outline-none text-mnemo-text placeholder-mnemo-dim ${
+                note.filePath ? 'cursor-default opacity-90' : ''
+              }`}
               placeholder="Untitled"
+              title={note.filePath ?? undefined}
             />
+            {note.filePath && (
+              <div className="mt-1 text-[11px] text-mnemo-dim truncate font-normal" title={note.filePath}>
+                {note.filePath}
+              </div>
+            )}
             <div className="flex items-center gap-3 mt-2 text-[10px] text-mnemo-dim">
               <span>{new Date(note.modified).toLocaleDateString()}</span>
               <span>·</span>
@@ -480,6 +573,75 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         ref={containerRef}
         className={`flex-1 min-h-0 min-w-0 overflow-hidden ${editorPx} ${showHeader ? 'pb-3' : 'py-3'}`}
       />
+      {ctxMenu && (
+        <>
+          <div className="fixed inset-0 z-[199]" aria-hidden onMouseDown={closeCtx} />
+          <div
+            role="menu"
+            className="fixed z-[200] min-w-[180px] rounded border border-mnemo-border bg-mnemo-panel-elevated shadow-lg py-1 text-xs text-mnemo-muted"
+            style={{ left: ctxPos.left, top: ctxPos.top }}
+            onMouseDown={e => e.preventDefault()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
+              onClick={() => runWithView(v => editorCut(v))}
+            >
+              Cut
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
+              onClick={() => runWithView(v => editorCopy(v))}
+            >
+              Copy
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
+              onClick={() => {
+                const v = viewRef.current;
+                if (!v) return;
+                v.focus();
+                void editorPaste(v).then(() => {
+                  saveNow();
+                  closeCtx();
+                });
+              }}
+            >
+              Paste
+            </button>
+            <div className="border-t border-mnemo-border my-1" />
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
+              onClick={() => runWithView(v => wrapSelectionMarkdown(v, '**', '**'))}
+            >
+              Bold
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
+              onClick={() => runWithView(v => wrapSelectionMarkdown(v, '*', '*'))}
+            >
+              Italic
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
+              onClick={() => runWithView(v => void insertMarkdownLink(v))}
+            >
+              Link…
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 });

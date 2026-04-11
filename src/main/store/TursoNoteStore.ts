@@ -2,6 +2,11 @@ import { createClient, type Client } from '@libsql/client';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  ftsMatchFromUserQuery,
+  likeWordsFromUserQuery,
+  snippetForSearchResult,
+} from '../../shared/searchQuery';
 import type {
   Note,
   NoteListItem,
@@ -245,6 +250,21 @@ export class TursoNoteStore implements INoteStore {
 
   async search(query: string, tenantId: string = 'default'): Promise<SearchResult[]> {
     if (!query.trim()) return [];
+    const fts = ftsMatchFromUserQuery(query);
+    if (!fts) return [];
+
+    const mapRow = (row: Record<string, unknown>, rank: number): SearchResult => ({
+      ref: row['ref'] as number,
+      id: row['id'] as string,
+      title: row['title'] as string,
+      snippet: snippetForSearchResult(
+        row['title'] as string,
+        row['body'] as string,
+        query,
+      ),
+      rank,
+      hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
+    });
 
     try {
       const result = await this.client.execute({
@@ -255,33 +275,26 @@ export class TursoNoteStore implements INoteStore {
                 AND n.tenant_id = ?
               ORDER BY notes_fts.rank
               LIMIT 50`,
-        args: [query, tenantId],
+        args: [fts, tenantId],
       });
-      return result.rows.map(row => ({
-        ref: row['ref'] as number,
-        id: row['id'] as string,
-        title: row['title'] as string,
-        snippet: (row['body'] as string).substring(0, 120),
-        rank: row['rank'] as number,
-        hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
-      }));
+      return result.rows.map(row => mapRow(row as Record<string, unknown>, row['rank'] as number));
     } catch {
-      // FTS5 unavailable — fall back to LIKE
-      const like = `%${query}%`;
+      const words = likeWordsFromUserQuery(query);
+      if (words.length === 0) return [];
+      const conds = words
+        .map(() => '(INSTR(LOWER(title), LOWER(?)) > 0 OR INSTR(LOWER(body), LOWER(?)) > 0)')
+        .join(' AND ');
+      const args: string[] = [tenantId];
+      for (const w of words) {
+        args.push(w, w);
+      }
       const result = await this.client.execute({
         sql: `SELECT ref, id, title, body, hide_header FROM notes
-              WHERE (title LIKE ? OR body LIKE ?) AND tenant_id = ?
+              WHERE tenant_id = ? AND ${conds}
               LIMIT 50`,
-        args: [like, like, tenantId],
+        args,
       });
-      return result.rows.map((row, i) => ({
-        ref: row['ref'] as number,
-        id: row['id'] as string,
-        title: row['title'] as string,
-        snippet: (row['body'] as string).substring(0, 120),
-        rank: i,
-        hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
-      }));
+      return result.rows.map((row, i) => mapRow(row as Record<string, unknown>, i));
     }
   }
 

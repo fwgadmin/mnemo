@@ -278,7 +278,9 @@ export default function Sidebar({
     const useAccentOnTitle = !hideCategory;
     const treeIndent =
       treeDepth !== undefined && treeDepth > 0 ? { paddingLeft: `${4 + treeDepth * 14}px` } : undefined;
-    const mxClass = treeDepth !== undefined ? 'mx-0' : 'mx-1';
+    /** IDE solution tree indents via IdeSolutionTree — avoid mx-1 here or rows drift vs folder headers. */
+    const mxClass =
+      treeDepth !== undefined || (layout === 'ide' && !searchQuery.trim()) ? 'mx-0' : 'mx-1';
     return (
     <div key={note.id}>
       <div
@@ -543,7 +545,7 @@ export default function Sidebar({
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onDragLeave={handleDragLeave}
-        renderNote={(n, depth) => renderNoteItem(n, true, depth)}
+        renderNote={(n, depth) => renderNoteItem(n, true, layout === 'ide' ? undefined : depth)}
       />
     ) : layout === 'ide' ? (
       <div className="px-3 py-8 text-center text-mnemo-dim text-xs">No notes yet</div>
@@ -619,7 +621,7 @@ export default function Sidebar({
                         onDragLeave={handleDragLeave}
                         aria-hidden
                       />
-                      {renderNoteItem(n, true)}
+                      {renderNoteItem(n, true, depth + 1)}
                     </Fragment>
                   ))}
                   <div
@@ -734,6 +736,7 @@ export default function Sidebar({
           <CategoryCombobox
             paths={categoryPathsList}
             value={folderRename.path}
+            selectionOnFocus="end"
             commitBehavior="typed"
             newPathLabel="renameDestination"
             onChange={path => {

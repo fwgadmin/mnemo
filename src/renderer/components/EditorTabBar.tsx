@@ -6,6 +6,8 @@ export interface EditorTabItem {
   title: string;
   /** Category color for the tab title, from folder color rules */
   accentColor?: string;
+  /** Filesystem-backed editor tab (not a vault note) */
+  isFile?: boolean;
 }
 
 export interface EditorTabBarProps {
@@ -102,7 +104,9 @@ export default function EditorTabBar({
               <button
                 type="button"
                 tabIndex={-1}
-                className="min-w-0 flex-1 truncate py-1.5 text-left text-[11px] font-medium leading-tight outline-none focus-visible:ring-0"
+                className={`min-w-0 flex-1 truncate py-1.5 text-left text-[11px] font-medium leading-tight outline-none focus-visible:ring-0 ${
+                  tab.isFile ? 'italic text-mnemo-muted' : ''
+                }`}
                 style={accent ? { color: accent } : undefined}
                 onClick={() => onSelect(tab.id)}
               >

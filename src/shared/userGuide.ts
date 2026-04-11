@@ -69,7 +69,8 @@ export const KEYBOARD_SHORTCUTS_ROWS: string[][] = [
   ['Ctrl+N', 'New note'],
   ['Ctrl+S', 'Save immediately'],
   ['Ctrl+Shift+S', 'Save As (export .md)'],
-  ['Ctrl+O', 'Open / import .md file'],
+  ['Ctrl+O', 'Import .md file into vault'],
+  ['Ctrl+Shift+O', 'Open file as editor tab (filesystem)'],
   ['Ctrl+P', 'Command palette'],
   ['Ctrl+G', 'Toggle graph view'],
   ['Ctrl+B', 'Toggle sidebar'],
@@ -305,6 +306,8 @@ function sectionDesktop(): string {
   return `DESKTOP APP (optional)
   mnemo gui [args…]     Start the graphical app (dev: electron-forge start; pass args after --)
   npm start
+
+  Default UI for new installs: Dark (IDE) — sidebar + editor with tabs. Change theme or layout in Settings (Ctrl+,).
 
   In-app documentation: Help → Documentation (wikilinks, categories, graph, themes, Markdown).
 

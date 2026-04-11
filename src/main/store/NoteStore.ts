@@ -11,6 +11,11 @@ import type {
   INoteStore,
   VaultSnapshot,
 } from '../../shared/types';
+import {
+  ftsMatchFromUserQuery,
+  likeWordsFromUserQuery,
+  snippetForSearchResult,
+} from '../../shared/searchQuery';
 
 /** Add `ref` column + backfill; safe to call on every open. Exported for Turso sync from local file. */
 export function migrateNoteDatabaseRef(db: Database.Database): void {
@@ -212,25 +217,48 @@ export class LocalNoteStore implements INoteStore {
 
   search(query: string, tenantId: string = 'default'): Promise<SearchResult[]> {
     if (!query.trim()) return Promise.resolve([]);
+    const fts = ftsMatchFromUserQuery(query);
+    if (!fts) return Promise.resolve([]);
 
-    const rows = this.db.prepare(`
-      SELECT n.ref, n.id, n.title, n.body, n.hide_header, notes_fts.rank
-      FROM notes_fts
-      JOIN notes n ON n.rowid = notes_fts.rowid
-      WHERE notes_fts MATCH ?
-        AND n.tenant_id = ?
-      ORDER BY notes_fts.rank
-      LIMIT 50
-    `).all(query, tenantId) as any[];
-
-    return Promise.resolve(rows.map(row => ({
+    const mapRow = (row: any, rank: number): SearchResult => ({
       ref: row.ref,
       id: row.id,
       title: row.title,
-      snippet: row.body.substring(0, 120),
-      rank: row.rank,
+      snippet: snippetForSearchResult(row.title, row.body, query),
+      rank,
       hideHeader: (row.hide_header ?? 0) === 1,
-    })));
+    });
+
+    try {
+      const rows = this.db.prepare(`
+        SELECT n.ref, n.id, n.title, n.body, n.hide_header, notes_fts.rank
+        FROM notes_fts
+        JOIN notes n ON n.rowid = notes_fts.rowid
+        WHERE notes_fts MATCH ?
+          AND n.tenant_id = ?
+        ORDER BY notes_fts.rank
+        LIMIT 50
+      `).all(fts, tenantId) as any[];
+      return Promise.resolve(rows.map(row => mapRow(row, row.rank)));
+    } catch {
+      const words = likeWordsFromUserQuery(query);
+      if (words.length === 0) return Promise.resolve([]);
+      const conds = words
+        .map(() => '(INSTR(LOWER(title), LOWER(?)) > 0 OR INSTR(LOWER(body), LOWER(?)) > 0)')
+        .join(' AND ');
+      const args: string[] = [tenantId];
+      for (const w of words) {
+        args.push(w, w);
+      }
+      const rows = this.db
+        .prepare(
+          `SELECT ref, id, title, body, hide_header FROM notes
+           WHERE tenant_id = ? AND ${conds}
+           LIMIT 50`,
+        )
+        .all(...args) as any[];
+      return Promise.resolve(rows.map((row, i) => mapRow(row, i)));
+    }
   }
 
   getBacklinks(noteId: string): Promise<NoteListItem[]> {

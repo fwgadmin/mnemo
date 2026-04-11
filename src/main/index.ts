@@ -24,7 +24,8 @@ import { IPC } from '../shared/types';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from './uiPreferences';
-import { getRemoteLibsqlCredentials, legacyElectronUserDataDir } from './userConfig';
+import { defaultLocalDataDir, getRemoteLibsqlCredentials, legacyElectronUserDataDir } from './userConfig';
+import { syncWorkspaceFolder } from './workspaceImport';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const matter = require('gray-matter');
@@ -280,6 +281,9 @@ function buildMenu(mainWindow: BrowserWindow): void {
         { label: 'Format Note', accelerator: 'Alt+Shift+F', click: send('format-markdown') },
         { type: 'separator' },
         { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: send('open') },
+        { label: 'Open File as Tab…', accelerator: 'CmdOrCtrl+Shift+O', click: send('open-file-tab') },
+        { label: 'Open Workspace Folder…', click: send('workspace-choose') },
+        { label: 'Sync Workspace', click: send('workspace-sync') },
         { type: 'separator' },
         { role: 'quit' },
       ],
@@ -397,6 +401,29 @@ function registerIpcHandlers(): void {
     return { saved: true, filePath: result.filePath };
   });
 
+  ipcMain.handle(IPC.FILE_READ_PATH, async (_event, absPath: string) => {
+    if (typeof absPath !== 'string' || !absPath.trim()) return null;
+    const fp = path.resolve(absPath.trim());
+    try {
+      return fs.readFileSync(fp, 'utf-8');
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle(IPC.FILE_WRITE_PATH, async (_event, absPath: string, body: string) => {
+    if (typeof absPath !== 'string' || !absPath.trim()) return false;
+    if (typeof body !== 'string') return false;
+    const fp = path.resolve(absPath.trim());
+    try {
+      fs.mkdirSync(path.dirname(fp), { recursive: true });
+      fs.writeFileSync(fp, body, 'utf-8');
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   ipcMain.handle(IPC.FILE_OPEN, async () => {
     const result = await dialog.showOpenDialog({
       title: 'Open File',
@@ -413,9 +440,9 @@ function registerIpcHandlers(): void {
       if (ext === '.md') {
         const parsed = matter(raw);
         const title  = (parsed.data.title as string) || path.basename(fp, ext);
-        return { title, body: (parsed.content as string).trim() };
+        return { title, body: (parsed.content as string).trim(), path: fp };
       }
-      return { title: path.basename(fp, ext) || path.basename(fp), body: raw.trim() };
+      return { title: path.basename(fp, ext) || path.basename(fp), body: raw.trim(), path: fp };
     });
   });
 
@@ -484,6 +511,37 @@ function registerIpcHandlers(): void {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return;
     win.setFullScreen(!win.isFullScreen());
+  });
+
+  ipcMain.handle(IPC.WORKSPACE_CHOOSE_FOLDER, async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Open Workspace Folder',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) {
+      return { ok: false as const, path: null };
+    }
+    const root = path.resolve(result.filePaths[0]);
+    await mergeAndWriteUiPreferencesAsync({ workspaceFolder: root }, app.getPath('userData'), store);
+    const mapPath = path.join(defaultLocalDataDir(), 'workspace-import-map.json');
+    const stats = await syncWorkspaceFolder(store, root, mapPath);
+    return {
+      ok: true as const,
+      path: root,
+      imported: stats.imported,
+      updated: stats.updated,
+    };
+  });
+
+  ipcMain.handle(IPC.WORKSPACE_SYNC, async () => {
+    const prefs = await readUiPreferencesMerged(store, app.getPath('userData'));
+    const root = prefs.workspaceFolder?.trim();
+    if (!root) {
+      return { ok: false as const, error: 'No workspace folder configured (use File → Open Workspace Folder…).' };
+    }
+    const mapPath = path.join(defaultLocalDataDir(), 'workspace-import-map.json');
+    const stats = await syncWorkspaceFolder(store, root, mapPath);
+    return { ok: true as const, imported: stats.imported, updated: stats.updated };
   });
 }
 

@@ -14,7 +14,7 @@ Mnemo keeps a **stable ref** per note, **full-text search**, **wikilinks**, and 
 
 ## Features
 
-- **Desktop app (Electron)** — Markdown editor, graph, IDE/sidebar layouts, Settings for remote DB, background vault sync + manual reload (Turso), **F11** fullscreen on Linux/Windows
+- **Desktop app (Electron)** — Markdown editor, graph, **IDE layout with editor tabs** as the default (classic sidebar and top layouts in Settings), remote DB in Settings, background vault sync + manual reload (Turso), **F11** fullscreen on Linux/Windows
 - **CLI** — `mnemo note …` for list/search/show/new/import, compose/edit in `$EDITOR`, categories, link graph, autolink; interactive list pager scrolls with selection
 - **MCP** — stdio server (`mnemo mcp`) for Cursor / Claude Desktop (list/categories/ref-based tools, autolink, etc.); HTTP/SSE (`mnemo mcp-http`) for remote libSQL + bearer auth
 - **Optional cloud** — same credentials in GUI Settings or env vars for CLI/MCP

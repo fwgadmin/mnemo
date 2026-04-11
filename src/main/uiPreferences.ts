@@ -69,14 +69,26 @@ function sanitizeMarkdownVarMap(raw: unknown): Record<string, string> | undefine
   return Object.keys(out).length ? out : undefined;
 }
 
-/** IDE open-tab order; UUID note ids only */
+/** IDE open-tab order: vault UUIDs and `file:${encodeURIComponent(absPath)}` filesystem tabs */
 function sanitizeIdeTabIds(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const uuidRe =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const out: string[] = [];
   for (const x of raw) {
-    if (typeof x === 'string' && uuidRe.test(x)) out.push(x);
+    if (typeof x !== 'string') continue;
+    if (uuidRe.test(x)) {
+      out.push(x);
+      continue;
+    }
+    if (x.startsWith('file:') && x.length < 16384) {
+      try {
+        decodeURIComponent(x.slice(5));
+        out.push(x);
+      } catch {
+        /* skip */
+      }
+    }
   }
   return out.length ? [...new Set(out)] : undefined;
 }
@@ -126,6 +138,12 @@ export function sanitizePrefs(raw: unknown): MnemoUiPreferences {
   const tabIds = sanitizeIdeTabIds(o.ideTabIds);
   if (tabIds?.length) out.ideTabIds = tabIds;
 
+  if (typeof o.workspaceFolder === 'string') {
+    const w = o.workspaceFolder.trim();
+    if (w.length > 0 && w.length <= 4096) out.workspaceFolder = w;
+    else out.workspaceFolder = '';
+  }
+
   return out;
 }
 
@@ -147,17 +165,25 @@ export function mergePrefs(
 ): MnemoUiPreferences {
   const {
     categoryColors: incomingCc,
+    workspaceFolder: incomingWs,
     markdownGlobal: incomingMg,
     markdownByTheme: incomingMbt,
     ideTabIds: incomingIdeTabs,
     ...restIncoming
   } = incoming;
   const next: MnemoUiPreferences = { ...current, ...restIncoming };
-  if (incomingCc && typeof incomingCc === 'object') {
-    next.categoryColors = {
-      ...current.categoryColors,
-      ...incomingCc,
-    };
+  /** Full replace: merged maps must not resurrect deleted keys (e.g. cleared folder colors). */
+  if (incomingCc !== undefined) {
+    if (incomingCc && typeof incomingCc === 'object' && !Array.isArray(incomingCc)) {
+      next.categoryColors = { ...incomingCc };
+    } else {
+      delete next.categoryColors;
+    }
+  }
+  if (incomingWs !== undefined) {
+    const w = typeof incomingWs === 'string' ? incomingWs.trim() : '';
+    if (w.length > 0) next.workspaceFolder = w;
+    else delete next.workspaceFolder;
   }
   if (incomingMg !== undefined) {
     const mergedRaw = {

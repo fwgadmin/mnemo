@@ -1,0 +1,29 @@
+---
+description: Vault + MCP planning for Mnemo 2.0 (structure, log, backlog); transferable pattern
+alwaysApply: true
+---
+
+# Mnemo vault planning (MCP)
+
+When planning, tracking release work, or logging agent sessions for **this repo**, treat the **Mnemo vault** as the source of truth—not long-lived duplicate markdown in git.
+
+## Paths (this project)
+
+- **Index:** category `Projects/Mnemo-2.0`, title `Index` — entry + links.
+- **Directives:** `Projects/Mnemo-2.0/Directives`, title `Directives` — full rules (structure, thematic phases, persistence, MCP tool table).
+- **Roadmap / Backlog / Log:** `Projects/Mnemo-2.0/Roadmap`, `.../Backlog`, `.../Log`.
+
+Use **MCP mnemo** tools: `read_note`, `create_note`, `update_note`, `list_notes`, `get_categories`, `search_notes` as needed. First tag = folder path (nested: `Parent/Child/NoteTitle` path segments).
+
+## After substantive work
+
+1. **Prepend** a dated block to the **Log** note (newest first).
+2. **Update** **Backlog** checkboxes; adjust **Roadmap** when a phase completes.
+
+## Git repo
+
+- Pointer only: [docs/MNEMO_2.0.md](docs/MNEMO_2.0.md). Do not maintain a second full plan in markdown unless intentionally syncing.
+
+## Other projects
+
+Reuse the same pattern with a **different path prefix** (e.g. `MyApp/Roadmap-v2/...`) and optional `docs/…` pointer; keep **Directives**-style note in vault for agents.
