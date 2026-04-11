@@ -104,7 +104,8 @@ export default function HelpView({ onClose }: HelpViewProps) {
               <Mono>Reload Note List</Mono> from the command palette (<Key>Ctrl+P</Key>, then <Mono>&gt;</Mono>). That
               re-fetches notes and categories from the database and reloads the open note from disk — useful after
               changes from another machine, MCP, or the CLI. The app also checks periodically in the background when
-              the window is visible (list only; it does not overwrite unsaved editor text until you refresh manually).
+              the window is visible; if the open note has no unsaved local edits, its body and title update from the
+              server automatically (otherwise use ↻ to force a reload from the database).
             </KV>
             <KV label="Command palette">
               Press <Key>Ctrl+P</Key> to open the floating command palette — search notes by title, snippet,

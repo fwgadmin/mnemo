@@ -9,6 +9,7 @@ import HelpView from './components/HelpView';
 import MenuBar from './components/MenuBar';
 import MarkdownHelper from './components/MarkdownHelper';
 import SettingsView from './components/SettingsView';
+import RemoteUpdateIndicator from './components/RemoteUpdateIndicator';
 import { extractWikilinks } from '../shared/wikilinks';
 import { inferLinkTargetIds, mergeOutgoingLinkTargets } from '../shared/linkInference';
 import { ClassicSidebarLayout } from './layouts/ClassicSidebarLayout';
@@ -35,6 +36,17 @@ import type { Note, NoteListItem } from '../shared/types';
 import { vaultFingerprint } from '../shared/types';
 
 type RightPanel = 'none' | 'graph' | 'markdown-help' | 'markdown-preview';
+
+/** Compare notes for visible editor state (ignore ref). */
+function sameOpenNoteSnapshot(a: Note, b: Note): boolean {
+  if (a.body !== b.body || a.title !== b.title || a.modified !== b.modified) return false;
+  if (a.hideHeader !== b.hideHeader) return false;
+  if (a.tags.length !== b.tags.length) return false;
+  for (let i = 0; i < a.tags.length; i++) if (a.tags[i] !== b.tags[i]) return false;
+  if (a.links.length !== b.links.length) return false;
+  for (let i = 0; i < a.links.length; i++) if (a.links[i] !== b.links[i]) return false;
+  return true;
+}
 
 /** IDE tab strip: leftmost = most recently *opened* (new tab or note opened from list). Selecting an already-open tab does not reorder. */
 function mruOpenTabIds(prev: string[], id: string): string[] {
@@ -77,6 +89,11 @@ export default function App() {
   const [categoryColors, setCategoryColors] = useState<Record<string, string>>(readCategoryColors);
   const [activeTab, setActiveTab] = useState<ActiveTab>('note');
   const [saveSignal, setSaveSignal] = useState(0);
+  /** Bumps on explicit ↻ / Reload Note List so the editor replaces its buffer from DB. */
+  const [editorReloadNonce, setEditorReloadNonce] = useState(0);
+  /** Brief flash when a background poll applies newer server content to the open note. */
+  const [remotePollIndicatorVisible, setRemotePollIndicatorVisible] = useState(false);
+  const remotePollIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [themeId, setThemeId] = useState(readThemeId);
   const [layoutOverride, setLayoutOverride] = useState<LayoutOverride>(readLayoutOverride);
@@ -293,6 +310,22 @@ export default function App() {
     }
   }, []);
 
+  const flashRemotePollIndicator = useCallback(() => {
+    if (remotePollIndicatorTimerRef.current) clearTimeout(remotePollIndicatorTimerRef.current);
+    setRemotePollIndicatorVisible(true);
+    remotePollIndicatorTimerRef.current = setTimeout(() => {
+      setRemotePollIndicatorVisible(false);
+      remotePollIndicatorTimerRef.current = null;
+    }, 2000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (remotePollIndicatorTimerRef.current) clearTimeout(remotePollIndicatorTimerRef.current);
+    },
+    [],
+  );
+
   const loadNotes = useCallback(async () => {
     const list = await window.mnemo.notes.list();
     setVaultNotes(list);
@@ -338,7 +371,7 @@ export default function App() {
     [captureVaultFingerprint],
   );
 
-  /** Poll DB for changes (e.g. another device or MCP) and refresh lists without touching the editor buffer. */
+  /** Poll DB for changes (e.g. another device or MCP): refresh lists, then pull open note if the editor has no unsaved edits. */
   useEffect(() => {
     const tick = async () => {
       if (document.visibilityState !== 'visible') return;
@@ -347,6 +380,14 @@ export default function App() {
         const fp = vaultFingerprint(snap);
         if (fp !== lastVaultFingerprintRef.current) {
           await syncNotesFromStore();
+          const cur = activeNoteRef.current;
+          if (cur && editorRef.current && !editorRef.current.isDirty()) {
+            const n = await window.mnemo.notes.read(cur.id);
+            if (n && !sameOpenNoteSnapshot(cur, n)) {
+              setActiveNote(n);
+              flashRemotePollIndicator();
+            }
+          }
         }
       } catch {
         /* offline / transient */
@@ -361,7 +402,7 @@ export default function App() {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [syncNotesFromStore]);
+  }, [syncNotesFromStore, flashRemotePollIndicator]);
 
   const handleRenameCategory = useCallback(
     async (oldPath: string, newPath: string) => {
@@ -662,6 +703,7 @@ export default function App() {
         break;
       case 'refresh-notes':
         await syncNotesFromStore({ reloadActiveNote: true });
+        setEditorReloadNonce(n => n + 1);
         break;
       case 'toggle-fullscreen':
         void window.mnemo.toggleFullscreen();
@@ -744,7 +786,9 @@ export default function App() {
     const updated = await window.mnemo.notes.update({ id, title, body });
     if (updated) {
       await window.mnemo.notes.updateLinks(id, targetIds);
-      setActiveNote({ ...updated, links: targetIds });
+      if (activeNoteRef.current?.id === id) {
+        setActiveNote({ ...updated, links: targetIds });
+      }
       const list = await window.mnemo.notes.list();
       setVaultNotes(list);
       setNotes(list);
@@ -909,8 +953,9 @@ export default function App() {
     searchQuery,
     onSelectNote: handleSelectNote,
     onCreateNote: handleCreateNote,
-    onRefreshVault: () => {
-      void syncNotesFromStore({ reloadActiveNote: true });
+    onRefreshVault: async () => {
+      await syncNotesFromStore({ reloadActiveNote: true });
+      setEditorReloadNonce(n => n + 1);
     },
     onDeleteNote: handleDeleteNote,
     onSearch: handleSearch,
@@ -938,17 +983,21 @@ export default function App() {
         <HelpView onClose={() => setActiveTab('note')} />
       ) : activeNote ? (
         <>
-          <Editor
-            ref={editorRef}
-            note={activeNote}
-            onUpdate={handleUpdateNote}
-            onNavigate={handleNavigateToTitle}
-            showHeader={showNoteHeader && !activeNote.hideHeader}
-            saveSignal={saveSignal}
-            showLineNumbers={showLineNumbers}
-            markdownPaintKey={markdownPaintKey}
-            onEditorLiveBody={handleEditorLiveBody}
-          />
+          <div className="relative flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+            <RemoteUpdateIndicator visible={remotePollIndicatorVisible} />
+            <Editor
+              ref={editorRef}
+              note={activeNote}
+              onUpdate={handleUpdateNote}
+              onNavigate={handleNavigateToTitle}
+              showHeader={showNoteHeader && !activeNote.hideHeader}
+              saveSignal={saveSignal}
+              showLineNumbers={showLineNumbers}
+              markdownPaintKey={markdownPaintKey}
+              onEditorLiveBody={handleEditorLiveBody}
+              reloadNonce={editorReloadNonce}
+            />
+          </div>
           <BacklinksPanel
             noteId={activeNote.id}
             onSelectNote={handleSelectNote}
