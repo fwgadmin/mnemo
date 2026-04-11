@@ -103,7 +103,7 @@ sudo apt install -y build-essential python3
 
 **Share one vault between GUI and CLI:** set `MNEMO_HOME` to a directory; both the app and `mnemo note` / `mnemo mcp` use it for `mnemo.db` and `vault/` (GUI reads this via `app.setPath('userData', …)`).
 
-**From a git checkout (development):** `npm install`, then `npm run build:cli`, then use `npx mnemo` or `node bin/mnemo.js` (or add `./node_modules/.bin` to `PATH`). The dev launcher runs `mcp`/`note` under Electron-as-Node with the repo’s `node_modules`.
+**From a git checkout (development):** `npm install`, then `npm run build:cli`, then use `npx mnemo` or `node bin/mnemo.js` (or add `./node_modules/.bin` to `PATH`). The dev launcher runs `mcp`/`note` under Electron-as-Node with the repo’s `node_modules`. The **published npm package** is named **`mnemo-note`**; after `npm install -g mnemo-note`, the CLI command is still **`mnemo`** (see **Publishing to npm** below).
 
 ---
 
@@ -549,10 +549,15 @@ This project is open source under the **[MIT License](LICENSE)** (see the `LICEN
 
 ### Publishing to npm (maintainers)
 
+The registry package name is **`mnemo-note`** (see `"name"` in `package.json`). The **`mnemo`** CLI binary name is unchanged — after a global install, users run `mnemo`, `mnemo note`, etc.
+
 1. Ensure you are logged in: `npm login`
-2. Confirm the package name on npm is free, or change `"name"` in `package.json` (e.g. to a scoped name like `@your-org/mnemo` and set `"publishConfig": { "access": "public" }` for scoped packages).
-3. From the repo root, run `npm publish`. The `prepublishOnly` script runs typecheck and builds CLI/MCP bundles into `dist/` before the tarball is created.
-4. Inspect the tarball first with `npm pack --dry-run` if you want to verify contents.
+2. Bump **`version`** in `package.json` if this is a new release (npm rejects republishing the same version).
+3. From the repo root, run **`npm publish --access public`**. The `prepublishOnly` script runs typecheck and builds CLI/MCP bundles into `dist/` before the tarball is created.
+4. If you use **2FA** on your npm account, pass a one-time password: `npm publish --access public --otp=123456`
+5. Inspect the tarball first with `npm pack --dry-run` if you want to verify contents.
+
+**Consumers install with** `npm install -g mnemo-note` **and run** `mnemo …` (or use `npx mnemo-note` to run the published package without a global install — npm will resolve the `mnemo` binary from the package).
 
 **GitHub desktop installers** (Windows/Linux zips on the Releases page) are produced only by the **Release** CI workflow when you push a **`v*`** tag — not by `npm publish`. Publish npm and tag the repo in whichever order fits your release checklist.
 

@@ -1,5 +1,5 @@
 {
-  "name": "mnemo",
+  "name": "mnemo-note",
   "version": "1.0.0",
   "description": "AI-native memory layer — notes, embeddings, and MCP for intelligence systems",
   "main": ".webpack/main",
@@ -113,6 +113,7 @@
     "typescript": "^5.9.3"
   },
   "bin": {
-    "mnemo": "bin/mnemo.js"
+    "mnemo": "bin/mnemo.js",
+    "mnemo-note": "bin/mnemo.js"
   }
 }
