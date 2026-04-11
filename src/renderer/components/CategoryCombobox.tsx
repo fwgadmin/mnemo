@@ -7,6 +7,13 @@ interface CategoryComboboxProps {
   onChange: (path: string) => void;
   placeholder?: string;
   allowCreate?: boolean;
+  /**
+   * suggest (default): Enter picks first filtered match when the typed path already exists — good for quick-pick.
+   * typed: Enter always commits normalized input — use for folder rename so Enter applies what you typed.
+   */
+  commitBehavior?: 'suggest' | 'typed';
+  /** Label for the “new path” row when allowCreate (default Create “…”). Use renameDestination for folder rename. */
+  newPathLabel?: 'create' | 'renameDestination';
   className?: string;
 }
 
@@ -17,6 +24,8 @@ export default function CategoryCombobox({
   onChange,
   placeholder = 'Category path…',
   allowCreate = true,
+  commitBehavior = 'suggest',
+  newPathLabel = 'create',
   className = '',
 }: CategoryComboboxProps) {
   const [open, setOpen] = useState(false);
@@ -77,6 +86,11 @@ export default function CategoryCombobox({
         onKeyDown={e => {
           if (e.key === 'Enter') {
             e.preventDefault();
+            if (commitBehavior === 'typed') {
+              const raw = normalizePath(input);
+              commit(raw);
+              return;
+            }
             if (filtered.length > 0 && !canCreate) commit(filtered[0]);
             else if (canCreate) commit(normalizedNew);
             else if (filtered.length > 0) commit(filtered[0]);
@@ -109,7 +123,9 @@ export default function CategoryCombobox({
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => commit(normalizedNew)}
               >
-                Create “{normalizedNew}”
+                {newPathLabel === 'renameDestination'
+                  ? `Rename to “${normalizedNew}”`
+                  : `Create “${normalizedNew}”`}
               </button>
             </li>
           )}

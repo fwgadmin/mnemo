@@ -120,8 +120,8 @@ export interface MnemoUiPreferences {
 
 /**
  * Cheap vault-wide stats for GUI polling (Turso / multi-device sync) without loading full list.
- * Fingerprint = counts + max timestamp + linkCount + contentBytes so body/title/tag edits bump the snapshot
- * even if updated_at ties or sync paths are quirky.
+ * Fingerprint = counts + max timestamp + linkCount + contentBytes + appKvMaxUpdatedAt so body/title/tag edits
+ * and app_kv changes (e.g. ui_preferences: category colors, theme) bump the snapshot.
  */
 export interface VaultSnapshot {
   noteCount: number;
@@ -129,10 +129,15 @@ export interface VaultSnapshot {
   linkCount: number;
   /** Sum of LENGTH(body)+LENGTH(title)+LENGTH(tags) — changes when note text/metadata changes. */
   contentBytes: number;
+  /**
+   * Max `app_kv.updated_at` when using Turso (UI prefs JSON and other KV). Null for local SQLite (no app_kv).
+   * When this changes, the GUI should re-read merged ui-preferences (disk + Turso).
+   */
+  appKvMaxUpdatedAt: string | null;
 }
 
 export function vaultFingerprint(s: VaultSnapshot): string {
-  return `${s.noteCount}|${s.maxUpdatedAt ?? ''}|${s.linkCount}|${s.contentBytes}`;
+  return `${s.noteCount}|${s.maxUpdatedAt ?? ''}|${s.linkCount}|${s.contentBytes}|${s.appKvMaxUpdatedAt ?? ''}`;
 }
 
 /** Async store interface implemented by both LocalNoteStore and TursoNoteStore */

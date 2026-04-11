@@ -140,6 +140,11 @@ export default function HelpView({ onClose }: HelpViewProps) {
                 <Mono>Rename</Mono>, <Mono>Promote</Mono>, <Mono>Demote</Mono>, and folder colors (see
                 Settings for details).
               </li>
+              <li>
+                <strong>Rename</strong> moves every note whose <strong>first tag equals that folder path
+                exactly</strong> (e.g. <Mono>Work</Mono>) — not notes only under a nested path such as{' '}
+                <Mono>Work/Meetings</Mono>. Type the new path and press Enter to apply.
+              </li>
               <li>Groups are collapsible — click the group heading to expand or collapse.</li>
             </ul>
             <p className="mt-3 text-mnemo-dim text-xs leading-relaxed">

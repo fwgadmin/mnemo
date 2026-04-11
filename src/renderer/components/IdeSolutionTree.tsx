@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState, type DragEvent, type MouseEvent } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type DragEvent, type MouseEvent } from 'react';
 import type { NoteListItem } from '../../shared/types';
 import {
   ancestorPaths,
@@ -83,10 +83,18 @@ export default function IdeSolutionTree({
     return defaultExpandedForActive(activeNoteId, vaultNotes);
   });
 
+  /** Only changes when the active note’s resolved category path changes — not on every vault list refresh. */
+  const activeNoteCategoryKey = useMemo(() => {
+    if (!activeNoteId) return '';
+    const note = vaultNotes.find(n => n.id === activeNoteId);
+    if (!note) return '';
+    return categoryPathFromTags(note.tags, vaultNotes);
+  }, [activeNoteId, vaultNotes]);
+
   useEffect(() => {
     setExpanded(prev => {
       const next = new Set(prev);
-      if (activeNoteId) {
+      if (activeNoteId && activeNoteCategoryKey) {
         const note = vaultNotes.find(n => n.id === activeNoteId);
         if (note) {
           for (const a of ancestorPaths(categoryPathFromTags(note.tags, vaultNotes))) {
@@ -96,7 +104,9 @@ export default function IdeSolutionTree({
       }
       return next;
     });
-  }, [activeNoteId, vaultNotes]);
+    // Intentionally omit vaultNotes: only re-expand when active note or its category path changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+  }, [activeNoteId, activeNoteCategoryKey]);
 
   const toggle = useCallback((path: string) => {
     setExpanded(prev => {

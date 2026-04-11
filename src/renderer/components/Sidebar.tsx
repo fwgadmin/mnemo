@@ -730,9 +730,14 @@ export default function Sidebar({
           onContextMenu={e => e.preventDefault()}
         >
           <p className="text-[10px] text-mnemo-dim mb-1.5">Rename category</p>
+          <p className="text-[9px] text-mnemo-dim mb-1.5 leading-snug">
+            All notes in this folder move to the path you enter. Press Enter to apply.
+          </p>
           <CategoryCombobox
             paths={categoryPathsList}
             value={folderRename.path}
+            commitBehavior="typed"
+            newPathLabel="renameDestination"
             onChange={path => {
               const dest =
                 path === '' || path === GENERAL_PATH
@@ -741,7 +746,7 @@ export default function Sidebar({
               void onRenameCategory(folderRename.path, dest);
               setFolderRename(null);
             }}
-            placeholder="e.g. Work/Meetings"
+            placeholder="New path (e.g. Work/Meetings)"
           />
         </div>
       </div>
