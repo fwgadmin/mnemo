@@ -16,6 +16,7 @@ module.exports = {
           muted: 'var(--mnemo-text-muted)',
           dim: 'var(--mnemo-text-dim)',
           accent: 'var(--mnemo-accent)',
+          'on-accent': 'var(--mnemo-on-accent)',
           'category-bar': 'var(--mnemo-category-bar)',
         },
       },
