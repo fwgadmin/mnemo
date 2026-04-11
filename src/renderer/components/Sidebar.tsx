@@ -454,7 +454,7 @@ export default function Sidebar({
             type="button"
             onClick={onRefreshVault}
             className="w-6 h-6 flex items-center justify-center rounded hover:bg-mnemo-hover text-mnemo-dim hover:text-mnemo-muted transition-colors cursor-pointer"
-            title="Reload note list from database (syncs remote changes)"
+            title="Reload notes, categories, and open note from database"
           >
             ↻
           </button>

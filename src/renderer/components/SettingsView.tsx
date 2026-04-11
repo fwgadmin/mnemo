@@ -228,8 +228,9 @@ export default function SettingsView({
         <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
           <strong className="text-mnemo-muted">Multiple devices:</strong> the same URL and token on each machine
           point at one vault. After notes or categories change elsewhere, use the sidebar <strong>↻</strong> reload
-          control (or <strong>Reload Note List</strong> in the command palette) to refresh; the app also polls the
-          database periodically while the window is visible.
+          control (or <strong>Reload Note List</strong> in the command palette) to refresh lists and the open note;
+          the app also polls the database periodically while the window is visible and updates the open note when
+          you have no unsaved edits in the editor.
         </p>
 
         <div className="space-y-4">

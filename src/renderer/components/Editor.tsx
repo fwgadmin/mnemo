@@ -146,6 +146,8 @@ function insertMarkdownImage(view: EditorView): boolean {
 export interface EditorHandle {
   formatDocument: () => Promise<void>;
   getBody: () => string;
+  /** True when the buffer differs from the last server body applied (unsaved local edits). */
+  isDirty: () => boolean;
   scrollToLine: (line: number) => void;
   focus: () => void;
 }
@@ -161,6 +163,8 @@ interface EditorProps {
   markdownPaintKey?: string;
   /** Throttled (~120ms) live body for preview / outline panels. */
   onEditorLiveBody?: (body: string) => void;
+  /** Increment after explicit "reload from DB" so the buffer is replaced even when the note id is unchanged. */
+  reloadNonce?: number;
 }
 
 const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
@@ -173,6 +177,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     showLineNumbers = true,
     markdownPaintKey,
     onEditorLiveBody,
+    reloadNonce = 0,
   },
   ref,
 ) {
@@ -181,6 +186,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const titleRef = useRef<HTMLInputElement>(null);
   const noteIdRef = useRef(note.id);
   const titleValueRef = useRef(note.title);
+  /** Last server body applied to the editor (normalized); used for dirty checks + remote sync. */
+  const syncedBodyRef = useRef(normalizeLineSeparators(note.body));
+  /** Last reloadNonce seen for the current note id — avoids re-applying when only `note` updates. */
+  const reloadNonceSeenRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onUpdateRef = useRef(onUpdate);
@@ -243,6 +252,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
       },
       getBody: () => viewRef.current?.state.doc.toString() ?? '',
+      isDirty: () => {
+        const v = viewRef.current;
+        if (!v) return false;
+        return (
+          normalizeLineSeparators(v.state.doc.toString()) !==
+          normalizeLineSeparators(syncedBodyRef.current)
+        );
+      },
       scrollToLine: (line: number) => {
         const v = viewRef.current;
         if (!v) return;
@@ -328,6 +345,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     });
 
     viewRef.current = new EditorView({ state, parent: containerRef.current });
+    syncedBodyRef.current = normalizeLineSeparators(note.body);
     onEditorLiveBodyRef.current?.(normalizeLineSeparators(note.body));
 
     return () => {
@@ -337,6 +355,60 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
+
+  /** Same note id: apply remote title/body when the buffer still matches the last server snapshot (no local edits). */
+  useEffect(() => {
+    const v = viewRef.current;
+    if (!v || note.id !== noteIdRef.current) return;
+    const doc = normalizeLineSeparators(v.state.doc.toString());
+    const server = normalizeLineSeparators(note.body);
+    if (doc === server) {
+      syncedBodyRef.current = server;
+      return;
+    }
+    if (doc === normalizeLineSeparators(syncedBodyRef.current)) {
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: server },
+      });
+      syncedBodyRef.current = server;
+      onEditorLiveBodyRef.current?.(server);
+    }
+  }, [note.id, note.body, note.modified]);
+
+  useEffect(() => {
+    reloadNonceSeenRef.current = reloadNonce;
+  }, [note.id]);
+
+  /** Explicit reload from DB: replace buffer when reloadNonce bumps (user asked to sync). */
+  useEffect(() => {
+    if (reloadNonce === 0 || reloadNonce === reloadNonceSeenRef.current) return;
+    const v = viewRef.current;
+    if (!v || note.id !== noteIdRef.current) return;
+    const server = normalizeLineSeparators(note.body);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (previewThrottleRef.current) clearTimeout(previewThrottleRef.current);
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: server },
+    });
+    syncedBodyRef.current = server;
+    titleValueRef.current = note.title;
+    const t = titleRef.current;
+    if (t && document.activeElement !== t) {
+      t.value = note.title;
+    }
+    onEditorLiveBodyRef.current?.(server);
+    reloadNonceSeenRef.current = reloadNonce;
+  }, [reloadNonce, note.id, note.body, note.title]);
+
+  /** Remote title change (same id) when the title field is not focused. */
+  useEffect(() => {
+    const t = titleRef.current;
+    if (!t || document.activeElement === t) return;
+    if (t.value !== note.title) {
+      t.value = note.title;
+      titleValueRef.current = note.title;
+    }
+  }, [note.id, note.title, note.modified]);
 
   useEffect(() => {
     if (!viewRef.current) return;
