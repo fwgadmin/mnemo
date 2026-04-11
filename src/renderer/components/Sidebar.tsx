@@ -577,8 +577,10 @@ export default function Sidebar({
                 onDragOver={e => handleDragOver(e, path)}
                 onDrop={e => handleDrop(e, path)}
                 onDragLeave={handleDragLeave}
-                className={`mx-1 rounded-md transition-colors pb-1 ${
-                  isDrag ? 'bg-mnemo-active/40 ring-1 ring-mnemo-accent/30' : ''
+                className={`mx-1 rounded-md transition-[background-color,box-shadow] duration-150 pb-1 ${
+                  isDrag
+                    ? 'bg-mnemo-active/25 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--mnemo-border)_65%,var(--mnemo-accent)_35%)]'
+                    : ''
                 }`}
               >
                 <div
@@ -609,10 +611,8 @@ export default function Sidebar({
                   {sectionNotes.map((n, i) => (
                     <Fragment key={n.id}>
                       <div
-                        className={`mx-0.5 min-h-[6px] rounded-sm transition-colors ${
-                          dragOverCategory === path
-                            ? 'bg-mnemo-accent/20 ring-1 ring-mnemo-accent/40'
-                            : 'hover:bg-mnemo-hover/30'
+                        className={`mx-0.5 min-h-[6px] rounded-sm transition-[background-color] duration-150 ${
+                          dragOverCategory === path ? 'bg-mnemo-active/18' : 'hover:bg-mnemo-hover/30'
                         }`}
                         onDragOver={e => handleDragOver(e, path)}
                         onDrop={e => handleDrop(e, path)}
@@ -623,10 +623,8 @@ export default function Sidebar({
                     </Fragment>
                   ))}
                   <div
-                    className={`mx-0.5 min-h-[6px] rounded-sm transition-colors ${
-                      dragOverCategory === path
-                        ? 'bg-mnemo-accent/20 ring-1 ring-mnemo-accent/40'
-                        : 'hover:bg-mnemo-hover/30'
+                    className={`mx-0.5 min-h-[6px] rounded-sm transition-[background-color] duration-150 ${
+                      dragOverCategory === path ? 'bg-mnemo-active/18' : 'hover:bg-mnemo-hover/30'
                     }`}
                     onDragOver={e => handleDragOver(e, path)}
                     onDrop={e => handleDrop(e, path)}

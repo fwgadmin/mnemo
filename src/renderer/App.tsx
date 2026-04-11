@@ -426,27 +426,66 @@ export default function App() {
       const newKey = categoryColorStorageKey(newPath);
       if (oldKey === newKey) return;
 
+      /** Move every note in this folder and under `oldNorm/…` (rename to Unassigned only affects the exact folder). */
+      const migrateSubtreePrefix = newKey !== UNASSIGNED_PATH;
+
       const list = await window.mnemo.notes.list();
       for (const n of list) {
-        if (categoryPathFromTags(n.tags, list) !== oldNorm) continue;
+        const cur = categoryPathFromTags(n.tags, list);
         const otherTags = n.tags.slice(1);
         let newTags: string[];
-        if (newKey === UNASSIGNED_PATH) {
-          newTags = otherTags;
-        } else if (newKey === GENERAL_PATH) {
-          newTags = [GENERAL_PATH, ...otherTags];
+
+        if (cur === oldNorm) {
+          if (newKey === UNASSIGNED_PATH) {
+            newTags = otherTags;
+          } else if (newKey === GENERAL_PATH) {
+            newTags = [GENERAL_PATH, ...otherTags];
+          } else {
+            newTags = [newKey, ...otherTags];
+          }
+        } else if (migrateSubtreePrefix && cur.startsWith(`${oldNorm}/`)) {
+          const suffix = cur.slice(oldNorm.length + 1);
+          const first =
+            newKey === GENERAL_PATH
+              ? suffix
+                ? `${GENERAL_PATH}/${suffix}`
+                : GENERAL_PATH
+              : suffix
+                ? `${newKey}/${suffix}`
+                : newKey;
+          newTags = [first, ...otherTags];
         } else {
-          newTags = [newKey, ...otherTags];
+          continue;
         }
+
         await window.mnemo.notes.update({ id: n.id, tags: newTags });
       }
 
       setCategoryColors(prev => {
         const next = { ...prev };
-        const c = next[oldKey];
-        if (c && oldKey !== newKey) {
-          delete next[oldKey];
-          next[newKey] = c;
+        if (newKey === UNASSIGNED_PATH) {
+          const c = next[oldKey];
+          if (c && oldKey !== newKey) {
+            delete next[oldKey];
+            next[newKey] = c;
+          }
+        } else {
+          const keys = Object.keys(next);
+          for (const k of keys) {
+            if (k !== oldKey && !k.startsWith(`${oldKey}/`)) continue;
+            const c = next[k];
+            delete next[k];
+            const rest = k === oldKey ? '' : k.slice(oldKey.length + 1);
+            const nk =
+              newKey === GENERAL_PATH
+                ? rest
+                  ? `${GENERAL_PATH}/${rest}`
+                  : GENERAL_PATH
+                : rest
+                  ? `${newKey}/${rest}`
+                  : newKey;
+            next[nk] = c;
+          }
         }
         try {
           localStorage.setItem('mnemo.categoryColors', JSON.stringify(next));

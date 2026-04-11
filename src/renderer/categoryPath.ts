@@ -51,10 +51,16 @@ export function splitPath(path: string): string[] {
   return n.split('/');
 }
 
+/**
+ * Parent folder path, or null for top-level buckets (General, Unassigned, agntsea, Blackhat, …).
+ * There is no implicit "everything lives under General" — only nested paths have a parent.
+ */
 export function parentPath(path: string): string | null {
   if (path === GENERAL_PATH) return null;
+  if (path === UNASSIGNED_PATH) return null;
   const parts = splitPath(path);
-  if (parts.length <= 1) return GENERAL_PATH;
+  if (parts.length === 0) return null;
+  if (parts.length <= 1) return null;
   return parts.slice(0, -1).join('/');
 }
 
@@ -134,12 +140,13 @@ export function filterNotesByCategory(
   });
 }
 
-/** All ancestor folder paths for a leaf path (includes General for non-empty paths) */
+/** All ancestor folder paths for expand/scroll (flat roots: no synthetic General parent). */
 export function ancestorPaths(leafPath: string): string[] {
   if (leafPath === GENERAL_PATH) return [GENERAL_PATH];
+  if (leafPath === UNASSIGNED_PATH) return [UNASSIGNED_PATH];
   const parts = splitPath(leafPath);
   if (parts.length === 0) return [GENERAL_PATH];
-  const out: string[] = [GENERAL_PATH];
+  const out: string[] = [];
   let acc = '';
   for (const seg of parts) {
     acc = acc ? `${acc}/${seg}` : seg;
@@ -158,7 +165,10 @@ export interface CategoryTreeNode {
   children: CategoryTreeNode[];
 }
 
-/** Single-root tree under General */
+/** Internal tree root (not a real folder — never shown or stored as a tag). */
+export const VIRTUAL_CATEGORY_ROOT = '';
+
+/** Multi-root category tree: top-level folders are siblings (General, Unassigned, agntsea, …), not children of General. */
 export function buildCategoryTree(notes: NoteListItem[]): CategoryTreeNode {
   const byPath = new Map<string, NoteListItem[]>();
   for (const n of notes) {
@@ -173,19 +183,39 @@ export function buildCategoryTree(notes: NoteListItem[]): CategoryTreeNode {
   }
   if (allPaths.size === 0) allPaths.add(GENERAL_PATH);
 
-  function buildNode(path: string, depth: number): CategoryTreeNode {
+  function buildNode(path: string): CategoryTreeNode {
     const segment =
-      path === GENERAL_PATH ? 'General' : path === UNASSIGNED_PATH ? 'Unassigned' : splitPath(path).slice(-1)[0] ?? path;
+      path === VIRTUAL_CATEGORY_ROOT
+        ? ''
+        : path === GENERAL_PATH
+          ? 'General'
+          : path === UNASSIGNED_PATH
+            ? 'Unassigned'
+            : splitPath(path).slice(-1)[0] ?? path;
+    const nodeDepth =
+      path === VIRTUAL_CATEGORY_ROOT ? -1 : categoryDisplayDepth(path);
     const direct = byPath.get(path)?.length ?? 0;
     const childPaths = [...allPaths]
-      .filter(c => parentPath(c) === path && c !== path)
+      .filter(c => {
+        const pp = parentPath(c);
+        if (path === VIRTUAL_CATEGORY_ROOT) return pp === null;
+        return pp === path;
+      })
+      .filter(c => c !== path)
       .sort((a, b) => (splitPath(a).pop() ?? '').localeCompare(splitPath(b).pop() ?? ''));
-    const children = childPaths.map(c => buildNode(c, depth + 1));
+    const children = childPaths.map(c => buildNode(c));
     const sub = direct + children.reduce((a, c) => a + c.subtreeNoteCount, 0);
-    return { path, segment, depth, directNoteCount: direct, subtreeNoteCount: sub, children };
+    return {
+      path,
+      segment,
+      depth: nodeDepth,
+      directNoteCount: direct,
+      subtreeNoteCount: sub,
+      children,
+    };
   }
 
-  return buildNode(GENERAL_PATH, 0);
+  return buildNode(VIRTUAL_CATEGORY_ROOT);
 }
 
 /** Keep only folders that have a direct note or a descendant with a note in the map (for tree UI). */
@@ -217,7 +247,7 @@ export function findNodeByPath(root: CategoryTreeNode, path: string): CategoryTr
   return null;
 }
 
-/** Order category paths as they appear in a pre-order walk of the tree (General first). */
+/** Order category paths as they appear in a pre-order walk of the tree (virtual root omitted). */
 export function sortPathsByTreeOrder(paths: string[], tree: CategoryTreeNode): string[] {
   const index = new Map<string, number>();
   flattenTreeDFS(tree).forEach((n, i) => index.set(n.path, i));
@@ -234,10 +264,18 @@ export function sortPathsByTreeOrder(paths: string[], tree: CategoryTreeNode): s
 /** Sorted distinct paths for combobox */
 export function distinctCategoryPaths(notes: NoteListItem[]): string[] {
   const s = new Set<string>();
+  const hasDirectGeneral = notes.some(
+    n => categoryPathFromTags(n.tags, notes) === GENERAL_PATH,
+  );
   for (const n of notes) {
     const p = categoryPathFromTags(n.tags, notes);
     s.add(p);
     for (const a of ancestorPaths(p)) s.add(a);
+  }
+  /* Structural root "General" is injected as an ancestor of every path; without this, the list
+   * still shows General after you rename the bucket away — looks like a duplicate folder. */
+  if (!hasDirectGeneral) {
+    s.delete(GENERAL_PATH);
   }
   return [...s].sort((a, b) => a.localeCompare(b));
 }

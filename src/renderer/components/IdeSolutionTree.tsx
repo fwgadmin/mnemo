@@ -32,7 +32,7 @@ function saveExpandedToStorage(paths: Set<string>): void {
 }
 
 function defaultExpandedForActive(activeNoteId: string | null, vaultNotes: NoteListItem[]): Set<string> {
-  const s = new Set<string>([GENERAL_PATH]);
+  const s = new Set<string>();
   if (!activeNoteId) return s;
   const note = vaultNotes.find(n => n.id === activeNoteId);
   if (!note) return s;
@@ -118,20 +118,13 @@ export default function IdeSolutionTree({
     });
   }, []);
 
-  const renderNode = (
-    node: CategoryTreeNode,
-    depth: number,
-    opts?: { generalTopLevel?: boolean },
-  ): React.ReactNode => {
+  const renderNode = (node: CategoryTreeNode, depth: number): React.ReactNode => {
     const notesHere = [...(notesByPath.get(node.path) ?? [])].sort((a, b) =>
       (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }),
     );
-    const childFolders =
-      opts?.generalTopLevel && node.path === GENERAL_PATH
-        ? []
-        : [...node.children].sort((a, b) =>
-            a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
-          );
+    const childFolders = [...node.children].sort((a, b) =>
+      a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
+    );
     const hasSubfolders = childFolders.length > 0;
     const hasNotes = notesHere.length > 0;
     const expandable = hasSubfolders || hasNotes;
@@ -143,10 +136,7 @@ export default function IdeSolutionTree({
       ? `color-mix(in srgb, ${stripe} 42%, var(--mnemo-accent) 58%)`
       : 'color-mix(in srgb, var(--mnemo-border) 82%, var(--mnemo-accent) 18%)';
     const isDrag = dragOverCategory === node.path;
-    const visibleCount =
-      opts?.generalTopLevel && node.path === GENERAL_PATH
-        ? notesHere.length
-        : visibleNotesInSubtree(node, notesByPath);
+    const visibleCount = visibleNotesInSubtree(node, notesByPath);
 
     const indent = 4 + depth * 14;
 
@@ -157,8 +147,8 @@ export default function IdeSolutionTree({
           onDrop={e => onDrop(e, node.path)}
           onDragLeave={onDragLeave}
           onContextMenu={e => onFolderContextMenu(e, node.path)}
-          className={`rounded-sm transition-colors bg-mnemo-panel-elevated/50 border ${
-            isDrag ? 'bg-mnemo-active/40 ring-1 ring-mnemo-accent/30' : ''
+          className={`rounded-sm transition-[background-color,box-shadow] duration-150 bg-mnemo-panel-elevated/50 border ${
+            isDrag ? 'bg-mnemo-active/25 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--mnemo-border)_65%,var(--mnemo-accent)_35%)]' : ''
           }`}
           style={{
             paddingLeft: indent,
@@ -220,18 +210,14 @@ export default function IdeSolutionTree({
             onDragOver={e => onDragOver(e, node.path)}
             onDrop={e => onDrop(e, node.path)}
             onDragLeave={onDragLeave}
-            className={
-              isDrag ? 'rounded-b-sm bg-mnemo-active/15 ring-1 ring-inset ring-mnemo-accent/20' : undefined
-            }
+            className={isDrag ? 'rounded-b-sm bg-mnemo-active/12' : undefined}
           >
             {childFolders.map(ch => renderNode(ch, depth + 1))}
             {notesHere.map(n => (
               <Fragment key={n.id}>
                 <div
-                  className={`mx-0.5 min-h-[6px] rounded-sm transition-colors ${
-                    isDrag
-                      ? 'bg-mnemo-accent/20 ring-1 ring-mnemo-accent/40'
-                      : 'hover:bg-mnemo-hover/30'
+                  className={`mx-0.5 min-h-[6px] rounded-sm transition-[background-color] duration-150 ${
+                    isDrag ? 'bg-mnemo-active/18' : 'hover:bg-mnemo-hover/30'
                   }`}
                   onDragOver={e => onDragOver(e, node.path)}
                   onDrop={e => onDrop(e, node.path)}
@@ -242,10 +228,8 @@ export default function IdeSolutionTree({
               </Fragment>
             ))}
             <div
-              className={`mx-0.5 min-h-[6px] rounded-sm transition-colors ${
-                isDrag
-                  ? 'bg-mnemo-accent/20 ring-1 ring-mnemo-accent/40'
-                  : 'hover:bg-mnemo-hover/30'
+              className={`mx-0.5 min-h-[6px] rounded-sm transition-[background-color] duration-150 ${
+                isDrag ? 'bg-mnemo-active/18' : 'hover:bg-mnemo-hover/30'
               }`}
               onDragOver={e => onDragOver(e, node.path)}
               onDrop={e => onDrop(e, node.path)}
@@ -262,15 +246,8 @@ export default function IdeSolutionTree({
     a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
   );
 
-  /** General is the structural tree root; top-level folders are its children. We also render those
-   *  children at depth 0 so they sit beside General. When General has no direct notes, the first row
-   *  would look like an empty duplicate — skip it and show only the real top-level folders. */
-  const generalDirect = notesByPath.get(GENERAL_PATH)?.length ?? 0;
-  const showGeneralRow = generalDirect > 0 || topChildren.length === 0;
-
   return (
     <div className="py-0.5 font-sans text-[11px] leading-tight" role="tree">
-      {showGeneralRow && renderNode(root, 0, { generalTopLevel: true })}
       {topChildren.map(ch => renderNode(ch, 0))}
     </div>
   );
