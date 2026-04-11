@@ -227,10 +227,11 @@ export default function SettingsView({
         </p>
         <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
           <strong className="text-mnemo-muted">Multiple devices:</strong> the same URL and token on each machine
-          point at one vault. After notes or categories change elsewhere, use the sidebar <strong>↻</strong> reload
-          control (or <strong>Reload Note List</strong> in the command palette) to refresh lists and the open note;
-          the app also polls the database periodically while the window is visible and updates the open note when
-          you have no unsaved edits in the editor.
+          point at one vault. Notes, links, and merged UI settings (folder colors, theme, layout, Markdown overrides,
+          etc.) are stored in the remote database and mirrored to{' '}
+          <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">app_kv</code>.
+          The app polls for changes and reloads the note list, open note (when the editor has no unsaved edits), and
+          preferences automatically; use <strong>↻</strong> or <strong>Reload Note List</strong> for an immediate pull.
         </p>
 
         <div className="space-y-4">

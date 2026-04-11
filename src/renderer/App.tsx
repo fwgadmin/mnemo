@@ -32,7 +32,7 @@ import { buildEffectiveCategoryColors, getSuggestedCategorySwatches } from './ca
 import { gatherLocalStoragePreferences } from './uiPreferencesSync';
 import { applyThemeToDocument, getTheme } from './theme/themes';
 import { applyMarkdownOverridesToDocument, mergeMarkdownLayers } from './editor/markdownOverrides';
-import type { Note, NoteListItem } from '../shared/types';
+import type { MnemoUiPreferences, Note, NoteListItem } from '../shared/types';
 import { vaultFingerprint } from '../shared/types';
 
 type RightPanel = 'none' | 'graph' | 'markdown-help' | 'markdown-preview';
@@ -199,6 +199,38 @@ export default function App() {
     }
   }, [openTabIds]);
 
+  /** Apply merged UI prefs (disk + Turso app_kv when connected). Used at boot and after remote sync. */
+  const applyMergedPreferences = useCallback((file: MnemoUiPreferences) => {
+    if (file.themeId !== undefined) setThemeId(file.themeId);
+    if (file.layoutOverride !== undefined) setLayoutOverride(file.layoutOverride);
+    if (file.showSidebar !== undefined) setShowSidebar(file.showSidebar);
+    if (file.showNoteHeader !== undefined) setShowNoteHeader(file.showNoteHeader);
+    if (file.showLineNumbers !== undefined) setShowLineNumbers(file.showLineNumbers);
+    if (file.showNoteRefs !== undefined) setShowNoteRefs(file.showNoteRefs);
+    if (file.grouped !== undefined) setSidebarGrouped(file.grouped);
+    if (file.categoryScopeSubtree !== undefined) setSidebarIncludeSubfolders(file.categoryScopeSubtree);
+    if (file.categoryColors !== undefined) {
+      try {
+        localStorage.setItem('mnemo.categoryColors', JSON.stringify(file.categoryColors));
+      } catch {
+        /* quota */
+      }
+      setCategoryColors(file.categoryColors);
+    }
+    if (file.markdownGlobal !== undefined) setMarkdownGlobal(file.markdownGlobal);
+    if (file.markdownByTheme !== undefined) setMarkdownByTheme(file.markdownByTheme);
+    if (file.ideTabIds !== undefined && file.ideTabIds.length > 0) setOpenTabIds(file.ideTabIds);
+  }, []);
+
+  const refreshMergedPreferencesFromStore = useCallback(async () => {
+    try {
+      const file = await window.mnemo.preferences.read();
+      if (Object.keys(file).length > 0) applyMergedPreferences(file);
+    } catch {
+      /* ignore */
+    }
+  }, [applyMergedPreferences]);
+
   /** Load ui-preferences.json (MCP + disk); bootstrap file from localStorage if missing. */
   useEffect(() => {
     let cancelled = false;
@@ -207,25 +239,7 @@ export default function App() {
         const file = await window.mnemo.preferences.read();
         if (cancelled) return;
         if (Object.keys(file).length > 0) {
-          if (file.themeId !== undefined) setThemeId(file.themeId);
-          if (file.layoutOverride !== undefined) setLayoutOverride(file.layoutOverride);
-          if (file.showSidebar !== undefined) setShowSidebar(file.showSidebar);
-          if (file.showNoteHeader !== undefined) setShowNoteHeader(file.showNoteHeader);
-          if (file.showLineNumbers !== undefined) setShowLineNumbers(file.showLineNumbers);
-          if (file.showNoteRefs !== undefined) setShowNoteRefs(file.showNoteRefs);
-          if (file.grouped !== undefined) setSidebarGrouped(file.grouped);
-          if (file.categoryScopeSubtree !== undefined) setSidebarIncludeSubfolders(file.categoryScopeSubtree);
-          if (file.categoryColors !== undefined) {
-            try {
-              localStorage.setItem('mnemo.categoryColors', JSON.stringify(file.categoryColors));
-            } catch {
-              /* quota */
-            }
-            setCategoryColors(file.categoryColors);
-          }
-          if (file.markdownGlobal !== undefined) setMarkdownGlobal(file.markdownGlobal);
-          if (file.markdownByTheme !== undefined) setMarkdownByTheme(file.markdownByTheme);
-          if (file.ideTabIds !== undefined && file.ideTabIds.length > 0) setOpenTabIds(file.ideTabIds);
+          applyMergedPreferences(file);
         } else {
           await window.mnemo.preferences.save(gatherLocalStoragePreferences());
         }
@@ -236,7 +250,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyMergedPreferences]);
 
   /** Sync full snapshot to disk for MCP / CLI (same as mnemo://preferences). */
   useEffect(() => {
@@ -380,6 +394,7 @@ export default function App() {
         const fp = vaultFingerprint(snap);
         if (fp !== lastVaultFingerprintRef.current) {
           await syncNotesFromStore();
+          await refreshMergedPreferencesFromStore();
           const cur = activeNoteRef.current;
           if (cur && editorRef.current && !editorRef.current.isDirty()) {
             const n = await window.mnemo.notes.read(cur.id);
@@ -402,17 +417,18 @@ export default function App() {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [syncNotesFromStore, flashRemotePollIndicator]);
+  }, [syncNotesFromStore, flashRemotePollIndicator, refreshMergedPreferencesFromStore]);
 
   const handleRenameCategory = useCallback(
     async (oldPath: string, newPath: string) => {
-      const oldKey = categoryColorStorageKey(oldPath);
+      const oldNorm = normalizePath(oldPath) || GENERAL_PATH;
+      const oldKey = categoryColorStorageKey(oldNorm);
       const newKey = categoryColorStorageKey(newPath);
       if (oldKey === newKey) return;
 
       const list = await window.mnemo.notes.list();
       for (const n of list) {
-        if (categoryPathFromTags(n.tags, list) !== oldPath) continue;
+        if (categoryPathFromTags(n.tags, list) !== oldNorm) continue;
         const otherTags = n.tags.slice(1);
         let newTags: string[];
         if (newKey === UNASSIGNED_PATH) {
@@ -703,6 +719,7 @@ export default function App() {
         break;
       case 'refresh-notes':
         await syncNotesFromStore({ reloadActiveNote: true });
+        await refreshMergedPreferencesFromStore();
         setEditorReloadNonce(n => n + 1);
         break;
       case 'toggle-fullscreen':
@@ -730,7 +747,13 @@ export default function App() {
         window.close();
         break;
     }
-  }, [handleCreateNote, loadNotes, navigateNoteByDelta, syncNotesFromStore]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    handleCreateNote,
+    loadNotes,
+    navigateNoteByDelta,
+    syncNotesFromStore,
+    refreshMergedPreferencesFromStore,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runPaletteCommand = useCallback(
     (command: string) => {
@@ -955,6 +978,7 @@ export default function App() {
     onCreateNote: handleCreateNote,
     onRefreshVault: async () => {
       await syncNotesFromStore({ reloadActiveNote: true });
+      await refreshMergedPreferencesFromStore();
       setEditorReloadNonce(n => n + 1);
     },
     onDeleteNote: handleDeleteNote,

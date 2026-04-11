@@ -302,6 +302,7 @@ export class LocalNoteStore implements INoteStore {
       maxUpdatedAt: row.max_u,
       linkCount: row.link_count,
       contentBytes: row.content_bytes,
+      appKvMaxUpdatedAt: null,
     });
   }
 
