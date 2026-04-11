@@ -25,6 +25,8 @@ Flow many teams use:
 
 - Markdown editor (CodeMirror), wikilinks, backlinks, graph
 - Categories as folder paths (first tag), sidebar / IDE layouts
-- Optional Turso sync; local-only mode uses SQLite on disk
+- Optional Turso / libSQL — same vault as CLI and MCP when credentials match
+- **Reloading the list:** sidebar button **↻** (or command palette **Reload Note List**) re-fetches notes and categories from the database and reloads the open note from the server. While the window is focused, the app also checks for vault changes on a short interval so new categories and notes appear without restarting (the open note is not overwritten until you save or reload manually — avoids clobbering unsaved edits).
+- **Fullscreen:** **F11** on Linux and Windows (no global menu bar in those builds). macOS: **View → Toggle Full Screen** or **Ctrl+Cmd+F**.
 
 For terminal automation, prefer the examples in [cli-local.md](cli-local.md) and [cli-libsql.md](cli-libsql.md).

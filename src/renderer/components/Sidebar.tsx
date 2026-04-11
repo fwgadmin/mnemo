@@ -31,6 +31,8 @@ export interface SidebarProps {
   searchQuery: string;
   onSelectNote: (id: string) => void;
   onCreateNote: () => void;
+  /** Reload categories/note list from DB (Turso / other devices); optional — command palette also has Reload. */
+  onRefreshVault?: () => void;
   onDeleteNote: (id: string) => void;
   onSearch: (query: string) => void;
   onSetCategory: (id: string, category: string) => void;
@@ -74,6 +76,7 @@ export default function Sidebar({
   searchQuery,
   onSelectNote,
   onCreateNote,
+  onRefreshVault,
   onDeleteNote,
   onSearch,
   onSetCategory,
@@ -445,6 +448,16 @@ export default function Sidebar({
         >
           ⊞
         </button>
+        )}
+        {onRefreshVault && (
+          <button
+            type="button"
+            onClick={onRefreshVault}
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-mnemo-hover text-mnemo-dim hover:text-mnemo-muted transition-colors cursor-pointer"
+            title="Reload note list from database (syncs remote changes)"
+          >
+            ↻
+          </button>
         )}
         <button
           type="button"

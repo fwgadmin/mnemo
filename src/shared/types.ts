@@ -118,6 +118,20 @@ export interface MnemoUiPreferences {
   ideTabIds?: string[];
 }
 
+/**
+ * Cheap vault-wide stats for GUI polling (Turso / multi-device sync) without loading full list.
+ * Fingerprint = noteCount + max timestamp + linkCount so link-only edits also bump the snapshot.
+ */
+export interface VaultSnapshot {
+  noteCount: number;
+  maxUpdatedAt: string | null;
+  linkCount: number;
+}
+
+export function vaultFingerprint(s: VaultSnapshot): string {
+  return `${s.noteCount}|${s.maxUpdatedAt ?? ''}|${s.linkCount}`;
+}
+
 /** Async store interface implemented by both LocalNoteStore and TursoNoteStore */
 export interface INoteStore {
   create(input: CreateNoteInput): Promise<Note>;
@@ -132,6 +146,8 @@ export interface INoteStore {
   updateLinks(sourceId: string, targetIds: string[]): Promise<void>;
   resolveTitle(title: string, tenantId?: string): Promise<string | null>;
   getAllLinks(tenantId?: string): Promise<Array<{ source: string; target: string }>>;
+  /** Single round-trip: counts + max(updated_at) for vault change detection. */
+  getVaultSnapshot(tenantId?: string): Promise<VaultSnapshot>;
   close(): void;
 }
 
@@ -142,6 +158,7 @@ export const IPC = {
   NOTE_UPDATE: 'note:update',
   NOTE_DELETE: 'note:delete',
   NOTE_LIST: 'note:list',
+  NOTE_VAULT_SNAPSHOT: 'note:vaultSnapshot',
   NOTE_SEARCH: 'note:search',
   NOTE_BACKLINKS: 'note:backlinks',
   NOTE_GRAPH: 'note:graph',
@@ -161,4 +178,6 @@ export const IPC = {
   UI_PREFERENCES_SAVE: 'uiPreferences:save',
   // Menu → renderer commands
   MENU_COMMAND: 'menu:command',
+  /** Toggle BrowserWindow fullscreen (F11 on Linux/Windows — no app menu accelerators there). */
+  WINDOW_TOGGLE_FULLSCREEN: 'window:toggleFullscreen',
 } as const;

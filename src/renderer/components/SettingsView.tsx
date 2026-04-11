@@ -225,6 +225,12 @@ export default function SettingsView({
           as <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">tursoUrl</code> /{' '}
           <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">tursoToken</code> (legacy names; values work for any libSQL host).
         </p>
+        <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
+          <strong className="text-mnemo-muted">Multiple devices:</strong> the same URL and token on each machine
+          point at one vault. After notes or categories change elsewhere, use the sidebar <strong>↻</strong> reload
+          control (or <strong>Reload Note List</strong> in the command palette) to refresh; the app also polls the
+          database periodically while the window is visible.
+        </p>
 
         <div className="space-y-4">
           <div>

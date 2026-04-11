@@ -32,6 +32,7 @@ import { gatherLocalStoragePreferences } from './uiPreferencesSync';
 import { applyThemeToDocument, getTheme } from './theme/themes';
 import { applyMarkdownOverridesToDocument, mergeMarkdownLayers } from './editor/markdownOverrides';
 import type { Note, NoteListItem } from '../shared/types';
+import { vaultFingerprint } from '../shared/types';
 
 type RightPanel = 'none' | 'graph' | 'markdown-help' | 'markdown-preview';
 
@@ -121,6 +122,9 @@ export default function App() {
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const openTabIdsRef = useRef(openTabIds);
   useEffect(() => { openTabIdsRef.current = openTabIds; }, [openTabIds]);
+
+  /** Last seen DB fingerprint — updated after list sync so polling can detect remote/Turso changes. */
+  const lastVaultFingerprintRef = useRef<string>('');
 
   const editorRef = useRef<EditorHandle | null>(null);
   const [previewBody, setPreviewBody] = useState('');
@@ -280,11 +284,84 @@ export default function App() {
     });
   }, []);
 
+  const captureVaultFingerprint = useCallback(async () => {
+    try {
+      const snap = await window.mnemo.notes.vaultSnapshot();
+      lastVaultFingerprintRef.current = vaultFingerprint(snap);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const loadNotes = useCallback(async () => {
     const list = await window.mnemo.notes.list();
     setVaultNotes(list);
     setNotes(list);
-  }, []);
+    await captureVaultFingerprint();
+  }, [captureVaultFingerprint]);
+
+  /**
+   * Reload sidebar/search lists from DB. Auto-refresh does not reload the open note body (avoids clobbering unsaved edits).
+   * Manual refresh passes `reloadActiveNote` to pull the current note from Turso/DB.
+   */
+  const syncNotesFromStore = useCallback(
+    async (opts?: { reloadActiveNote?: boolean }) => {
+      const list = await window.mnemo.notes.list();
+      setVaultNotes(list);
+      const q = searchQueryRef.current.trim();
+      if (q) {
+        const results = await window.mnemo.notes.search(q);
+        setNotes(
+          results.map(r => ({
+            ref: r.ref,
+            id: r.id,
+            title: r.title,
+            tags: [],
+            modified: '',
+            snippet: r.snippet,
+            hideHeader: r.hideHeader,
+          })),
+        );
+      } else {
+        setNotes(list);
+      }
+      await captureVaultFingerprint();
+      if (opts?.reloadActiveNote) {
+        const cur = activeNoteRef.current;
+        if (cur) {
+          const n = await window.mnemo.notes.read(cur.id);
+          if (n) setActiveNote(n);
+          else setActiveNote(null);
+        }
+      }
+    },
+    [captureVaultFingerprint],
+  );
+
+  /** Poll DB for changes (e.g. another device or MCP) and refresh lists without touching the editor buffer. */
+  useEffect(() => {
+    const tick = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const snap = await window.mnemo.notes.vaultSnapshot();
+        const fp = vaultFingerprint(snap);
+        if (fp !== lastVaultFingerprintRef.current) {
+          await syncNotesFromStore();
+        }
+      } catch {
+        /* offline / transient */
+      }
+    };
+    const id = window.setInterval(tick, 12000);
+    const onVis = () => {
+      void tick();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [syncNotesFromStore]);
 
   const handleRenameCategory = useCallback(
     async (oldPath: string, newPath: string) => {
@@ -439,6 +516,11 @@ export default function App() {
   // Global keyboard shortcuts (after navigate helper). Capture phase so CodeMirror doesn't eat Ctrl+, / Alt+Shift+F first.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F11') {
+        e.preventDefault();
+        void window.mnemo.toggleFullscreen();
+        return;
+      }
       if (showCommandPalette || showSettings || activeTab === 'help') {
         return;
       }
@@ -579,7 +661,10 @@ export default function App() {
         setRightPanel('none');
         break;
       case 'refresh-notes':
-        await loadNotes();
+        await syncNotesFromStore({ reloadActiveNote: true });
+        break;
+      case 'toggle-fullscreen':
+        void window.mnemo.toggleFullscreen();
         break;
       case 'note-next':
         void navigateNoteByDelta(1);
@@ -603,7 +688,7 @@ export default function App() {
         window.close();
         break;
     }
-  }, [handleCreateNote, loadNotes, navigateNoteByDelta]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [handleCreateNote, loadNotes, navigateNoteByDelta, syncNotesFromStore]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runPaletteCommand = useCallback(
     (command: string) => {
@@ -824,6 +909,9 @@ export default function App() {
     searchQuery,
     onSelectNote: handleSelectNote,
     onCreateNote: handleCreateNote,
+    onRefreshVault: () => {
+      void syncNotesFromStore({ reloadActiveNote: true });
+    },
     onDeleteNote: handleDeleteNote,
     onSearch: handleSearch,
     onSetCategory: handleSetCategory,

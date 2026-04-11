@@ -26,6 +26,26 @@ type KeyCmd =
   | 'q'
   | 'ignore';
 
+/** TTY height; fallback when not available. */
+function getTerminalRows(): number {
+  const r = process.stdout.rows;
+  return typeof r === 'number' && r >= 4 ? r : 24;
+}
+
+/** Lines reserved for the pagination / key hints footer (must match footer string). */
+const FOOTER_LINE_COUNT = 2;
+
+/**
+ * First visible row index so `selectedIdx` stays within the viewport when the list is taller than the screen.
+ */
+function computeScrollOffset(selectedIdx: number, n: number, listHeight: number): number {
+  if (n <= 0 || listHeight <= 0) return 0;
+  if (n <= listHeight) return 0;
+  const maxScroll = n - listHeight;
+  if (selectedIdx < listHeight) return 0;
+  return Math.min(Math.max(0, selectedIdx - listHeight + 1), maxScroll);
+}
+
 function parseKeypress(str: string | undefined, key?: readline.Key): KeyCmd {
   const raw = str ?? '';
   const name = key?.name;
@@ -110,7 +130,6 @@ export async function runInteractiveListPager(
   };
 
   const render = (): void => {
-    console.clear();
     const lines = pages[pageIdx] ?? [];
     const refs = refsPerPage[pageIdx] ?? [];
     const n = lines.length;
@@ -119,21 +138,33 @@ export async function runInteractiveListPager(
     } else {
       selectedIdx = 0;
     }
-    for (let i = 0; i < n; i++) {
-      const line = lines[i]!;
-      const isSel = n > 0 && i === selectedIdx;
-      if (isSel) {
-        console.log('\x1b[7m' + line + '\x1b[0m');
+
+    const termRows = getTerminalRows();
+    const listHeight = Math.max(1, termRows - FOOTER_LINE_COUNT);
+    const scrollOffset = computeScrollOffset(selectedIdx, n, listHeight);
+
+    console.clear();
+    for (let row = 0; row < listHeight; row++) {
+      const i = scrollOffset + row;
+      if (i < n) {
+        const line = lines[i]!;
+        const isSel = i === selectedIdx;
+        if (isSel) {
+          console.log('\x1b[7m' + line + '\x1b[0m');
+        } else {
+          console.log(line);
+        }
       } else {
-        console.log(line);
+        console.log('');
       }
     }
+
     const start = meta.totalNotes === 0 ? 0 : pageIdx * pageSize + 1;
     const end = Math.min((pageIdx + 1) * pageSize, meta.totalNotes);
     const footer =
       `— Page ${pageIdx + 1}/${totalPages} · notes ${start}-${end} of ${meta.totalNotes} · ${meta.contextLine} —\n` +
       `  ↑↓ select   Enter open in editor   ←→ prev/next page   q quit`;
-    console.error(footer);
+    process.stdout.write(footer + '\n');
   };
 
   const waitKey = (): Promise<KeyCmd> =>

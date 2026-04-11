@@ -2,7 +2,15 @@ import { createClient, type Client } from '@libsql/client';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import type { Note, NoteListItem, CreateNoteInput, UpdateNoteInput, SearchResult, INoteStore } from '../../shared/types';
+import type {
+  Note,
+  NoteListItem,
+  CreateNoteInput,
+  UpdateNoteInput,
+  SearchResult,
+  INoteStore,
+  VaultSnapshot,
+} from '../../shared/types';
 
 const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS notes (
@@ -328,6 +336,24 @@ export class TursoNoteStore implements INoteStore {
       source: row['source'] as string,
       target: row['target'] as string,
     }));
+  }
+
+  async getVaultSnapshot(tenantId: string = 'default'): Promise<VaultSnapshot> {
+    const result = await this.client.execute({
+      sql: `
+        SELECT
+          (SELECT COUNT(*) FROM notes WHERE tenant_id = ?) AS note_count,
+          (SELECT MAX(updated_at) FROM notes WHERE tenant_id = ?) AS max_u,
+          (SELECT COUNT(*) FROM note_links nl INNER JOIN notes n ON n.id = nl.source_id WHERE n.tenant_id = ?) AS link_count
+      `,
+      args: [tenantId, tenantId, tenantId],
+    });
+    const row = result.rows[0];
+    return {
+      noteCount: (row?.['note_count'] as number) ?? 0,
+      maxUpdatedAt: (row?.['max_u'] as string) ?? null,
+      linkCount: (row?.['link_count'] as number) ?? 0,
+    };
   }
 
   /** Key-value settings mirrored with ui-preferences.json (e.g. full UI prefs JSON). */
