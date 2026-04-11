@@ -18,6 +18,8 @@ jobs:
     name: Build Windows (Squirrel + zip)
     runs-on: windows-latest
     timeout-minutes: 45
+    env:
+      WINDOWS_CERTIFICATE_PFX_B64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_B64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,10 +34,8 @@ jobs:
         run: npm ci
 
       - name: Prepare Windows code signing certificate
-        if: ${{ secrets.WINDOWS_CERTIFICATE_PFX_B64 != '' }}
+        if: env.WINDOWS_CERTIFICATE_PFX_B64 != ''
         shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE_PFX_B64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_B64 }}
         run: |
           $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_B64)
           $path = Join-Path $env:GITHUB_WORKSPACE 'certificate.pfx'
