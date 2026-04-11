@@ -18,7 +18,7 @@ import { IPC } from '../shared/types';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from './uiPreferences';
-import { getRemoteLibsqlCredentials } from './userConfig';
+import { getRemoteLibsqlCredentials, legacyElectronUserDataDir } from './userConfig';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const matter = require('gray-matter');
@@ -85,7 +85,17 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
-// Optional: align GUI data dir with CLI (`mnemo note`, MCP) via MNEMO_HOME
+function configHasRemoteCredentials(cfg: AppConfig): boolean {
+  const { url, token } = getRemoteLibsqlCredentials(cfg);
+  return Boolean(url?.trim() && token?.trim());
+}
+
+/**
+ * `package.json` `name` drives Electron `userData` (e.g. ~/.config/mnemo vs mnemo-note).
+ * After renaming the npm package to `mnemo-note`, the default userData path changed and
+ * Turso credentials in the old `config.json` were no longer read — use legacy userData
+ * when it has remote DB config and the new path does not (unless MNEMO_HOME overrides).
+ */
 if (!app.isReady()) {
   const raw = process.env['MNEMO_HOME']?.trim();
   if (raw) {
@@ -95,6 +105,36 @@ if (!app.isReady()) {
       app.setPath('userData', dir);
     } catch {
       // keep default userData if setPath fails
+    }
+  } else {
+    try {
+      const legacyDir = legacyElectronUserDataDir();
+      const legacyCfgPath = path.join(legacyDir, 'config.json');
+      const currentDir = app.getPath('userData');
+      const currentCfgPath = path.join(currentDir, 'config.json');
+      let legacyCfg: AppConfig | null = null;
+      let currentCfg: AppConfig | null = null;
+      try {
+        if (fs.existsSync(legacyCfgPath)) {
+          legacyCfg = JSON.parse(fs.readFileSync(legacyCfgPath, 'utf-8')) as AppConfig;
+        }
+      } catch {
+        legacyCfg = null;
+      }
+      try {
+        if (fs.existsSync(currentCfgPath)) {
+          currentCfg = JSON.parse(fs.readFileSync(currentCfgPath, 'utf-8')) as AppConfig;
+        }
+      } catch {
+        currentCfg = null;
+      }
+      const legacyRemote = legacyCfg != null && configHasRemoteCredentials(legacyCfg);
+      const currentRemote = currentCfg != null && configHasRemoteCredentials(currentCfg);
+      if (legacyRemote && !currentRemote && legacyDir !== currentDir) {
+        app.setPath('userData', legacyDir);
+      }
+    } catch {
+      /* ignore */
     }
   }
 }
