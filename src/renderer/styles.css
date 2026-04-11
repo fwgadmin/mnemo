@@ -17,6 +17,8 @@
   --mnemo-text-muted: #888888;
   --mnemo-text-dim: #555555;
   --mnemo-accent: #7c7cff;
+  /* Text on solid accent fills (primary buttons); must contrast with --mnemo-accent */
+  --mnemo-on-accent: #0a0a0a;
   --mnemo-category-bar: #141418;
   --mnemo-radius: 6px;
   --mnemo-sidebar-width: 16rem;

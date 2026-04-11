@@ -203,7 +203,7 @@ export default function CategoryFolderColorMenu({
               customDraftHex.toLowerCase() ===
               normalizePickerHex(currentColorHex ?? null, fallbackHex).toLowerCase()
             }
-            className="px-2.5 py-1 rounded text-[11px] font-medium bg-mnemo-accent text-mnemo-bg-app hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-2.5 py-1 rounded text-[11px] font-semibold antialiased bg-mnemo-accent text-mnemo-on-accent shadow-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mnemo-accent/45 focus-visible:ring-offset-2 focus-visible:ring-offset-mnemo-panel"
             onMouseDown={e => e.stopPropagation()}
             onClick={e => {
               e.stopPropagation();

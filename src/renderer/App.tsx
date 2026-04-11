@@ -35,7 +35,7 @@ import type { Note, NoteListItem } from '../shared/types';
 
 type RightPanel = 'none' | 'graph' | 'markdown-help' | 'markdown-preview';
 
-/** IDE tab strip: leftmost = most recently opened. */
+/** IDE tab strip: leftmost = most recently *opened* (new tab or note opened from list). Selecting an already-open tab does not reorder. */
 function mruOpenTabIds(prev: string[], id: string): string[] {
   const rest = prev.filter(x => x !== id);
   return [id, ...rest];
@@ -358,7 +358,10 @@ export default function App() {
     const note = await window.mnemo.notes.read(id);
     setActiveNote(note);
     if (effectiveLayoutRef.current === 'ide') {
-      setOpenTabIds(prev => mruOpenTabIds(prev, id));
+      setOpenTabIds(prev => {
+        if (prev.includes(id)) return prev;
+        return mruOpenTabIds(prev, id);
+      });
     }
   }, []);
 

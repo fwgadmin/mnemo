@@ -77,7 +77,7 @@ function MarkdownColorRow({
         type="button"
         disabled={!dirty}
         onClick={() => onApplyHex(draftHex)}
-        className="px-2.5 py-1 rounded text-[11px] font-medium bg-mnemo-accent text-mnemo-bg-app hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+        className="px-2.5 py-1 rounded text-[11px] font-semibold antialiased bg-mnemo-accent text-mnemo-on-accent shadow-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mnemo-accent/45 focus-visible:ring-offset-2 focus-visible:ring-offset-mnemo-panel"
       >
         Apply
       </button>
