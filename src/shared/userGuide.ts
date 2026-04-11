@@ -3,14 +3,21 @@
  * Edit tables here; HelpView imports rows, CLI formats plain text from the same data.
  */
 
-export const USER_GUIDE_PATHS_HEADERS = ['OS', 'Database', 'Vault'] as const;
+export const USER_GUIDE_PATHS_HEADERS = ['Environment', 'Database', 'Vault'] as const;
 
 /** Default paths for GUI, CLI note commands, and reference for MCP --db/--vault. */
 export const USER_GUIDE_PATHS_ROWS: string[][] = [
-  ['Windows', '%APPDATA%\\Mnemo\\mnemo.db', '%APPDATA%\\Mnemo\\vault'],
-  ['macOS', '~/Library/Application Support/Mnemo/mnemo.db', '~/Library/Application Support/Mnemo/vault'],
-  ['Linux (Electron GUI)', '~/.config/Mnemo/mnemo.db', '~/.config/Mnemo/vault'],
-  ['Linux (mnemo note CLI)', '~/.local/share/mnemo/mnemo.db', '~/.local/share/mnemo/vault'],
+  ['Any (MNEMO_HOME set)', '$MNEMO_HOME/mnemo.db', '$MNEMO_HOME/vault'],
+  [
+    'GUI app (Electron)',
+    "Electron userData + '/mnemo.db' (userData is derived from the app/package name, currently e.g. 'mnemo-note')",
+    "Electron userData + '/vault'",
+  ],
+  [
+    'mnemo note CLI',
+    "defaultLocalDataDir() + '/mnemo.db'",
+    "defaultLocalDataDir() + '/vault'",
+  ],
 ];
 
 /** MCP stdio uses ./mnemo.db + ./vault in cwd unless --db / --vault are passed. */
