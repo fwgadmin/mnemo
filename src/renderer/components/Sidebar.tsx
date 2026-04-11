@@ -619,7 +619,7 @@ export default function Sidebar({
                         onDragLeave={handleDragLeave}
                         aria-hidden
                       />
-                      {renderNoteItem(n, true)}
+                      {renderNoteItem(n, true, depth + 1)}
                     </Fragment>
                   ))}
                   <div
@@ -734,6 +734,7 @@ export default function Sidebar({
           <CategoryCombobox
             paths={categoryPathsList}
             value={folderRename.path}
+            selectionOnFocus="end"
             commitBehavior="typed"
             newPathLabel="renameDestination"
             onChange={path => {

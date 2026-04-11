@@ -19,6 +19,8 @@ const PALETTE_COMMANDS: CommandDef[] = [
   { id: 'cmd:save', command: 'save', label: 'Save', shortcut: 'Ctrl+S' },
   { id: 'cmd:save-as', command: 'save-as', label: 'Save As…', shortcut: 'Ctrl+Shift+S' },
   { id: 'cmd:open', command: 'open', label: 'Open File…', shortcut: 'Ctrl+O' },
+  { id: 'cmd:workspace-choose', command: 'workspace-choose', label: 'Open Workspace Folder…' },
+  { id: 'cmd:workspace-sync', command: 'workspace-sync', label: 'Sync Workspace' },
   { id: 'cmd:refresh-notes', command: 'refresh-notes', label: 'Reload Note List' },
   { id: 'cmd:note-next', command: 'note-next', label: 'Next Note', shortcut: 'Ctrl+Tab' },
   { id: 'cmd:note-prev', command: 'note-prev', label: 'Previous Note', shortcut: 'Ctrl+Shift+Tab' },

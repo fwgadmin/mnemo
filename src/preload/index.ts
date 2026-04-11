@@ -49,6 +49,16 @@ export interface MnemoAPI {
   onFileOpenedExternally(callback: (data: { title: string; body: string }) => void): () => void;
   /** Toggle OS fullscreen (maps to F11 in renderer on Linux/Windows). */
   toggleFullscreen(): Promise<void>;
+  workspace: {
+    chooseFolder(): Promise<
+      | { ok: true; path: string; imported: number; updated: number }
+      | { ok: false; path: null }
+    >;
+    sync(): Promise<
+      | { ok: true; imported: number; updated: number }
+      | { ok: false; error: string }
+    >;
+  };
 }
 
 const api: MnemoAPI = {
@@ -90,6 +100,10 @@ const api: MnemoAPI = {
     return () => ipcRenderer.off(IPC.FILE_OPENED_EXTERNALLY, handler);
   },
   toggleFullscreen: () => ipcRenderer.invoke(IPC.WINDOW_TOGGLE_FULLSCREEN),
+  workspace: {
+    chooseFolder: () => ipcRenderer.invoke(IPC.WORKSPACE_CHOOSE_FOLDER),
+    sync: () => ipcRenderer.invoke(IPC.WORKSPACE_SYNC),
+  },
 };
 
 contextBridge.exposeInMainWorld('mnemo', api);

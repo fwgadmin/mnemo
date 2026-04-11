@@ -126,6 +126,12 @@ export function sanitizePrefs(raw: unknown): MnemoUiPreferences {
   const tabIds = sanitizeIdeTabIds(o.ideTabIds);
   if (tabIds?.length) out.ideTabIds = tabIds;
 
+  if (typeof o.workspaceFolder === 'string') {
+    const w = o.workspaceFolder.trim();
+    if (w.length > 0 && w.length <= 4096) out.workspaceFolder = w;
+    else out.workspaceFolder = '';
+  }
+
   return out;
 }
 
@@ -147,17 +153,25 @@ export function mergePrefs(
 ): MnemoUiPreferences {
   const {
     categoryColors: incomingCc,
+    workspaceFolder: incomingWs,
     markdownGlobal: incomingMg,
     markdownByTheme: incomingMbt,
     ideTabIds: incomingIdeTabs,
     ...restIncoming
   } = incoming;
   const next: MnemoUiPreferences = { ...current, ...restIncoming };
-  if (incomingCc && typeof incomingCc === 'object') {
-    next.categoryColors = {
-      ...current.categoryColors,
-      ...incomingCc,
-    };
+  /** Full replace: merged maps must not resurrect deleted keys (e.g. cleared folder colors). */
+  if (incomingCc !== undefined) {
+    if (incomingCc && typeof incomingCc === 'object' && !Array.isArray(incomingCc)) {
+      next.categoryColors = { ...incomingCc };
+    } else {
+      delete next.categoryColors;
+    }
+  }
+  if (incomingWs !== undefined) {
+    const w = typeof incomingWs === 'string' ? incomingWs.trim() : '';
+    if (w.length > 0) next.workspaceFolder = w;
+    else delete next.workspaceFolder;
   }
   if (incomingMg !== undefined) {
     const mergedRaw = {

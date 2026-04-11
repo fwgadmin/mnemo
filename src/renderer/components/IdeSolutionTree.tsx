@@ -141,7 +141,12 @@ export default function IdeSolutionTree({
     const indent = 4 + depth * 14;
 
     return (
-      <div key={node.path} role="treeitem" aria-expanded={expandable ? isOpen : undefined}>
+      <div
+        key={node.path}
+        role="treeitem"
+        aria-expanded={expandable ? isOpen : undefined}
+        className={depth > 0 ? 'ml-0.5 border-l border-mnemo-border/40 pl-1' : undefined}
+      >
         <div
           onDragOver={e => onDragOver(e, node.path)}
           onDrop={e => onDrop(e, node.path)}

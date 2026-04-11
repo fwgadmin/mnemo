@@ -46,16 +46,20 @@ export default function SettingsView({
   const [syncing, setSyncing]       = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [status, setStatus]         = useState<{ ok: boolean; msg: string } | null>(null);
+  const [workspaceFolder, setWorkspaceFolder] = useState('');
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [cfg, type] = await Promise.all([
+      const [cfg, type, prefs] = await Promise.all([
         window.mnemo.config.read(),
         window.mnemo.config.storeType(),
+        window.mnemo.preferences.read(),
       ]);
       setTursoUrl(cfg.tursoUrl ?? cfg.libsqlUrl ?? '');
       setTursoToken(cfg.tursoToken ?? cfg.libsqlAuthToken ?? '');
       setStoreType(type);
+      setWorkspaceFolder(prefs.workspaceFolder ?? '');
     })();
   }, []);
 
@@ -197,6 +201,79 @@ export default function SettingsView({
             else onMarkdownThemeChange(themeId, {});
           }}
         />
+      </section>
+
+      <section className="mb-8 max-w-2xl">
+        <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Workspace folder</h2>
+        <p className="text-xs text-mnemo-dim mb-4 leading-relaxed">
+          Point Mnemo at a directory of markdown files. Notes are imported under{' '}
+          <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">Workspace/…</code> categories (mirroring
+          subfolders). Use <strong className="text-mnemo-muted">Sync</strong> or <strong className="text-mnemo-muted">Reload Note List</strong> to
+          pull changes from disk.
+        </p>
+        <div className="text-xs font-mono text-mnemo-text bg-mnemo-panel-elevated border border-mnemo-border rounded px-3 py-2 break-all min-h-[2rem]">
+          {workspaceFolder || '— none —'}
+        </div>
+        <div className="flex flex-wrap gap-3 mt-4">
+          <button
+            type="button"
+            disabled={workspaceBusy}
+            onClick={async () => {
+              setWorkspaceBusy(true);
+              try {
+                const r = await window.mnemo.workspace.chooseFolder();
+                if (r.ok) {
+                  setWorkspaceFolder(r.path);
+                  setStatus({ ok: true, msg: `Workspace set — imported ${r.imported}, updated ${r.updated}.` });
+                  onSaved?.();
+                }
+              } finally {
+                setWorkspaceBusy(false);
+              }
+            }}
+            className="px-4 py-1.5 bg-mnemo-panel-elevated hover:bg-mnemo-hover border border-mnemo-border-strong rounded text-sm text-mnemo-text transition-colors disabled:opacity-50"
+          >
+            {workspaceBusy ? '…' : 'Choose folder…'}
+          </button>
+          <button
+            type="button"
+            disabled={workspaceBusy || !workspaceFolder.trim()}
+            onClick={async () => {
+              setWorkspaceBusy(true);
+              try {
+                const r = await window.mnemo.workspace.sync();
+                if (r.ok) {
+                  setStatus({ ok: true, msg: `Synced — imported ${r.imported}, updated ${r.updated}.` });
+                  onSaved?.();
+                } else {
+                  setStatus({ ok: false, msg: r.error });
+                }
+              } finally {
+                setWorkspaceBusy(false);
+              }
+            }}
+            className="px-4 py-1.5 bg-mnemo-panel-elevated hover:bg-mnemo-hover border border-mnemo-border-strong rounded text-sm text-mnemo-text transition-colors disabled:opacity-50"
+          >
+            Sync now
+          </button>
+          <button
+            type="button"
+            disabled={workspaceBusy || !workspaceFolder.trim()}
+            onClick={async () => {
+              setWorkspaceBusy(true);
+              try {
+                await window.mnemo.preferences.save({ workspaceFolder: '' });
+                setWorkspaceFolder('');
+                setStatus({ ok: true, msg: 'Workspace folder cleared.' });
+              } finally {
+                setWorkspaceBusy(false);
+              }
+            }}
+            className="px-4 py-1.5 border border-mnemo-border rounded text-sm text-mnemo-dim hover:text-mnemo-text hover:bg-mnemo-hover transition-colors disabled:opacity-50"
+          >
+            Clear
+          </button>
+        </div>
       </section>
 
       {/* Connection status badge — light themes need darker green on solid tint for WCAG contrast */}

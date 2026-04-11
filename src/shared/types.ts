@@ -116,6 +116,11 @@ export interface MnemoUiPreferences {
   markdownByTheme?: Record<string, Record<string, string>>;
   /** Open note tab IDs in IDE layout (order preserved) */
   ideTabIds?: string[];
+  /**
+   * Optional absolute path to a project folder. Markdown files are imported into the vault (category `Workspace/…`)
+   * and kept in sync via **File → Open Workspace Folder…** / **Sync workspace**.
+   */
+  workspaceFolder?: string;
 }
 
 /**
@@ -189,4 +194,7 @@ export const IPC = {
   MENU_COMMAND: 'menu:command',
   /** Toggle BrowserWindow fullscreen (F11 on Linux/Windows — no app menu accelerators there). */
   WINDOW_TOGGLE_FULLSCREEN: 'window:toggleFullscreen',
+  /** Pick a folder and import/sync markdown into the vault (`Workspace/…` categories). */
+  WORKSPACE_CHOOSE_FOLDER: 'workspace:chooseFolder',
+  WORKSPACE_SYNC: 'workspace:sync',
 } as const;

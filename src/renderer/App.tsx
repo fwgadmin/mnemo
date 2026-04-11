@@ -717,6 +717,21 @@ export default function App() {
         }
         break;
       }
+      case 'workspace-choose': {
+        const r = await window.mnemo.workspace.chooseFolder();
+        if (r.ok) {
+          await loadNotes();
+          await refreshMergedPreferencesFromStore();
+        }
+        break;
+      }
+      case 'workspace-sync': {
+        const r = await window.mnemo.workspace.sync();
+        if (r.ok) {
+          await loadNotes();
+        }
+        break;
+      }
       case 'toggle-sidebar':
         setShowSidebar(s => !s);
         break;
@@ -756,11 +771,16 @@ export default function App() {
       case 'close-right-panel':
         setRightPanel('none');
         break;
-      case 'refresh-notes':
+      case 'refresh-notes': {
+        const prefs = await window.mnemo.preferences.read();
+        if (prefs.workspaceFolder?.trim()) {
+          await window.mnemo.workspace.sync();
+        }
         await syncNotesFromStore({ reloadActiveNote: true });
         await refreshMergedPreferencesFromStore();
         setEditorReloadNonce(n => n + 1);
         break;
+      }
       case 'toggle-fullscreen':
         void window.mnemo.toggleFullscreen();
         break;
