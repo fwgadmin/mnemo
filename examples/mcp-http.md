@@ -9,12 +9,14 @@
 
 ## Environment variables
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `TURSO_URL` or `LIBSQL_URL` | Yes | libSQL connection URL |
-| `TURSO_AUTH_TOKEN` or `LIBSQL_AUTH_TOKEN` | Yes | Database auth token |
-| `MCP_API_KEY` | Yes | Bearer token clients must send |
-| `PORT` | No | Listen port (default **3001**) |
+
+| Variable                                  | Required | Purpose                        |
+| ----------------------------------------- | -------- | ------------------------------ |
+| `TURSO_URL` or `LIBSQL_URL`               | Yes      | libSQL connection URL          |
+| `TURSO_AUTH_TOKEN` or `LIBSQL_AUTH_TOKEN` | Yes      | Database auth token            |
+| `MCP_API_KEY`                             | Yes      | Bearer token clients must send |
+| `PORT`                                    | No       | Listen port (default **3001**) |
+
 
 ## Run
 
@@ -35,8 +37,11 @@ The process uses plain **Node** (not Electron) for this entrypoint; the `bin/mne
 
 ## Compared to stdio MCP
 
-| | `mnemo mcp` | `mnemo mcp-http` |
-|---|-------------|------------------|
-| Transport | stdio | HTTP/SSE |
-| Database | Local SQLite and/or Turso | **Turso/libSQL only** |
-| Typical use | Cursor / Claude Desktop | Cloud bridges, custom gateways |
+
+|             | `mnemo mcp`               | `mnemo mcp-http`               |
+| ----------- | ------------------------- | ------------------------------ |
+| Transport   | stdio                     | HTTP/SSE                       |
+| Database    | Local SQLite and/or Turso | **Turso/libSQL only**          |
+| Typical use | Cursor / Claude Desktop   | Cloud bridges, custom gateways |
+
+

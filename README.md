@@ -29,7 +29,7 @@ mnemo note new --title "Hello" --body "Markdown **here**." -c General
 mnemo note show 1
 ```
 
-`ref` in `show` is the **#** column from `note list` (not arbitrary IDs). See **`mnemo --help`** for every subcommand.
+`ref` in `show` is the **#** column from `note list` (not arbitrary IDs). See `**mnemo --help`** for every subcommand.
 
 ## Quick start (desktop)
 
@@ -40,16 +40,18 @@ npm install
 npm start
 ```
 
-Installers: [GitHub Releases](https://github.com/fwgadmin/mnemo/releases) (tagged **`v*`** builds).
+Installers: [GitHub Releases](https://github.com/fwgadmin/mnemo/releases) (tagged `**v***` builds).
 
 ## Documentation
 
-| Resource | Contents |
-|----------|----------|
-| **Help → Documentation** (in the app) | Full GUI help: notes, wikilinks, categories, MCP tables, shortcuts |
-| **`mnemo --help`** | Same facts as in-app documentation (paths, MCP resources/tools/prompts, note commands) — source: [`src/shared/userGuide.ts`](src/shared/userGuide.ts) |
-| **[examples/](examples/README.md)** | CLI local / libSQL, MCP stdio & HTTP, GUI + shared config |
-| **[docs/CODE_SIGNING.md](docs/CODE_SIGNING.md)** | Optional Windows Authenticode signing in CI |
+
+| Resource                                         | Contents                                                                                                                                              |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Help → Documentation** (in the app)            | Full GUI help: notes, wikilinks, categories, MCP tables, shortcuts                                                                                    |
+| `**mnemo --help`**                               | Same facts as in-app documentation (paths, MCP resources/tools/prompts, note commands) — source: `[src/shared/userGuide.ts](src/shared/userGuide.ts)` |
+| **[examples/](examples/README.md)**              | CLI local / libSQL, MCP stdio & HTTP, GUI + shared config                                                                                             |
+| **[docs/CODE_SIGNING.md](docs/CODE_SIGNING.md)** | Optional Windows Authenticode signing in CI                                                                                                           |
+
 
 ## Using Mnemo with AI
 
@@ -76,19 +78,19 @@ Mnemo is built and maintained by [Ferrowood Group, LLC](https://www.ferrowoodgro
 
 ## License
 
-This project is open source under the [MIT License](LICENSE). The same terms apply to the npm package **`mnemo-note`**.
+This project is open source under the [MIT License](LICENSE). The same terms apply to the npm package `**mnemo-note`**.
 
 ### Publishing to npm (maintainers)
 
-The registry name is **`mnemo-note`**; the binary remains **`mnemo`**.
+The registry name is `**mnemo-note`**; the binary remains `**mnemo`**.
 
 1. `npm login`
-2. Bump **`version`** in `package.json` for a new release
-3. **`npm publish`** — `prepublishOnly` runs typecheck and builds CLI/MCP bundles into `dist/`
+2. Bump `**version**` in `package.json` for a new release
+3. `**npm publish**` — `prepublishOnly` runs typecheck and builds CLI/MCP bundles into `dist/`
 4. With npm **2FA**: `npm publish --otp=…`
 5. Optional: `npm pack --dry-run` to inspect the tarball
 
-**Desktop zips** on GitHub Releases come from the **Release** workflow when you push a **`v*`** tag, not from `npm publish`. The npm package ships **`bin/`**, **`dist/`**, **`LICENSE`**, **`README.md`**, and **`examples/`** (see `package.json` → `files`).
+**Desktop zips** on GitHub Releases come from the **Release** workflow when you push a `**v*`** tag, not from `npm publish`. The npm package ships `**bin/`**, `**dist/`**, `**LICENSE**`, `**README.md**`, and `**examples/**` (see `package.json` → `files`).
 
 ---
 
