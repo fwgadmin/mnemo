@@ -3,6 +3,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawnSync } from 'child_process';
 
+// Linux: extra guard if Electron was started without ELECTRON_DISABLE_SANDBOX (e.g. packaged path).
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('disable-setuid-sandbox');
+  app.commandLine.appendSwitch('no-sandbox');
+}
+
 // Load .env from the repo root if present (dev mode cloud config)
 try {
   (process as NodeJS.Process & { loadEnvFile(path?: string): void }).loadEnvFile(

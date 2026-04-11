@@ -141,10 +141,16 @@ function runGui(userArgs) {
   }
 
   const runForge = () => {
+    const env = { ...process.env };
+    // Linux: Chromium aborts before main JS if setuid chrome-sandbox isn’t root-owned.
+    // Must set before the Electron binary starts (appendSwitch in main is too late).
+    if (process.platform === 'linux') {
+      env.ELECTRON_DISABLE_SANDBOX = '1';
+    }
     const child = spawn(process.execPath, [forgeCli, ...forgeArgs], {
       stdio: 'inherit',
       cwd: root,
-      env: process.env,
+      env,
     });
     child.on('error', (err) => {
       console.error('mnemo gui: failed to run electron-forge:', err.message);
