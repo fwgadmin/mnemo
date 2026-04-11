@@ -561,6 +561,8 @@ The registry package name is **`mnemo-note`** (see `"name"` in `package.json`). 
 
 **GitHub desktop installers** (Windows/Linux zips on the Releases page) are produced only by the **Release** CI workflow when you push a **`v*`** tag — not by `npm publish`. Publish npm and tag the repo in whichever order fits your release checklist.
 
+**GitHub desktop installers** (Windows/Linux zips on the Releases page) are produced only by the **Release** CI workflow when you push a **`v*`** tag — not by `npm publish`. Publish npm and tag the repo in whichever order fits your release checklist.
+
 The published artifact is intentionally limited (`bin/`, `dist/`, `LICENSE`, `README.md` per `package.json` `files`) so the desktop Electron app sources are not uploaded as part of the npm package; consumers get the CLI/MCP entrypoints and install dependencies from `package.json`.
 
 MIT © [Ferrowood Group, LLC](https://www.ferrowoodgroup.com)
