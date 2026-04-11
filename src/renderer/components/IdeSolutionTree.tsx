@@ -252,9 +252,15 @@ export default function IdeSolutionTree({
     a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
   );
 
+  /** General is the structural tree root; top-level folders are its children. We also render those
+   *  children at depth 0 so they sit beside General. When General has no direct notes, the first row
+   *  would look like an empty duplicate — skip it and show only the real top-level folders. */
+  const generalDirect = notesByPath.get(GENERAL_PATH)?.length ?? 0;
+  const showGeneralRow = generalDirect > 0 || topChildren.length === 0;
+
   return (
     <div className="py-0.5 font-sans text-[11px] leading-tight" role="tree">
-      {renderNode(root, 0, { generalTopLevel: true })}
+      {showGeneralRow && renderNode(root, 0, { generalTopLevel: true })}
       {topChildren.map(ch => renderNode(ch, 0))}
     </div>
   );

@@ -344,15 +344,17 @@ export class TursoNoteStore implements INoteStore {
         SELECT
           (SELECT COUNT(*) FROM notes WHERE tenant_id = ?) AS note_count,
           (SELECT MAX(updated_at) FROM notes WHERE tenant_id = ?) AS max_u,
-          (SELECT COUNT(*) FROM note_links nl INNER JOIN notes n ON n.id = nl.source_id WHERE n.tenant_id = ?) AS link_count
+          (SELECT COUNT(*) FROM note_links nl INNER JOIN notes n ON n.id = nl.source_id WHERE n.tenant_id = ?) AS link_count,
+          (SELECT COALESCE(SUM(LENGTH(body) + LENGTH(title) + LENGTH(tags)), 0) FROM notes WHERE tenant_id = ?) AS content_bytes
       `,
-      args: [tenantId, tenantId, tenantId],
+      args: [tenantId, tenantId, tenantId, tenantId],
     });
     const row = result.rows[0];
     return {
       noteCount: (row?.['note_count'] as number) ?? 0,
       maxUpdatedAt: (row?.['max_u'] as string) ?? null,
       linkCount: (row?.['link_count'] as number) ?? 0,
+      contentBytes: Number(row?.['content_bytes'] ?? 0),
     };
   }
 
