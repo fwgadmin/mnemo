@@ -125,10 +125,12 @@ NOTE COMMANDS
   Store selection uses the same --db / --vault / Turso rules as MCP (stdio).
   Optional JSON: append --json (or set config / MNEMO_OUTPUT=json). Use --no-json to force text.
 
-  mnemo note list [-c|--category "path"] [--exact|--shallow] [-v|--verbose] [--json|--no-json]
+  mnemo note list [-c|--category "path"] [--exact|--shallow|--no-descendants] [-r|--recursive] [-v|--verbose] [--json|--no-json]
     Tab-separated: ref, modified, title, id [+ category if -v].
     -c       Filter by folder: General, Unassigned, or nested path (Work/Meetings).
     --exact  With -c: this folder only, not subfolders.
+    --no-descendants  Alias for --exact / --shallow.
+    -r, --recursive   With -c: include subfolders (re-enable descendants).
     -v       Include category column (matches GUI folder names).
 
   mnemo note show <ref|uuid>
