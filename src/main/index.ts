@@ -86,7 +86,8 @@ if (require('electron-squirrel-startup')) {
 }
 
 function configHasRemoteCredentials(cfg: AppConfig): boolean {
-  const { url, token } = getRemoteLibsqlCredentials(cfg);
+  const url = cfg.tursoUrl ?? cfg.libsqlUrl;
+  const token = cfg.tursoToken ?? cfg.libsqlAuthToken;
   return Boolean(url?.trim() && token?.trim());
 }
 
