@@ -19,7 +19,10 @@ Desktop.ini
 
 # IDE
 .vscode/
-.cursor/
+# Cursor: ignore local cache; track shared project rules
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 *.swp
 *.swo
 
