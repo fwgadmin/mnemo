@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **GUI:** New installs default to **Dark (IDE)** (`ide-dark`) — sidebar + editor tabs. Users with an existing `mnemo.themeId` or synced `ui-preferences.json` keep their theme.
+
 ## 1.0.9 — 2026-04-11
 
 - **GUI:** Hide the IDE tab strip horizontal scrollbar; wheel / trackpad scrolling unchanged (#20).

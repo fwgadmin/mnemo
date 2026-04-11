@@ -531,10 +531,19 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
               type="text"
               defaultValue={note.title}
               key={note.id}
+              readOnly={!!note.filePath}
               onChange={(e) => handleTitleChange(e.target.value)}
-              className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-mnemo-text placeholder-mnemo-dim"
+              className={`w-full text-2xl font-semibold bg-transparent border-none outline-none text-mnemo-text placeholder-mnemo-dim ${
+                note.filePath ? 'cursor-default opacity-90' : ''
+              }`}
               placeholder="Untitled"
+              title={note.filePath ?? undefined}
             />
+            {note.filePath && (
+              <div className="mt-1 text-[11px] text-mnemo-dim truncate font-normal" title={note.filePath}>
+                {note.filePath}
+              </div>
+            )}
             <div className="flex items-center gap-3 mt-2 text-[10px] text-mnemo-dim">
               <span>{new Date(note.modified).toLocaleDateString()}</span>
               <span>·</span>

@@ -281,6 +281,7 @@ function buildMenu(mainWindow: BrowserWindow): void {
         { label: 'Format Note', accelerator: 'Alt+Shift+F', click: send('format-markdown') },
         { type: 'separator' },
         { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: send('open') },
+        { label: 'Open File as Tab…', accelerator: 'CmdOrCtrl+Shift+O', click: send('open-file-tab') },
         { label: 'Open Workspace Folder…', click: send('workspace-choose') },
         { label: 'Sync Workspace', click: send('workspace-sync') },
         { type: 'separator' },
@@ -400,6 +401,29 @@ function registerIpcHandlers(): void {
     return { saved: true, filePath: result.filePath };
   });
 
+  ipcMain.handle(IPC.FILE_READ_PATH, async (_event, absPath: string) => {
+    if (typeof absPath !== 'string' || !absPath.trim()) return null;
+    const fp = path.resolve(absPath.trim());
+    try {
+      return fs.readFileSync(fp, 'utf-8');
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle(IPC.FILE_WRITE_PATH, async (_event, absPath: string, body: string) => {
+    if (typeof absPath !== 'string' || !absPath.trim()) return false;
+    if (typeof body !== 'string') return false;
+    const fp = path.resolve(absPath.trim());
+    try {
+      fs.mkdirSync(path.dirname(fp), { recursive: true });
+      fs.writeFileSync(fp, body, 'utf-8');
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   ipcMain.handle(IPC.FILE_OPEN, async () => {
     const result = await dialog.showOpenDialog({
       title: 'Open File',
@@ -416,9 +440,9 @@ function registerIpcHandlers(): void {
       if (ext === '.md') {
         const parsed = matter(raw);
         const title  = (parsed.data.title as string) || path.basename(fp, ext);
-        return { title, body: (parsed.content as string).trim() };
+        return { title, body: (parsed.content as string).trim(), path: fp };
       }
-      return { title: path.basename(fp, ext) || path.basename(fp), body: raw.trim() };
+      return { title: path.basename(fp, ext) || path.basename(fp), body: raw.trim(), path: fp };
     });
   });
 

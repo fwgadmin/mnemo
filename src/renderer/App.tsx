@@ -30,15 +30,22 @@ import {
 import { colorForCategoryPath, readCategoryColors } from './categoryColors';
 import { buildEffectiveCategoryColors, getSuggestedCategorySwatches } from './categoryColorPalette';
 import { gatherLocalStoragePreferences } from './uiPreferencesSync';
-import { applyThemeToDocument, getTheme } from './theme/themes';
+import { applyThemeToDocument, DEFAULT_THEME_ID, getTheme } from './theme/themes';
 import { applyMarkdownOverridesToDocument, mergeMarkdownLayers } from './editor/markdownOverrides';
 import type { MnemoUiPreferences, Note, NoteListItem } from '../shared/types';
 import { vaultFingerprint } from '../shared/types';
+import {
+  decodeFileTabPath,
+  encodeFileTabId,
+  fileTabBasename,
+  isFileTabId,
+} from '../shared/fileTabId';
 
 type RightPanel = 'none' | 'graph' | 'markdown-help' | 'markdown-preview';
 
 /** Compare notes for visible editor state (ignore ref). */
 function sameOpenNoteSnapshot(a: Note, b: Note): boolean {
+  if (a.filePath !== b.filePath) return false;
   if (a.body !== b.body || a.title !== b.title || a.modified !== b.modified) return false;
   if (a.hideHeader !== b.hideHeader) return false;
   if (a.tags.length !== b.tags.length) return false;
@@ -65,7 +72,7 @@ function savePref(key: string, val: boolean): void {
 }
 
 function readThemeId(): string {
-  return localStorage.getItem('mnemo.themeId') ?? 'dark-default';
+  return localStorage.getItem('mnemo.themeId') ?? DEFAULT_THEME_ID;
 }
 
 function readLayoutOverride(): LayoutOverride {
@@ -376,9 +383,21 @@ export default function App() {
       if (opts?.reloadActiveNote) {
         const cur = activeNoteRef.current;
         if (cur) {
-          const n = await window.mnemo.notes.read(cur.id);
-          if (n) setActiveNote(n);
-          else setActiveNote(null);
+          if (cur.filePath && isFileTabId(cur.id)) {
+            const raw = await window.mnemo.file.readPath(cur.filePath);
+            if (raw !== null) {
+              setActiveNote({
+                ...cur,
+                body: raw,
+                title: fileTabBasename(cur.filePath),
+                modified: new Date().toISOString(),
+              });
+            }
+          } else {
+            const n = await window.mnemo.notes.read(cur.id);
+            if (n) setActiveNote(n);
+            else setActiveNote(null);
+          }
         }
       }
     },
@@ -396,7 +415,7 @@ export default function App() {
           await syncNotesFromStore();
           await refreshMergedPreferencesFromStore();
           const cur = activeNoteRef.current;
-          if (cur && editorRef.current && !editorRef.current.isDirty()) {
+          if (cur && !cur.filePath && editorRef.current && !editorRef.current.isDirty()) {
             const n = await window.mnemo.notes.read(cur.id);
             if (n && !sameOpenNoteSnapshot(cur, n)) {
               setActiveNote(n);
@@ -528,6 +547,37 @@ export default function App() {
   }, [loadNotes]);
 
   const handleSelectNote = useCallback(async (id: string) => {
+    if (isFileTabId(id)) {
+      const abs = decodeFileTabPath(id);
+      if (!abs) return;
+      const raw = await window.mnemo.file.readPath(abs);
+      if (raw === null) {
+        setOpenTabIds(prev => prev.filter(x => x !== id));
+        return;
+      }
+      const now = new Date().toISOString();
+      const tabId = encodeFileTabId(abs);
+      setActiveNote({
+        id: tabId,
+        ref: 0,
+        title: fileTabBasename(abs),
+        body: raw,
+        tags: [],
+        created: now,
+        modified: now,
+        tenantId: 'default',
+        links: [],
+        hideHeader: false,
+        filePath: abs,
+      });
+      if (effectiveLayoutRef.current === 'ide') {
+        setOpenTabIds(prev => {
+          if (prev.includes(tabId)) return prev;
+          return mruOpenTabIds(prev, tabId);
+        });
+      }
+      return;
+    }
     const note = await window.mnemo.notes.read(id);
     setActiveNote(note);
     if (effectiveLayoutRef.current === 'ide') {
@@ -538,28 +588,32 @@ export default function App() {
     }
   }, []);
 
-  const navigateNoteByDelta = useCallback(async (delta: number) => {
-    const q = searchQueryRef.current.trim();
-    const ide = effectiveLayoutRef.current === 'ide';
-    let list: NoteListItem[];
-    if (ide) {
-      const ids = openTabIdsRef.current;
-      if (ids.length === 0) return;
-      const byId = new Map(vaultNotesRef.current.map(n => [n.id, n]));
-      list = ids.map(oid => byId.get(oid)).filter((n): n is NoteListItem => n != null);
+  const navigateNoteByDelta = useCallback(
+    async (delta: number) => {
+      const q = searchQueryRef.current.trim();
+      const ide = effectiveLayoutRef.current === 'ide';
+      if (ide) {
+        const ids = openTabIdsRef.current;
+        if (ids.length === 0) return;
+        const curId = activeNoteRef.current?.id;
+        let idx = curId ? ids.indexOf(curId) : -1;
+        if (idx < 0) idx = delta > 0 ? -1 : 0;
+        const nextIdx = (idx + delta + ids.length) % ids.length;
+        await handleSelectNote(ids[nextIdx]!);
+        return;
+      }
+      const list = q ? notesRef.current : vaultNotesRef.current;
       if (list.length === 0) return;
-    } else {
-      list = q ? notesRef.current : vaultNotesRef.current;
-    }
-    if (list.length === 0) return;
-    const curId = activeNoteRef.current?.id;
-    let idx = curId ? list.findIndex(n => n.id === curId) : -1;
-    if (idx < 0) idx = delta > 0 ? -1 : 0;
-    const nextIdx = (idx + delta + list.length) % list.length;
-    const id = list[nextIdx]!.id;
-    const note = await window.mnemo.notes.read(id);
-    setActiveNote(note);
-  }, []);
+      const curId = activeNoteRef.current?.id;
+      let idx = curId ? list.findIndex(n => n.id === curId) : -1;
+      if (idx < 0) idx = delta > 0 ? -1 : 0;
+      const nextIdx = (idx + delta + list.length) % list.length;
+      const id = list[nextIdx]!.id;
+      const note = await window.mnemo.notes.read(id);
+      setActiveNote(note);
+    },
+    [handleSelectNote],
+  );
 
   const handleCreateNote = useCallback(async () => {
     const note = await window.mnemo.notes.create({
@@ -579,35 +633,39 @@ export default function App() {
     setActiveNote(null);
   }, []);
 
-  const handleCloseTabsToRight = useCallback(async (fromId: string) => {
-    const cur = openTabIdsRef.current;
-    const idx = cur.indexOf(fromId);
-    if (idx < 0) return;
-    const nextIds = cur.slice(0, idx + 1);
-    if (nextIds.length === cur.length) return;
-    setOpenTabIds(nextIds);
-    const activeId = activeNoteRef.current?.id;
-    if (activeId && !nextIds.includes(activeId)) {
-      const note = await window.mnemo.notes.read(fromId);
-      setActiveNote(note);
-    }
-  }, []);
+  const handleCloseTabsToRight = useCallback(
+    async (fromId: string) => {
+      const cur = openTabIdsRef.current;
+      const idx = cur.indexOf(fromId);
+      if (idx < 0) return;
+      const nextIds = cur.slice(0, idx + 1);
+      if (nextIds.length === cur.length) return;
+      setOpenTabIds(nextIds);
+      const activeId = activeNoteRef.current?.id;
+      if (activeId && !nextIds.includes(activeId)) {
+        await handleSelectNote(fromId);
+      }
+    },
+    [handleSelectNote],
+  );
 
-  const handleCloseTab = useCallback(async (id: string) => {
-    const cur = openTabIdsRef.current;
-    const nextIds = cur.filter(x => x !== id);
-    setOpenTabIds(nextIds);
-    if (activeNoteRef.current?.id !== id) return;
-    if (nextIds.length === 0) {
-      setActiveNote(null);
-      return;
-    }
-    const idx = cur.indexOf(id);
-    const pick = idx <= 0 ? 0 : idx - 1;
-    const nextId = nextIds[Math.min(pick, nextIds.length - 1)]!;
-    const note = await window.mnemo.notes.read(nextId);
-    setActiveNote(note);
-  }, []);
+  const handleCloseTab = useCallback(
+    async (id: string) => {
+      const cur = openTabIdsRef.current;
+      const nextIds = cur.filter(x => x !== id);
+      setOpenTabIds(nextIds);
+      if (activeNoteRef.current?.id !== id) return;
+      if (nextIds.length === 0) {
+        setActiveNote(null);
+        return;
+      }
+      const idx = cur.indexOf(id);
+      const pick = idx <= 0 ? 0 : idx - 1;
+      const nextId = nextIds[Math.min(pick, nextIds.length - 1)]!;
+      await handleSelectNote(nextId);
+    },
+    [handleSelectNote],
+  );
 
   // Global keyboard shortcuts (after navigate helper). Capture phase so CodeMirror doesn't eat Ctrl+, / Alt+Shift+F first.
   useEffect(() => {
@@ -635,6 +693,18 @@ export default function App() {
         if (t?.closest?.('input, textarea, [contenteditable=true]')) return;
         e.preventDefault();
         void navigateNoteByDelta(e.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'O' || e.key === 'o')) {
+        e.preventDefault();
+        void (async () => {
+          const files = await window.mnemo.file.open();
+          if (files && files.length > 0) {
+            for (const f of files) {
+              await handleSelectNote(encodeFileTabId(f.path));
+            }
+          }
+        })();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
@@ -690,6 +760,7 @@ export default function App() {
     activeTab,
     navigateNoteByDelta,
     handleCreateNote,
+    handleSelectNote,
   ]);
 
   // Menu command handler (used by both native menu IPC and custom MenuBar)
@@ -714,6 +785,15 @@ export default function App() {
             await window.mnemo.notes.create({ title: f.title, body: f.body, tags: [] });
           }
           await loadNotes();
+        }
+        break;
+      }
+      case 'open-file-tab': {
+        const files = await window.mnemo.file.open();
+        if (files && files.length > 0) {
+          for (const f of files) {
+            await handleSelectNote(encodeFileTabId(f.path));
+          }
         }
         break;
       }
@@ -808,11 +888,12 @@ export default function App() {
     }
   }, [
     handleCreateNote,
+    handleSelectNote,
     loadNotes,
     navigateNoteByDelta,
     syncNotesFromStore,
     refreshMergedPreferencesFromStore,
-  ]); // eslint-disable-line react-hooks/exhaustive-deps
+  ]);
 
   const runPaletteCommand = useCallback(
     (command: string) => {
@@ -854,6 +935,21 @@ export default function App() {
   }, [loadNotes]);
 
   const handleUpdateNote = useCallback(async (id: string, title: string, body: string) => {
+    if (isFileTabId(id)) {
+      const abs = decodeFileTabPath(id);
+      if (!abs) return;
+      const ok = await window.mnemo.file.writePath(abs, body);
+      if (!ok) return;
+      if (activeNoteRef.current?.id === id) {
+        setActiveNote(prev =>
+          prev && prev.id === id
+            ? { ...prev, body, modified: new Date().toISOString(), title: fileTabBasename(abs) }
+            : prev,
+        );
+      }
+      return;
+    }
+
     const wikilinkTitles = extractWikilinks(body);
     const explicitIds: string[] = [];
     for (const linkTitle of wikilinkTitles) {
@@ -877,43 +973,59 @@ export default function App() {
     }
   }, []);
 
-  const handleDeleteNote = useCallback(async (id: string) => {
-    const q = searchQuery.trim();
-    const listBefore = q ? notes : vaultNotes;
-    const idx = listBefore.findIndex(n => n.id === id);
-    const ide = effectiveLayoutRef.current === 'ide';
-    const beforeTabs = openTabIdsRef.current;
-    const nextTabIds = beforeTabs.filter(x => x !== id);
+  const handleDeleteNote = useCallback(
+    async (id: string) => {
+      if (isFileTabId(id)) {
+        const beforeTabs = openTabIdsRef.current;
+        const nextTabIds = beforeTabs.filter(x => x !== id);
+        setOpenTabIds(nextTabIds);
+        if (activeNoteRef.current?.id !== id) return;
+        if (nextTabIds.length === 0) {
+          setActiveNote(null);
+          return;
+        }
+        const tidx = beforeTabs.indexOf(id);
+        const pickIdx = Math.min(Math.max(0, tidx <= 0 ? 0 : tidx - 1), nextTabIds.length - 1);
+        await handleSelectNote(nextTabIds[pickIdx]!);
+        return;
+      }
 
-    await window.mnemo.notes.delete(id);
-    setOpenTabIds(nextTabIds);
-    await loadNotes();
+      const q = searchQuery.trim();
+      const listBefore = q ? notes : vaultNotes;
+      const idx = listBefore.findIndex(n => n.id === id);
+      const ide = effectiveLayoutRef.current === 'ide';
+      const beforeTabs = openTabIdsRef.current;
+      const nextTabIds = beforeTabs.filter(x => x !== id);
 
-    if (activeNoteRef.current?.id !== id) return;
+      await window.mnemo.notes.delete(id);
+      setOpenTabIds(nextTabIds);
+      await loadNotes();
 
-    if (ide) {
-      if (nextTabIds.length === 0) {
+      if (activeNoteRef.current?.id !== id) return;
+
+      if (ide) {
+        if (nextTabIds.length === 0) {
+          setActiveNote(null);
+          return;
+        }
+        const tidx = beforeTabs.indexOf(id);
+        const pickIdx = Math.min(Math.max(0, tidx <= 0 ? 0 : tidx - 1), nextTabIds.length - 1);
+        await handleSelectNote(nextTabIds[pickIdx]!);
+        return;
+      }
+
+      const remaining = listBefore.filter(n => n.id !== id);
+      if (remaining.length === 0) {
         setActiveNote(null);
         return;
       }
-      const tidx = beforeTabs.indexOf(id);
-      const pickIdx = Math.min(Math.max(0, tidx <= 0 ? 0 : tidx - 1), nextTabIds.length - 1);
-      const nextId = nextTabIds[pickIdx]!;
+      const pickIdx = Math.min(idx === 0 ? 0 : idx - 1, remaining.length - 1);
+      const nextId = remaining[pickIdx]!.id;
       const note = await window.mnemo.notes.read(nextId);
       setActiveNote(note);
-      return;
-    }
-
-    const remaining = listBefore.filter(n => n.id !== id);
-    if (remaining.length === 0) {
-      setActiveNote(null);
-      return;
-    }
-    const pickIdx = Math.min(idx === 0 ? 0 : idx - 1, remaining.length - 1);
-    const nextId = remaining[pickIdx]!.id;
-    const note = await window.mnemo.notes.read(nextId);
-    setActiveNote(note);
-  }, [searchQuery, notes, vaultNotes, loadNotes]);
+    },
+    [searchQuery, notes, vaultNotes, loadNotes, handleSelectNote],
+  );
 
   const handleRenameNote = useCallback(async (id: string) => {
     const item = vaultNotes.find(n => n.id === id) ?? notes.find(n => n.id === id);
@@ -994,10 +1106,19 @@ export default function App() {
   const ideTabItems = useMemo(() => {
     const byId = new Map(vaultNotes.map(n => [n.id, n] as const));
     return openTabIds.map(id => {
+      if (isFileTabId(id)) {
+        const p = decodeFileTabPath(id);
+        return {
+          id,
+          title: p ? fileTabBasename(p) : 'File',
+          accentColor: undefined,
+          isFile: true,
+        };
+      }
       const n = byId.get(id);
-      const path = n ? categoryPathFromTags(n.tags, vaultNotes) : GENERAL_PATH;
-      const accentColor = colorForCategoryPath(path, resolvedCategoryColors);
-      return { id, title: n?.title || 'Untitled', accentColor };
+      const catPath = n ? categoryPathFromTags(n.tags, vaultNotes) : GENERAL_PATH;
+      const accentColor = colorForCategoryPath(catPath, resolvedCategoryColors);
+      return { id, title: n?.title || 'Untitled', accentColor, isFile: false };
     });
   }, [openTabIds, vaultNotes, resolvedCategoryColors]);
 
@@ -1011,10 +1132,38 @@ export default function App() {
     let cancelled = false;
     void (async () => {
       try {
+        if (isFileTabId(id)) {
+          const abs = decodeFileTabPath(id);
+          if (!abs) {
+            if (!cancelled) setOpenTabIds(prev => prev.filter(x => x !== id));
+            return;
+          }
+          const raw = await window.mnemo.file.readPath(abs);
+          if (cancelled) return;
+          if (raw === null) {
+            setOpenTabIds(prev => prev.filter(x => x !== id));
+            return;
+          }
+          const now = new Date().toISOString();
+          setActiveNote({
+            id: encodeFileTabId(abs),
+            ref: 0,
+            title: fileTabBasename(abs),
+            body: raw,
+            tags: [],
+            created: now,
+            modified: now,
+            tenantId: 'default',
+            links: [],
+            hideHeader: false,
+            filePath: abs,
+          });
+          return;
+        }
         const note = await window.mnemo.notes.read(id);
         if (!cancelled) setActiveNote(note);
       } catch {
-        setOpenTabIds(prev => prev.filter(x => x !== id));
+        if (!cancelled) setOpenTabIds(prev => prev.filter(x => x !== id));
       }
     })();
     return () => {
@@ -1081,10 +1230,9 @@ export default function App() {
               reloadNonce={editorReloadNonce}
             />
           </div>
-          <BacklinksPanel
-            noteId={activeNote.id}
-            onSelectNote={handleSelectNote}
-          />
+          {!activeNote.filePath && (
+            <BacklinksPanel noteId={activeNote.id} onSelectNote={handleSelectNote} />
+          )}
         </>
       ) : (
         <div className="flex-1 flex items-center justify-center text-mnemo-dim select-none">

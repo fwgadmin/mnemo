@@ -186,9 +186,9 @@ export default function HelpView({ onClose }: HelpViewProps) {
               menu when the title field is hidden.
             </KV>
             <KV label="Themes &amp; layout">
-              <Key>Ctrl+,</Key> opens <Mono>Settings</Mono>: choose a theme (including dark/light with top bar or IDE layout),
-              and override layout (classic sidebar, top navigation, or IDE). Command palette (<Key>Ctrl+P</Key>){' '}
-              includes layout commands when you type <Mono>&gt;</Mono>.
+              <strong>Default:</strong> Dark (IDE) — category tree and editor with tabs. <Key>Ctrl+,</Key> opens{' '}
+              <Mono>Settings</Mono> to pick another theme or override layout (classic sidebar, top navigation, or IDE).{' '}
+              Command palette (<Key>Ctrl+P</Key>) includes layout commands when you type <Mono>&gt;</Mono>.
             </KV>
             <KV label="Markdown helper">
               <Key>Ctrl+M</Key> toggles the Markdown reference side panel.

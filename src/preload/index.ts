@@ -29,7 +29,11 @@ export interface MnemoAPI {
   };
   file: {
     saveAs(data: { title: string; body: string }): Promise<{ saved: boolean; filePath?: string }>;
-    open(): Promise<Array<{ title: string; body: string }> | null>;
+    open(): Promise<Array<{ title: string; body: string; path: string }> | null>;
+    /** Read UTF-8 file at absolute path (IDE file tabs). */
+    readPath(absPath: string): Promise<string | null>;
+    /** Write UTF-8 to absolute path (IDE file tabs). */
+    writePath(absPath: string, body: string): Promise<boolean>;
   };
   config: {
     read(): Promise<AppConfig>;
@@ -78,6 +82,9 @@ const api: MnemoAPI = {
   file: {
     saveAs: (data) => ipcRenderer.invoke(IPC.FILE_SAVE_AS, data),
     open: () => ipcRenderer.invoke(IPC.FILE_OPEN),
+    readPath: (absPath: string) => ipcRenderer.invoke(IPC.FILE_READ_PATH, absPath),
+    writePath: (absPath: string, body: string) =>
+      ipcRenderer.invoke(IPC.FILE_WRITE_PATH, absPath, body),
   },
   config: {
     read: () => ipcRenderer.invoke(IPC.CONFIG_READ),

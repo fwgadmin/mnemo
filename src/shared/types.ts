@@ -23,6 +23,11 @@ export interface Note {
   links: string[];
   /** When true, editor omits the title row and metadata (per-note; global "Show note header" still applies when false). */
   hideHeader: boolean;
+  /**
+   * When set, this tab edits this path on disk (IDE file tabs). Not stored in the vault until synced/imported.
+   * Tab id uses `encodeFileTabId(filePath)`.
+   */
+  filePath?: string;
 }
 
 export interface NoteListItem {
@@ -181,6 +186,9 @@ export const IPC = {
   // File operations
   FILE_SAVE_AS: 'file:saveAs',
   FILE_OPEN: 'file:open',
+  /** Read/write a single file by absolute path (IDE filesystem-backed tabs; local-first). */
+  FILE_READ_PATH: 'file:readPath',
+  FILE_WRITE_PATH: 'file:writePath',
   FILE_OPENED_EXTERNALLY: 'file:openedExternally',
   // Config (remote libSQL URL + token; stored in userData/config.json)
   CONFIG_READ: 'config:read',

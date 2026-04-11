@@ -1,5 +1,8 @@
 export type LayoutPreset = 'sidebar' | 'top' | 'ide';
 
+/** First-run / missing-pref default: IDE layout with editor tabs (see `ide-dark` in THEMES). */
+export const DEFAULT_THEME_ID = 'ide-dark';
+
 export interface ThemeDefinition {
   id: string;
   name: string;
@@ -269,7 +272,7 @@ export const THEMES: ThemeDefinition[] = [
 ];
 
 export function getTheme(id: string): ThemeDefinition {
-  return THEMES.find(t => t.id === id) ?? THEMES[0]!;
+  return THEMES.find(t => t.id === id) ?? THEMES.find(t => t.id === DEFAULT_THEME_ID) ?? THEMES[0]!;
 }
 
 export function applyThemeToDocument(theme: ThemeDefinition): void {

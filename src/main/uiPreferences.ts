@@ -69,14 +69,26 @@ function sanitizeMarkdownVarMap(raw: unknown): Record<string, string> | undefine
   return Object.keys(out).length ? out : undefined;
 }
 
-/** IDE open-tab order; UUID note ids only */
+/** IDE open-tab order: vault UUIDs and `file:${encodeURIComponent(absPath)}` filesystem tabs */
 function sanitizeIdeTabIds(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const uuidRe =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const out: string[] = [];
   for (const x of raw) {
-    if (typeof x === 'string' && uuidRe.test(x)) out.push(x);
+    if (typeof x !== 'string') continue;
+    if (uuidRe.test(x)) {
+      out.push(x);
+      continue;
+    }
+    if (x.startsWith('file:') && x.length < 16384) {
+      try {
+        decodeURIComponent(x.slice(5));
+        out.push(x);
+      } catch {
+        /* skip */
+      }
+    }
   }
   return out.length ? [...new Set(out)] : undefined;
 }

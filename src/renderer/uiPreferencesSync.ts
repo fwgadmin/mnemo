@@ -1,4 +1,5 @@
 import type { MnemoUiPreferences } from '../shared/types';
+import { DEFAULT_THEME_ID } from './theme/themes';
 import { readCategoryColors } from './categoryColors';
 
 function loadBool(key: string, def: boolean): boolean {
@@ -7,7 +8,7 @@ function loadBool(key: string, def: boolean): boolean {
 }
 
 function readThemeId(): string {
-  return localStorage.getItem('mnemo.themeId') ?? 'dark-default';
+  return localStorage.getItem('mnemo.themeId') ?? DEFAULT_THEME_ID;
 }
 
 function readLayoutOverride(): MnemoUiPreferences['layoutOverride'] {

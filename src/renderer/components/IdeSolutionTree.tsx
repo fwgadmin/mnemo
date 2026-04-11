@@ -11,6 +11,9 @@ import { colorForCategoryPath } from '../categoryColors';
 
 const EXPANDED_KEY = 'mnemo.ideExplorerExpanded';
 
+/** One horizontal step per nesting level (margin on each treeitem — stacks with ancestors). */
+const TREE_LEVEL_PX = 10;
+
 function loadExpandedFromStorage(): Set<string> | null {
   try {
     const raw = localStorage.getItem(EXPANDED_KEY);
@@ -134,29 +137,28 @@ export default function IdeSolutionTree({
     const stripe = colorForCategoryPath(node.path, categoryColors);
     const stripeBorder = stripe
       ? `color-mix(in srgb, ${stripe} 42%, var(--mnemo-accent) 58%)`
-      : 'color-mix(in srgb, var(--mnemo-border) 82%, var(--mnemo-accent) 18%)';
+      : `color-mix(in srgb, var(--mnemo-border) 82%, var(--mnemo-accent) 18%)`;
     const isDrag = dragOverCategory === node.path;
     const visibleCount = visibleNotesInSubtree(node, notesByPath);
 
-    const indent = 4 + depth * 14;
+    const depthIndentPx = depth > 0 ? TREE_LEVEL_PX : 0;
 
     return (
       <div
         key={node.path}
         role="treeitem"
         aria-expanded={expandable ? isOpen : undefined}
-        className={depth > 0 ? 'ml-0.5 border-l border-mnemo-border/40 pl-1' : undefined}
+        style={{ marginLeft: depthIndentPx }}
       >
         <div
           onDragOver={e => onDragOver(e, node.path)}
           onDrop={e => onDrop(e, node.path)}
           onDragLeave={onDragLeave}
           onContextMenu={e => onFolderContextMenu(e, node.path)}
-          className={`rounded-sm transition-[background-color,box-shadow] duration-150 bg-mnemo-panel-elevated/50 border ${
+          className={`flex min-h-[28px] flex-row items-stretch rounded-sm transition-[background-color,box-shadow] duration-150 bg-mnemo-panel-elevated/50 border ${
             isDrag ? 'bg-mnemo-active/25 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--mnemo-border)_65%,var(--mnemo-accent)_35%)]' : ''
           }`}
           style={{
-            paddingLeft: indent,
             borderColor: 'var(--mnemo-sidebar-category-edge)',
             borderLeftWidth: 3,
             borderLeftStyle: 'solid',
@@ -164,49 +166,47 @@ export default function IdeSolutionTree({
           }}
           title="Right-click for folder actions"
         >
-          <div className="flex min-h-[28px] items-center gap-0.5 pr-1">
+          <button
+            type="button"
+            className={`flex h-auto min-h-[28px] w-5 shrink-0 items-center justify-center rounded-none text-[10px] text-mnemo-dim hover:bg-mnemo-hover hover:text-mnemo-text ${
+              expandable ? 'cursor-pointer' : 'cursor-default opacity-30'
+            }`}
+            aria-label={isOpen ? 'Collapse folder' : 'Expand folder'}
+            disabled={!expandable}
+            onClick={e => {
+              e.stopPropagation();
+              if (expandable) toggle(node.path);
+            }}
+          >
+            {expandable ? (isOpen ? '▾' : '▸') : '·'}
+          </button>
+          {expandable ? (
             <button
               type="button"
-              className={`flex h-6 w-5 shrink-0 items-center justify-center rounded text-[10px] text-mnemo-dim hover:bg-mnemo-hover hover:text-mnemo-text ${
-                expandable ? 'cursor-pointer' : 'cursor-default opacity-30'
-              }`}
-              aria-label={isOpen ? 'Collapse folder' : 'Expand folder'}
-              disabled={!expandable}
-              onClick={e => {
-                e.stopPropagation();
-                if (expandable) toggle(node.path);
-              }}
+              className="min-w-0 flex-1 flex items-center gap-1.5 text-left rounded-sm py-0.5 pr-1 pl-0.5 -my-0.5 hover:bg-mnemo-hover/50"
+              onClick={() => toggle(node.path)}
+              aria-expanded={isOpen}
+              aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${label}`}
             >
-              {expandable ? (isOpen ? '▾' : '▸') : '·'}
-            </button>
-            {expandable ? (
-              <button
-                type="button"
-                className="min-w-0 flex-1 flex items-center gap-1.5 text-left rounded-sm py-0.5 pr-1 -my-0.5 hover:bg-mnemo-hover/50"
-                onClick={() => toggle(node.path)}
-                aria-expanded={isOpen}
-                aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${label}`}
+              <span
+                className={`min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.05em] ${stripe ? '' : 'text-mnemo-muted'}`}
+                style={stripe ? { color: stripe } : undefined}
               >
-                <span
-                  className={`min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.05em] ${stripe ? '' : 'text-mnemo-muted'}`}
-                  style={stripe ? { color: stripe } : undefined}
-                >
-                  {label}
-                </span>
-                <span className="shrink-0 text-[10px] text-mnemo-dim tabular-nums font-medium">{visibleCount}</span>
-              </button>
-            ) : (
-              <>
-                <span
-                  className={`min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.05em] ${stripe ? '' : 'text-mnemo-muted'}`}
-                  style={stripe ? { color: stripe } : undefined}
-                >
-                  {label}
-                </span>
-                <span className="shrink-0 text-[10px] text-mnemo-dim tabular-nums font-medium">{visibleCount}</span>
-              </>
-            )}
-          </div>
+                {label}
+              </span>
+              <span className="shrink-0 text-[10px] text-mnemo-dim tabular-nums font-medium">{visibleCount}</span>
+            </button>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left py-0.5 pr-1 pl-0.5">
+              <span
+                className={`min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.05em] ${stripe ? '' : 'text-mnemo-muted'}`}
+                style={stripe ? { color: stripe } : undefined}
+              >
+                {label}
+              </span>
+              <span className="shrink-0 text-[10px] text-mnemo-dim tabular-nums font-medium">{visibleCount}</span>
+            </div>
+          )}
         </div>
 
         {isOpen && (
@@ -215,13 +215,30 @@ export default function IdeSolutionTree({
             onDragOver={e => onDragOver(e, node.path)}
             onDrop={e => onDrop(e, node.path)}
             onDragLeave={onDragLeave}
-            className={isDrag ? 'rounded-b-sm bg-mnemo-active/12' : undefined}
+            className={`border-l border-mnemo-border/[0.14] pl-0.5 ${isDrag ? 'rounded-b-sm bg-mnemo-active/12' : ''}`}
           >
             {childFolders.map(ch => renderNode(ch, depth + 1))}
-            {notesHere.map(n => (
-              <Fragment key={n.id}>
+            {notesHere.length > 0 && (
+              <div
+                role="group"
+                className="mt-0.5 pl-2"
+              >
+                {notesHere.map(n => (
+                  <Fragment key={n.id}>
+                    <div
+                      className={`mx-0.5 min-h-[2px] rounded-sm transition-[background-color] duration-150 ${
+                        isDrag ? 'bg-mnemo-active/18' : 'hover:bg-mnemo-hover/30'
+                      }`}
+                      onDragOver={e => onDragOver(e, node.path)}
+                      onDrop={e => onDrop(e, node.path)}
+                      onDragLeave={onDragLeave}
+                      aria-hidden
+                    />
+                    <div>{renderNote(n, depth + 1)}</div>
+                  </Fragment>
+                ))}
                 <div
-                  className={`mx-0.5 min-h-[6px] rounded-sm transition-[background-color] duration-150 ${
+                  className={`mx-0.5 min-h-[2px] rounded-sm transition-[background-color] duration-150 ${
                     isDrag ? 'bg-mnemo-active/18' : 'hover:bg-mnemo-hover/30'
                   }`}
                   onDragOver={e => onDragOver(e, node.path)}
@@ -229,18 +246,8 @@ export default function IdeSolutionTree({
                   onDragLeave={onDragLeave}
                   aria-hidden
                 />
-                <div>{renderNote(n, depth + 1)}</div>
-              </Fragment>
-            ))}
-            <div
-              className={`mx-0.5 min-h-[6px] rounded-sm transition-[background-color] duration-150 ${
-                isDrag ? 'bg-mnemo-active/18' : 'hover:bg-mnemo-hover/30'
-              }`}
-              onDragOver={e => onDragOver(e, node.path)}
-              onDrop={e => onDrop(e, node.path)}
-              onDragLeave={onDragLeave}
-              aria-hidden
-            />
+              </div>
+            )}
           </div>
         )}
       </div>
