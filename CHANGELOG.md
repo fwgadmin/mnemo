@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 — 2026-04-09
 
-- **GUI:** New installs default to **Dark (IDE)** (`ide-dark`) — sidebar + editor tabs. Users with an existing `mnemo.themeId` or synced `ui-preferences.json` keep their theme.
+- **GUI — default experience:** New installs use **Dark (IDE)** (`ide-dark`): sidebar + editor with tabs. Existing `mnemo.themeId` / synced `ui-preferences.json` unchanged.
+- **GUI — IDE explorer:** Tree guides align with category color stripes; consistent nesting; tighter padding between guide and note rows; no duplicate vertical line on notes.
+- **GUI — filesystem tabs:** Open files as editor tabs (read/write on disk), **File › Open File as Tab…** / **Ctrl+Shift+O**; vault import remains **Ctrl+O**. IDE tab order in preferences; backlinks hidden for file tabs.
+- **Workspace:** Open/sync a folder as markdown-backed categories; search and category UX improvements (see PR #22).
+- **Docs:** README, in-app help, and `mnemo help desktop` describe defaults and shortcuts.
 
 ## 1.0.9 — 2026-04-11
 
