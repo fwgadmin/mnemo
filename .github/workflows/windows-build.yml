@@ -1,5 +1,6 @@
-# Build Squirrel installer (MnemoSetup.exe) + zip on Windows runners — no local Windows machine required.
-name: Build Windows installer
+# CI only: builds Windows installers and uploads them as workflow artifacts — does NOT create a GitHub Release.
+# To publish installers and attach them to a GitHub Release, push an annotated tag `v*` (see `.github/workflows/release.yml`).
+name: 'CI: Windows installer (artifacts only)'
 
 on:
   workflow_dispatch:
