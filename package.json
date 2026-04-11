@@ -1,5 +1,5 @@
 {
-  "name": "mnemo",
+  "name": "mnemo-note",
   "version": "1.0.0",
   "description": "AI-native memory layer — notes, embeddings, and MCP for intelligence systems",
   "main": ".webpack/main",
