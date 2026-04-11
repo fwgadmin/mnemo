@@ -15,6 +15,7 @@
   "files": [
     "bin",
     "dist",
+    "examples",
     "LICENSE",
     "README.md"
   ],
