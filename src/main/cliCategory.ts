@@ -5,6 +5,7 @@ import type { INoteStore, NoteListItem } from '../shared/types';
 import {
   GENERAL_PATH,
   UNASSIGNED_PATH,
+  VIRTUAL_CATEGORY_ROOT,
   normalizePath,
   categoryPathFromTags,
   buildCategoryTree,
@@ -36,7 +37,7 @@ export function tagsForCategoryPath(categoryPath: string, otherTags: string[]): 
 /** Plain objects for `mnemo note categories --json`. */
 export function exportCategoryTreeJson(notes: NoteListItem[], flat: boolean): unknown {
   const root = buildCategoryTree(notes);
-  const nodes = flattenTreeDFS(root);
+  const nodes = flattenTreeDFS(root).filter(n => n.path !== VIRTUAL_CATEGORY_ROOT);
   if (flat) {
     return nodes.map(n => ({
       path: n.path,
@@ -55,16 +56,17 @@ export function exportCategoryTreeJson(notes: NoteListItem[], flat: boolean): un
 
 export function printCategoryTree(notes: NoteListItem[], flat: boolean): void {
   const root = buildCategoryTree(notes);
+  const rows = flattenTreeDFS(root).filter(n => n.path !== VIRTUAL_CATEGORY_ROOT);
   if (flat) {
     console.log('path\tdirect\tsubtree');
-    for (const node of flattenTreeDFS(root)) {
+    for (const node of rows) {
       console.log(`${node.path}\t${node.directNoteCount}\t${node.subtreeNoteCount}`);
     }
     return;
   }
   console.log('folder\tdirect\tsubtree');
-  for (const node of flattenTreeDFS(root)) {
-    const indent = '  '.repeat(node.depth);
+  for (const node of rows) {
+    const indent = '  '.repeat(Math.max(0, node.depth));
     const label =
       node.path === GENERAL_PATH ? 'General' : node.path === UNASSIGNED_PATH ? 'Unassigned' : node.segment;
     console.log(`${indent}${label}\t${node.directNoteCount}\t${node.subtreeNoteCount}`);
@@ -99,19 +101,38 @@ export async function renameCategoryFolder(
   if (oldPath === newPath) {
     throw new Error('Old and new paths are the same.');
   }
+  const migrateSubtreePrefix = newPath !== UNASSIGNED_PATH;
+
   const initialList = await store.list();
   let updated = 0;
   for (const n of initialList) {
-    if (categoryPathFromTags(n.tags, initialList) !== oldPath) continue;
+    const cur = categoryPathFromTags(n.tags, initialList);
     const otherTags = n.tags.slice(1);
     let newTags: string[];
-    if (newPath === UNASSIGNED_PATH) {
-      newTags = otherTags;
-    } else if (newPath === GENERAL_PATH) {
-      newTags = [GENERAL_PATH, ...otherTags];
+
+    if (cur === oldPath) {
+      if (newPath === UNASSIGNED_PATH) {
+        newTags = otherTags;
+      } else if (newPath === GENERAL_PATH) {
+        newTags = [GENERAL_PATH, ...otherTags];
+      } else {
+        newTags = [newPath, ...otherTags];
+      }
+    } else if (migrateSubtreePrefix && cur.startsWith(`${oldPath}/`)) {
+      const suffix = cur.slice(oldPath.length + 1);
+      const first =
+        newPath === GENERAL_PATH
+          ? suffix
+            ? `${GENERAL_PATH}/${suffix}`
+            : GENERAL_PATH
+          : suffix
+            ? `${newPath}/${suffix}`
+            : newPath;
+      newTags = [first, ...otherTags];
     } else {
-      newTags = [newPath, ...otherTags];
+      continue;
     }
+
     await store.update({ id: n.id, tags: newTags });
     updated++;
   }
