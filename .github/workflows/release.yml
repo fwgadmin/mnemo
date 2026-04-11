@@ -1,4 +1,6 @@
-# On version tags (v*): build desktop installers on Windows + Linux, attach zip bundles to the GitHub Release.
+# Publishes GitHub Releases with zip assets. Runs ONLY when a tag matching `v*` is pushed — not on PRs or merges to master.
+# After merging a release PR: git tag -a vX.Y.Z <merge-commit> && git push origin vX.Y.Z
+# (The separate “CI: Windows installer” workflow validates builds on PRs but does not ship a Release.)
 name: Release
 
 on:
