@@ -120,16 +120,19 @@ export interface MnemoUiPreferences {
 
 /**
  * Cheap vault-wide stats for GUI polling (Turso / multi-device sync) without loading full list.
- * Fingerprint = noteCount + max timestamp + linkCount so link-only edits also bump the snapshot.
+ * Fingerprint = counts + max timestamp + linkCount + contentBytes so body/title/tag edits bump the snapshot
+ * even if updated_at ties or sync paths are quirky.
  */
 export interface VaultSnapshot {
   noteCount: number;
   maxUpdatedAt: string | null;
   linkCount: number;
+  /** Sum of LENGTH(body)+LENGTH(title)+LENGTH(tags) — changes when note text/metadata changes. */
+  contentBytes: number;
 }
 
 export function vaultFingerprint(s: VaultSnapshot): string {
-  return `${s.noteCount}|${s.maxUpdatedAt ?? ''}|${s.linkCount}`;
+  return `${s.noteCount}|${s.maxUpdatedAt ?? ''}|${s.linkCount}|${s.contentBytes}`;
 }
 
 /** Async store interface implemented by both LocalNoteStore and TursoNoteStore */

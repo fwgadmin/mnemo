@@ -289,16 +289,19 @@ export class LocalNoteStore implements INoteStore {
       SELECT
         (SELECT COUNT(*) FROM notes WHERE tenant_id = ?) AS note_count,
         (SELECT MAX(updated_at) FROM notes WHERE tenant_id = ?) AS max_u,
-        (SELECT COUNT(*) FROM note_links nl INNER JOIN notes n ON n.id = nl.source_id WHERE n.tenant_id = ?) AS link_count
-    `).get(tenantId, tenantId, tenantId) as {
+        (SELECT COUNT(*) FROM note_links nl INNER JOIN notes n ON n.id = nl.source_id WHERE n.tenant_id = ?) AS link_count,
+        (SELECT COALESCE(SUM(LENGTH(body) + LENGTH(title) + LENGTH(tags)), 0) FROM notes WHERE tenant_id = ?) AS content_bytes
+    `).get(tenantId, tenantId, tenantId, tenantId) as {
       note_count: number;
       max_u: string | null;
       link_count: number;
+      content_bytes: number;
     };
     return Promise.resolve({
       noteCount: row.note_count,
       maxUpdatedAt: row.max_u,
       linkCount: row.link_count,
+      contentBytes: row.content_bytes,
     });
   }
 
