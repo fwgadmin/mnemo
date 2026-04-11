@@ -8,6 +8,11 @@ import * as path from 'path';
 export interface CliUserConfig {
   /** Default CLI output style when no flag / env overrides. */
   output?: 'text' | 'json';
+  /**
+   * What happens when `mnemo` is run with no arguments (wrapper only; see MNEMO_CLI_BARE).
+   * Default when omitted: recent notes list (top 10).
+   */
+  bareCommand?: 'recent' | 'gui';
 }
 
 export function cliConfigPath(): string {
@@ -25,7 +30,7 @@ export function ensureDefaultCliConfig(): void {
   if (fs.existsSync(p)) return;
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
-    const defaultCfg: CliUserConfig = { output: 'text' };
+    const defaultCfg: CliUserConfig = { output: 'text', bareCommand: 'recent' };
     fs.writeFileSync(p, JSON.stringify(defaultCfg, null, 2) + '\n', 'utf8');
   } catch {
     // Ignore (read-only home, sandbox, etc.); loadCliConfig still returns {}.

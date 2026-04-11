@@ -1,6 +1,6 @@
 /**
- * Shared documentation: GUI (HelpView) and CLI (`mnemo --help`) stay in sync.
- * Edit tables here; HelpView imports rows, CLI formats plain text from the same data.
+ * Shared documentation: GUI (HelpView) imports tables from here; CLI help is progressive
+ * (overview + `mnemo help <topic>`).
  */
 
 export const USER_GUIDE_PATHS_HEADERS = ['OS', 'Database', 'Vault'] as const;
@@ -80,97 +80,171 @@ function tableToPlainText(headers: readonly string[], rows: string[][]): string 
   return lines.join('\n');
 }
 
+/** Valid second arguments to \`mnemo help <topic>\`. */
+export const CLI_HELP_TOPICS = [
+  'topics',
+  'vault',
+  'note',
+  'mcp',
+  'mcp-http',
+  'config',
+  'clients',
+  'desktop',
+  'full',
+] as const;
+
+export type CliHelpTopic = (typeof CLI_HELP_TOPICS)[number];
+
 /**
- * Full plain-text help for `mnemo --help` (same facts as in-app Documentation).
+ * Default \`mnemo\` / \`mnemo --help\`: CLI-first, short; no GUI (see \`mnemo help desktop\`).
  */
-export function formatCliHelpText(): string {
+export function formatCliHelpOverview(): string {
+  return `Mnemo — command-line notes
+
+GET STARTED
+  mnemo                  Last 10 notes (by modified time)
+  mnemo add -t "Title" -b "…"   New note with title and body (see mnemo help vault)
+  mnemo add "…"          One argument = body; title = first line of body
+  mnemo compose          Long-form create in $EDITOR / nano (alias: mnemo write; or mnemo add -e)
+  mnemo edit <ref>       Edit in your editor; optional --category to set folder after save
+  mnemo list             Interactive list (↑↓ Enter editor ←→ pages q); optional --pager-size; optional --category
+  mnemo find <words>     Search vault (short: mnemo f …); optional --category Work to limit to that folder
+  mnemo <ref>            Show note by number (from list output)
+  mnemo <uuid>           Show note by id
+  mnemo <word>           If one word and not a command → same as find
+
+OTHER COMMANDS
+  mnemo mcp              MCP server on stdio (editors / agents)
+  mnemo mcp-http         Remote HTTP MCP (Turso / libSQL)
+  mnemo completion …     Shell tab-completion script
+  mnemo note …           Advanced vault subcommands (legacy form; see mnemo help note)
+
+HELP SECTIONS (read these next)
+  mnemo help topics      List section names
+  mnemo help vault       Paths, --db/--vault, every vault command and flag
+  mnemo help mcp         MCP stdio: options, resources, tools
+  mnemo help config      ~/.config/mnemo/cli.json and JSON output
+  mnemo help desktop     Graphical app and keyboard shortcuts
+  mnemo help full        Everything in one screen (long)
+
+Global options: -h, --help (this screen), mnemo help <section>
+`;
+}
+
+function sectionDataLocations(): string {
   const paths = tableToPlainText(USER_GUIDE_PATHS_HEADERS, USER_GUIDE_PATHS_ROWS);
-  const mcpRes = tableToPlainText(MCP_RESOURCES_HEADERS, MCP_RESOURCES_ROWS);
-  const mcpTools = tableToPlainText(MCP_TOOLS_HEADERS, MCP_TOOLS_ROWS);
-  const mcpPrompts = tableToPlainText(MCP_PROMPTS_HEADERS, MCP_PROMPTS_ROWS);
-  const mcpClients = tableToPlainText(MCP_CLIENT_CONFIG_HEADERS, MCP_CLIENT_CONFIG_ROWS);
-  const shortcuts = tableToPlainText(KEYBOARD_SHORTCUTS_HEADERS, KEYBOARD_SHORTCUTS_ROWS);
-
-  return `Mnemo — CLI help (synced with in-app Help → Documentation)
-
-WHAT IS MNEMO
-  Local-first notes in SQLite with FTS5; markdown mirror in a vault directory. Optional libSQL
-  (Turso / self-hosted). MCP exposes the vault to AI clients over stdio or (for HTTP) remote libSQL.
-
-DATA LOCATIONS (GUI + CLI)
+  return `DATA LOCATIONS
 ${paths}
 
   ${MCP_STDIO_DEFAULT_NOTE}
-  Set MNEMO_HOME to your app userData folder so mnemo note, mnemo mcp, and the GUI share one vault.
+  Set MNEMO_HOME to your app userData folder so mnemo, mnemo mcp, and the graphical app share one vault.
+`;
+}
 
-REMOTE DATABASE (CLI / MCP / GUI)
-  Same precedence: --turso-url / --turso-token, then config.json (from GUI Settings), then
+function sectionRemoteDb(): string {
+  return `REMOTE DATABASE (CLI / MCP)
+  Same precedence: --turso-url / --turso-token, then config.json (from the app’s Settings), then
   MNEMO_TURSO_URL, MNEMO_TURSO_TOKEN (or MNEMO_LIBSQL_URL / MNEMO_LIBSQL_AUTH_TOKEN).
+`;
+}
 
-USAGE
-  mnemo mcp [options]              MCP server on stdio (spawns separate process; not the GUI)
-  mnemo mcp-http                   HTTP/SSE MCP (requires TURSO_* + MCP_API_KEY; see below)
-  mnemo note <command> [args…]     Vault commands (below)
-  mnemo completion bash|zsh|fish Print a tab-completion script to stdout (source or save it)
+function sectionVaultCommands(): string {
+  return `VAULT COMMANDS (store: same --db / --vault / Turso as mnemo mcp)
+  Optional JSON: --json / --no-json, or MNEMO_OUTPUT / cli.json (see mnemo help config).
 
-  From repo: mnemo | mnemo gui | mnemo note … | mnemo mcp …
-  mcp-http is only: mnemo mcp-http (handled by bin/mnemo.js).
+  Short forms (preferred)
+    mnemo list …           Same as mnemo note list …
+    mnemo add …            Same as mnemo note new … (add -e opens editor; see compose below)
+    mnemo compose …        Same as mnemo note compose …
+    mnemo write …          Alias of compose
+    mnemo edit …           Same as mnemo note edit …
+    mnemo find …           Same as mnemo note search …
+    mnemo import …         Same as mnemo note import …
+    mnemo graph …          Link graph
+    mnemo categories …     Folder tree
+    mnemo autolink …       Recompute wikilinks
+    mnemo set-category …
+    mnemo category …       rename | promote | demote
 
-CLI CONFIG (optional)
-  Default file: ~/.config/mnemo/cli.json (Linux/macOS) or %APPDATA%\\Mnemo\\cli.json (Windows).
-  Created automatically on first run if missing. Fields: { "output": "text" | "json" }.
-  JSON output for mnemo note also respects --json / --no-json (last wins) and MNEMO_OUTPUT=json.
-
-NOTE COMMANDS
-  Store selection uses the same --db / --vault / Turso rules as MCP (stdio).
-  Optional JSON: append --json (or set config / MNEMO_OUTPUT=json). Use --no-json to force text.
-
-  mnemo note list [-c|--category "path"] [--exact|--shallow] [-v|--verbose] [--json|--no-json]
-    Tab-separated: ref, modified, title, id [+ category if -v].
-    -c       Filter by folder: General, Unassigned, or nested path (Work/Meetings).
-    --exact  With -c: this folder only, not subfolders.
-    -v       Include category column (matches GUI folder names).
+  mnemo note list [--category <folder path>] [--exact|--shallow] [-v|--verbose] [--ids]
+                  [--pager-size N] [--plain] [--from N] [--page N] [--limit N] [--json|--no-json]
+    In a normal terminal, list opens an interactive pager (50 notes per page by default): ↑↓ move, Enter opens the note in your editor, ←→ change page, q quit.
+    Sorted by modified time (newest first). [ref] is the id you pass to mnemo show / mnemo edit.
+    --category, -c   Only notes in that folder. Paths nest with slashes (e.g. Work/Meetings). Same as the first tag in the app.
+    --exact          With --category: this folder only, not subfolders.
+    -v               Verbose: category, id, modified.
+    --ids            Note id (uuid) on each line (for copy/paste).
+    --pager-size N   Rows per page in the interactive pager only (default 50). Does not apply with --json/--limit scripting.
+    --plain, --no-pager   Print all matching lines at once (for scripts or pipes); disables the interactive pager.
+    --from N         1-based position in the sorted list: open the pager at the page containing that note, or with --plain print from that note through the end.
+    --limit, --page-size   With --json or scripting: fixed page size and --page (default 1). Not needed for everyday use.
 
   mnemo note show <ref|uuid>
-    Print one note (markdown body). ref is the stable # from list.
+    Print one note. ref is the stable # from list.
 
-  mnemo note search <query…>
-    Full-text search; prints ref, rank, title, id, snippet.
+  mnemo note search <words…> [--category <folder>] [--exact|--shallow]
+    Full-text search in titles and bodies. Optional --category limits hits to notes filed under that folder (paths use slashes; same rules as list).
+    Text output: [ref] title plus a snippet line.
 
-  mnemo note new --title "…" [--body "…"] [-c|--category "path"]
-    Create a note. Category sets the first tag (folder).
+  mnemo note new | mnemo add
+    --title|-t and --body|-b set title and body explicitly.
+    --body|-b only: title is taken from the first line of the body (trimmed, max 80 chars).
+    One positional: entire string is the body; title from first line of that body.
+    Two or more positionals: first is title, rest joined with newlines is body.
+    -c|--category sets folder (first tag).
+    -e|--edit on new: open external editor instead (same as compose).
+
+  mnemo compose | mnemo write | mnemo note compose | mnemo note write
+    Create a note in an external editor. Editor: MNEMO_EDITOR, then VISUAL, then EDITOR;
+    default nano (non-Windows) or notepad (Windows).
+    Temp file format: line 1 = title, blank line 2, then Markdown body (or line 1 only with body
+    following if there is no blank line — see implementation).
+    Optional: -c|--category for folder. On non-zero editor exit, nothing is saved.
+
+  mnemo edit <ref|uuid> [--category <folder>] | mnemo note edit …
+    Edit title/body in your editor (temp file: line 1 title, blank line, then body). Save to write back.
+    The editor file does not contain folder metadata — use --category to set or move the note’s folder (first tag)
+    after save, same paths as compose (General, Unassigned, Work/Meetings, …). Or run mnemo set-category separately.
 
   mnemo note import <file> [-t|--title "…"] [-c|--category "path"]
-    Import file as body; use "-" as file to read stdin (pipe, not TTY).
+    Import file as body; "-" reads stdin (pipe, not TTY).
 
   mnemo note graph [--format tree|edges|dot|mermaid|json]
-    Wikilink + inferred link graph. Default: tree.
+    Wikilink + inferred links. Default: tree.
 
   mnemo note autolink [-n|--dry-run]
-    Recompute stored outgoing links for all notes from [[wikilinks]] and mentions.
+    Recompute stored outgoing links from [[wikilinks]] and mentions.
 
   mnemo note categories [--flat]
-    Folder tree with counts; --flat: one path per line (tab-separated).
+    Folder tree with counts; --flat: tab-separated paths.
 
   mnemo note set-category <ref|uuid> <category>
-    Set folder (first tag): General, Unassigned, or nested path.
+    Set folder (first tag) without opening an editor: General, Unassigned, or nested path.
 
   mnemo note category rename <oldPath> <newPath>
   mnemo note category promote <path>
   mnemo note category demote <path> --under <parentPath>
 
-  Categories: first tag = folder (General, Unassigned, or nested paths). Same semantics as the GUI.
+  Categories: first tag = folder (General, Unassigned, or nested paths).
+`;
+}
 
-MCP (stdio)
+function sectionNoteLegacy(): string {
+  return `LEGACY FORM: mnemo note <subcommand>
+  Same behavior as the short commands (mnemo list = mnemo note list, etc.).
+  Prefer top-level mnemo add / find / … when scripting; keep mnemo note for old scripts.
+`;
+}
+
+function sectionMcpStdio(): string {
+  const mcpRes = tableToPlainText(MCP_RESOURCES_HEADERS, MCP_RESOURCES_ROWS);
+  const mcpTools = tableToPlainText(MCP_TOOLS_HEADERS, MCP_TOOLS_ROWS);
+  const mcpPrompts = tableToPlainText(MCP_PROMPTS_HEADERS, MCP_PROMPTS_ROWS);
+  return `MCP (stdio)
   mnemo mcp [--db <path>] [--vault <path>] [--turso-url …] [--turso-token …]
-  Defaults if omitted: ./mnemo.db and ./vault in the current working directory. For the same DB as
-  the GUI, pass explicit paths from the table above or set MNEMO_HOME and use:
+  Defaults if omitted: ./mnemo.db and ./vault in the current working directory.
+  For the same DB as the graphical app, pass paths from mnemo help vault or set MNEMO_HOME:
     --db "$MNEMO_HOME/mnemo.db" --vault "$MNEMO_HOME/vault"
-
-MCP (HTTP/SSE)
-  mnemo mcp-http    (needs dist/mnemo-mcp-http.js)
-  Requires: TURSO_URL + TURSO_AUTH_TOKEN (or LIBSQL_*), MCP_API_KEY. Optional: PORT (default 3001).
-  Remote libSQL only — not for local SQLite.
 
 MCP RESOURCES (stdio server)
 ${mcpRes}
@@ -180,23 +254,136 @@ ${mcpTools}
 
 MCP PROMPTS (templates for your client LLM — Mnemo does not run the model)
 ${mcpPrompts}
+`;
+}
 
-CONNECTING MCP CLIENTS
-  Clients spawn a subprocess; they do not attach to the running GUI window.
+function sectionMcpHttp(): string {
+  return `MCP (HTTP/SSE)
+  mnemo mcp-http    (needs dist/mnemo-mcp-http.js)
+  Requires: TURSO_URL + TURSO_AUTH_TOKEN (or LIBSQL_*), MCP_API_KEY. Optional: PORT (default 3001).
+  Remote libSQL only — not for local SQLite.
+`;
+}
+
+function sectionConfig(): string {
+  return `CLI CONFIG
+  File: ~/.config/mnemo/cli.json (Linux/macOS) or %APPDATA%\\Mnemo\\cli.json (Windows).
+  Created on first run if missing.
+
+  Fields:
+    "output": "text" | "json"     Default output style when no flag/env override
+    "bareCommand": "recent" | "gui"   No-args mnemo: list 10 notes vs launch GUI (wrapper only)
+
+  Override bare: MNEMO_CLI_BARE=recent|gui
+  JSON output: --json / --no-json (last wins), MNEMO_OUTPUT=json, or cli.json output.
+
+  Editor (compose / edit): MNEMO_EDITOR overrides VISUAL and EDITOR (standard Unix order after that).
+`;
+}
+
+function sectionClients(): string {
+  const mcpClients = tableToPlainText(MCP_CLIENT_CONFIG_HEADERS, MCP_CLIENT_CONFIG_ROWS);
+  return `CONNECTING MCP CLIENTS
+  Clients spawn a subprocess; they do not attach to a running app window.
 ${mcpClients}
 
-  Published npm package: use command "mnemo", args ["mcp"] (and optional --db/--vault) so Electron
-  runs the bundled CLI. From source you can also use node dist/mnemo-mcp.js with the same args.
+  Published npm package: command "mnemo", args ["mcp"] (optional --db/--vault) via Electron.
+`;
+}
 
-DESKTOP APP
-  mnemo / mnemo gui     Start Electron (dev: electron-forge start)
+function sectionDesktop(): string {
+  const shortcuts = tableToPlainText(KEYBOARD_SHORTCUTS_HEADERS, KEYBOARD_SHORTCUTS_ROWS);
+  return `DESKTOP APP (optional)
+  mnemo gui [args…]     Start the graphical app (dev: electron-forge start; pass args after --)
   npm start
 
-GUI KEYBOARD SHORTCUTS (reference)
-${shortcuts}
+  In-app documentation: Help → Documentation (wikilinks, categories, graph, themes, Markdown).
 
-MORE
-  Repository examples/: CLI, MCP, GUI. In-app: Help → Documentation for wikilinks, categories UI,
-  graph, themes, and Markdown syntax.
+GUI KEYBOARD SHORTCUTS
+${shortcuts}
 `;
+}
+
+function sectionMore(): string {
+  return `MORE
+  Repository examples/: CLI, MCP, GUI. Richer UI help lives inside the app (Help → Documentation).
+`;
+}
+
+/** Full reference in one string (mnemo help full). */
+export function formatCliHelpFull(): string {
+  return [
+    formatCliHelpOverview(),
+    '',
+    '---',
+    '',
+    sectionDataLocations(),
+    '',
+    sectionRemoteDb(),
+    '',
+    sectionVaultCommands(),
+    '',
+    sectionNoteLegacy(),
+    '',
+    sectionMcpStdio(),
+    '',
+    sectionMcpHttp(),
+    '',
+    sectionConfig(),
+    '',
+    sectionClients(),
+    '',
+    sectionDesktop(),
+    '',
+    sectionMore(),
+  ].join('\n');
+}
+
+export function formatCliHelpTopicsIndex(): string {
+  return `Help sections (mnemo help <name>)
+
+  topics       This list
+  vault        Database paths, remote DB, all vault commands
+  note         Legacy mnemo note … only
+  mcp          MCP stdio server
+  mcp-http     MCP over HTTP/SSE
+  config       cli.json and JSON output defaults
+  clients      MCP client config files (Cursor, Claude, …)
+  desktop      Graphical app and keyboard shortcuts
+  full         Entire reference (long)
+`;
+}
+
+/**
+ * Topic help, or null if unknown.
+ */
+export function formatCliHelpTopic(topic: string): string | null {
+  const t = topic.trim().toLowerCase();
+  switch (t) {
+    case 'topics':
+      return formatCliHelpTopicsIndex();
+    case 'vault':
+      return [sectionDataLocations(), sectionRemoteDb(), sectionVaultCommands()].join('\n');
+    case 'note':
+      return sectionNoteLegacy();
+    case 'mcp':
+      return sectionMcpStdio();
+    case 'mcp-http':
+      return sectionMcpHttp();
+    case 'config':
+      return sectionConfig();
+    case 'clients':
+      return sectionClients();
+    case 'desktop':
+      return sectionDesktop();
+    case 'full':
+      return formatCliHelpFull();
+    default:
+      return null;
+  }
+}
+
+/** @deprecated Use formatCliHelpOverview() or formatCliHelpTopic(). */
+export function formatCliHelpText(): string {
+  return formatCliHelpOverview();
 }
