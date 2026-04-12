@@ -97,7 +97,7 @@ Run from `apps/mnemo-mobile` after `eas login` (account must own the Expo projec
 | Goal | Command / notes |
 |------|-------------------|
 | **Android production AAB** | `EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform android --profile production` |
-| **iOS production IPA** | First time: run **without** `--non-interactive` so EAS can validate the Apple **distribution** certificate. `eas build --platform all --non-interactive` fails on iOS until that step succeeds once. **Step-by-step:** [IOS_EAS_BUILD.md](./IOS_EAS_BUILD.md). |
+| **iOS production IPA** | EAS builds on Expo’s cloud (no Mac needed). First-time signing: configure an **App Store Connect API key** in Expo (typical on Linux), or run one **interactive** `eas build -p ios`. See [IOS_EAS_BUILD.md](./IOS_EAS_BUILD.md). |
 | **Submit Android (Play)** | `npx eas-cli submit --platform android --latest` — first-time Google Play upload requires a **Google Service Account** JSON; Expo walks you through it in **interactive** mode (`--non-interactive` is not supported until credentials exist in EAS). |
 | **Submit iOS (ASC)** | `npx eas-cli submit --platform ios --latest` after a successful iOS build (App Store Connect API key or Apple ID as per [Expo submit](https://docs.expo.dev/submit/ios/)). |
 
