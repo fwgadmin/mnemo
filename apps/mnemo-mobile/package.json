@@ -6,7 +6,11 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "eas:build:android": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas-cli build --platform android --profile production",
+    "eas:build:ios": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas-cli build --platform ios --profile production",
+    "eas:submit:android": "eas-cli submit --platform android --latest",
+    "eas:submit:ios": "eas-cli submit --platform ios --latest"
   },
   "dependencies": {
     "expo": "~54.0.33",
@@ -16,6 +20,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "eas-cli": "~18.6.0",
     "typescript": "~5.9.2"
   },
   "private": true

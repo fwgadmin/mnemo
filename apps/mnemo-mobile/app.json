@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ferrowood.mnemo.mobile"
+      "bundleIdentifier": "com.ferrowood.mnemo.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.ferrowood.mnemo.mobile",
@@ -27,6 +30,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "07169f10-ccd4-4cf4-b86a-5ec808b3e777"
+      }
     }
   }
 }

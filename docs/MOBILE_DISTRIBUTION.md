@@ -90,6 +90,21 @@ Document local keystore paths and env vars in your team runbook only—do not co
 
 ---
 
+## EAS quick reference (`apps/mnemo-mobile`)
+
+Run from `apps/mnemo-mobile` after `eas login` (account must own the Expo project).
+
+| Goal | Command / notes |
+|------|-------------------|
+| **Android production AAB** | `EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform android --profile production` |
+| **iOS production IPA** | First time: run **without** `--non-interactive` so EAS can validate the Apple **distribution** certificate. `eas build --platform all --non-interactive` fails on iOS until that step succeeds once. |
+| **Submit Android (Play)** | `npx eas-cli submit --platform android --latest` — first-time Google Play upload requires a **Google Service Account** JSON; Expo walks you through it in **interactive** mode (`--non-interactive` is not supported until credentials exist in EAS). |
+| **Submit iOS (ASC)** | `npx eas-cli submit --platform ios --latest` after a successful iOS build (App Store Connect API key or Apple ID as per [Expo submit](https://docs.expo.dev/submit/ios/)). |
+
+**App Store encryption:** `app.json` includes `ios.infoPlist.ITSAppUsesNonExemptEncryption: false` for apps that only use HTTPS / standard OS crypto (answer “No” to export compliance in App Store Connect if applicable).
+
+---
+
 ## Branching
 
 Prototype and mobile-only work can live on **`mobile/native-prototype`** (or similar) until store-ready; merge policy is a team choice.
