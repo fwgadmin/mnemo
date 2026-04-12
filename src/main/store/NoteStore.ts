@@ -321,6 +321,22 @@ export class LocalNoteStore implements INoteStore {
     });
   }
 
+  listDistinctTenantIds(): Promise<string[]> {
+    const rows = this.db.prepare('SELECT DISTINCT tenant_id FROM notes').all() as { tenant_id: string }[];
+    return Promise.resolve(rows.map(r => r.tenant_id));
+  }
+
+  getNoteCountsByTenant(): Promise<Record<string, number>> {
+    const rows = this.db
+      .prepare('SELECT tenant_id, COUNT(*) AS c FROM notes GROUP BY tenant_id')
+      .all() as { tenant_id: string; c: number }[];
+    const out: Record<string, number> = {};
+    for (const row of rows) {
+      out[row.tenant_id] = Number(row.c);
+    }
+    return Promise.resolve(out);
+  }
+
   async purgeTenantNotes(tenantId: string): Promise<void> {
     const ids = this.db.prepare('SELECT id FROM notes WHERE tenant_id = ?').all(tenantId) as { id: string }[];
     for (const { id } of ids) {

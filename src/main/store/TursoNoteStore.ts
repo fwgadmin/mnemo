@@ -425,6 +425,26 @@ export class TursoNoteStore implements INoteStore {
     });
   }
 
+  async listDistinctTenantIds(): Promise<string[]> {
+    const r = await this.client.execute({
+      sql: 'SELECT DISTINCT tenant_id FROM notes',
+      args: [],
+    });
+    return r.rows.map(row => row['tenant_id'] as string);
+  }
+
+  async getNoteCountsByTenant(): Promise<Record<string, number>> {
+    const r = await this.client.execute({
+      sql: 'SELECT tenant_id, COUNT(*) AS c FROM notes GROUP BY tenant_id',
+      args: [],
+    });
+    const out: Record<string, number> = {};
+    for (const row of r.rows) {
+      out[row['tenant_id'] as string] = Number(row['c'] ?? 0);
+    }
+    return out;
+  }
+
   async purgeTenantNotes(tenantId: string): Promise<void> {
     const r = await this.client.execute({
       sql: 'SELECT id FROM notes WHERE tenant_id = ?',

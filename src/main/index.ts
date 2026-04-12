@@ -309,6 +309,15 @@ function createWindow(): BrowserWindow {
   });
 
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+  // Windows: route keyboard focus into the renderer on first paint (typing may not reach CodeMirror until a relaunch).
+  mainWindow.webContents.once('did-finish-load', () => {
+    try {
+      mainWindow.webContents.focus();
+      mainWindow.focus();
+    } catch {
+      /* ignore */
+    }
+  });
   return mainWindow;
 }
 
@@ -766,7 +775,7 @@ app.whenReady().then(async () => {
   const mainWindow = createWindow();
   applyApplicationMenu(mainWindow);
 
-  // Send any externally-opened file once the renderer has fully loaded
+  // Send any externally-opened file once the first window has fully loaded (separate listener so argv/open-file is only handled once).
   mainWindow.webContents.once('did-finish-load', () => {
     const filePath = pendingExternalFile ?? getArgvFilePath();
     pendingExternalFile = null;
