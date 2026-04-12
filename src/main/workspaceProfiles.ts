@@ -20,8 +20,12 @@ export function getElectronBootstrapRoot(): string {
   return bootstrapRootCache;
 }
 
-function profilesPath(root: string): string {
+export function workspaceProfilesFilePath(root: string): string {
   return path.join(root, 'workspace-profiles.json');
+}
+
+function profilesPath(root: string): string {
+  return workspaceProfilesFilePath(root);
 }
 
 function defaultProfiles(): WorkspaceProfilesState {
@@ -29,6 +33,10 @@ function defaultProfiles(): WorkspaceProfilesState {
     activeWorkspaceId: DEFAULT_WORKSPACE_ID,
     workspaces: [{ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } }],
   };
+}
+
+export function defaultWorkspaceProfilesState(): WorkspaceProfilesState {
+  return defaultProfiles();
 }
 
 function parseStorage(e: Record<string, unknown>): WorkspaceStorage | undefined {
@@ -56,51 +64,78 @@ function parseStorage(e: Record<string, unknown>): WorkspaceStorage | undefined 
   return undefined;
 }
 
+/** Parse workspace-profiles JSON (disk or Turso app_kv). */
+export function parseWorkspaceProfilesState(j: unknown): WorkspaceProfilesState {
+  if (!j || typeof j !== 'object') return defaultProfiles();
+  const o = j as Record<string, unknown>;
+  const active =
+    typeof o.activeWorkspaceId === 'string' && o.activeWorkspaceId.trim().length > 0
+      ? o.activeWorkspaceId.trim()
+      : DEFAULT_WORKSPACE_ID;
+  const wsRaw = o.workspaces;
+  const workspaces: WorkspaceProfilesState['workspaces'] = [];
+  if (Array.isArray(wsRaw)) {
+    for (const x of wsRaw) {
+      if (!x || typeof x !== 'object') continue;
+      const e = x as Record<string, unknown>;
+      const id = typeof e.id === 'string' ? e.id.trim() : '';
+      const name = typeof e.name === 'string' ? e.name.trim() : '';
+      if (id && /^[\w-]+$/.test(id) && id.length <= 64 && name.length <= 128) {
+        const storage = parseStorage(e);
+        workspaces.push({
+          id,
+          name: name || id,
+          ...(storage ? { storage } : {}),
+        });
+      }
+    }
+  }
+  if (!workspaces.some(w => w.id === DEFAULT_WORKSPACE_ID)) {
+    workspaces.unshift({ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } });
+  }
+  if (!workspaces.some(w => w.id === active)) {
+    return defaultProfiles();
+  }
+  return { activeWorkspaceId: active, workspaces };
+}
+
 export function readWorkspaceProfilesFile(root: string): WorkspaceProfilesState {
   const p = profilesPath(root);
   try {
     const raw = fs.readFileSync(p, 'utf-8');
-    const j = JSON.parse(raw) as unknown;
-    if (!j || typeof j !== 'object') return defaultProfiles();
-    const o = j as Record<string, unknown>;
-    const active =
-      typeof o.activeWorkspaceId === 'string' && o.activeWorkspaceId.trim().length > 0
-        ? o.activeWorkspaceId.trim()
-        : DEFAULT_WORKSPACE_ID;
-    const wsRaw = o.workspaces;
-    const workspaces: WorkspaceProfilesState['workspaces'] = [];
-    if (Array.isArray(wsRaw)) {
-      for (const x of wsRaw) {
-        if (!x || typeof x !== 'object') continue;
-        const e = x as Record<string, unknown>;
-        const id = typeof e.id === 'string' ? e.id.trim() : '';
-        const name = typeof e.name === 'string' ? e.name.trim() : '';
-        if (id && /^[\w-]+$/.test(id) && id.length <= 64 && name.length <= 128) {
-          const storage = parseStorage(e);
-          workspaces.push({
-            id,
-            name: name || id,
-            ...(storage ? { storage } : {}),
-          });
-        }
-      }
-    }
-    if (!workspaces.some(w => w.id === DEFAULT_WORKSPACE_ID)) {
-      workspaces.unshift({ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } });
-    }
-    if (!workspaces.some(w => w.id === active)) {
-      return defaultProfiles();
-    }
-    return { activeWorkspaceId: active, workspaces };
+    return parseWorkspaceProfilesState(JSON.parse(raw) as unknown);
   } catch {
     return defaultProfiles();
   }
 }
 
-export function writeWorkspaceProfilesFile(root: string, data: WorkspaceProfilesState): void {
+/** Disk only — use when rehydrating from Turso without double-mirroring. */
+export function writeWorkspaceProfilesFileDiskOnly(root: string, data: WorkspaceProfilesState): void {
   const p = profilesPath(root);
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+/** app_kv key — mirrored with workspace-profiles.json when using Turso (same DB as notes). */
+export const WORKSPACE_PROFILES_KV_KEY = 'workspace_profiles';
+
+function mirrorWorkspaceProfilesToKv(data: WorkspaceProfilesState): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getGlobalStore } = require('./storeResolver') as typeof import('./storeResolver');
+    const st = getGlobalStore();
+    if (st instanceof TursoNoteStore) {
+      void st.setKv(WORKSPACE_PROFILES_KV_KEY, JSON.stringify(data));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Persist to disk and mirror to Turso app_kv when the global store is remote. */
+export function writeWorkspaceProfilesFile(root: string, data: WorkspaceProfilesState): void {
+  writeWorkspaceProfilesFileDiskOnly(root, data);
+  mirrorWorkspaceProfilesToKv(data);
 }
 
 export function ensureWorkspaceProfilesOnDisk(root: string): WorkspaceProfilesState {

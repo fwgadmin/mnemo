@@ -402,6 +402,20 @@ export class TursoNoteStore implements INoteStore {
     return (r.rows[0]?.['value'] as string) ?? null;
   }
 
+  /** Value + row timestamp for last-write-wins sync (e.g. workspace-profiles.json vs app_kv). */
+  async getKvEntry(key: string): Promise<{ value: string; updatedAt: string } | null> {
+    const r = await this.client.execute({
+      sql: 'SELECT value, updated_at FROM app_kv WHERE key = ?',
+      args: [key],
+    });
+    const row = r.rows[0];
+    if (!row) return null;
+    return {
+      value: row['value'] as string,
+      updatedAt: row['updated_at'] as string,
+    };
+  }
+
   async setKv(key: string, value: string): Promise<void> {
     const now = new Date().toISOString();
     await this.client.execute({

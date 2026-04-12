@@ -477,6 +477,8 @@ export default function App() {
         if (fp !== lastVaultFingerprintRef.current) {
           await syncNotesFromStore();
           await refreshMergedPreferencesFromStore();
+          await window.mnemo.workspaceProfiles.list();
+          setVaultSwitcherNonce(n => n + 1);
           const cur = activeNoteRef.current;
           if (cur && !cur.filePath && editorRef.current && !editorRef.current.isDirty()) {
             const n = await window.mnemo.notes.read(cur.id);

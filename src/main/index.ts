@@ -33,11 +33,10 @@ import {
   deleteWorkspaceProfile,
   getElectronBootstrapRoot,
   importFolderIntoWorkspaceProfile,
-  ensureWorkspaceProfilesOnDisk,
-  listWorkspaceProfiles,
   setActiveWorkspace,
   setWorkspaceProfileStorage,
 } from './workspaceProfiles';
+import { readWorkspaceProfilesMerged } from './workspaceProfilesSync';
 import { runLegacyWorkspaceMigration } from './workspaceMigration';
 import {
   closeDedicatedStores,
@@ -284,7 +283,7 @@ async function initStore(): Promise<void> {
     store = new LocalNoteStore(dbPath, vaultPath);
   }
   setGlobalStore(store);
-  const profiles = ensureWorkspaceProfilesOnDisk(root);
+  const profiles = await readWorkspaceProfilesMerged(store, root);
   setActiveWorkspaceId(profiles.activeWorkspaceId);
 }
 
@@ -627,9 +626,11 @@ function registerIpcHandlers(): void {
     return { ok: true as const, path: path.resolve(result.filePaths[0]) };
   });
 
-  ipcMain.handle(IPC.WORKSPACE_PROFILES_LIST, () => {
+  ipcMain.handle(IPC.WORKSPACE_PROFILES_LIST, async () => {
     const root = getElectronBootstrapRoot();
-    return { ok: true as const, localMode: true, profiles: listWorkspaceProfiles(root) };
+    const gs = getGlobalStore();
+    const profiles = await readWorkspaceProfilesMerged(gs, root);
+    return { ok: true as const, localMode: true, profiles };
   });
 
   ipcMain.handle(IPC.WORKSPACE_PROFILES_CREATE, async (_event, name: unknown, importFolder: unknown) => {
@@ -674,7 +675,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.WORKSPACE_PROFILES_ARCHIVE, async (_event, id: unknown) => {
     const root = getElectronBootstrapRoot();
     const wid = typeof id === 'string' ? id : '';
-    const profilesBefore = listWorkspaceProfiles(root);
+    const profilesBefore = await readWorkspaceProfilesMerged(getGlobalStore(), root);
     const entry = profilesBefore.workspaces.find(w => w.id === wid);
     const result = archiveWorkspaceProfile(root, wid);
     if (!result) {
@@ -704,7 +705,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.WORKSPACE_PROFILES_DELETE, async (_event, id: unknown) => {
     const root = getElectronBootstrapRoot();
     const wid = typeof id === 'string' ? id : '';
-    const profilesBefore = listWorkspaceProfiles(root);
+    const profilesBefore = await readWorkspaceProfilesMerged(getGlobalStore(), root);
     const entry = profilesBefore.workspaces.find(w => w.id === wid);
     const result = deleteWorkspaceProfile(root, wid);
     if (!result) {
