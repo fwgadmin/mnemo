@@ -8,11 +8,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "eas:build:android": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas-cli build --platform android --profile production",
-    "eas:build:ios": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas-cli build --platform ios --profile production",
-    "eas:build:ios:simulator": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas-cli build --platform ios --profile development-simulator",
-    "eas:submit:android": "eas-cli submit --platform android --latest",
-    "eas:submit:ios": "eas-cli submit --platform ios --latest"
+    "eas:build:android": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas build --platform android --profile production",
+    "eas:build:ios": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas build --platform ios --profile production",
+    "eas:build:ios:simulator": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas build --platform ios --profile development-simulator",
+    "eas:submit:android": "eas submit --platform android --latest",
+    "eas:submit:ios": "eas submit --platform ios --latest"
   },
   "dependencies": {
     "expo": "~54.0.33",

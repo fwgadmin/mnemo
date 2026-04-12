@@ -13,7 +13,7 @@ This document describes how to ship the **native** mobile app in [`apps/mnemo-mo
 
 [EAS Build](https://docs.expo.dev/build/introduction/) produces signed **IPA** (iOS) and **AAB** (Android) in the cloud so every developer does not need a full local Xcode/Android signing setup for every release.
 
-1. Install EAS CLI: `npm install -g eas-cli`
+1. EAS CLI: use the project’s `eas-cli` devDependency (`npx eas …` from `apps/mnemo-mobile`) or `npm install -g eas-cli` for a global `eas` command.
 2. In `apps/mnemo-mobile`, run `eas login` and `eas build:configure`
 3. Add `eas.json` profiles (`development`, `preview`, `production`) as needed.
 
@@ -97,10 +97,10 @@ Run from `apps/mnemo-mobile` after `eas login` (account must own the Expo projec
 | Goal | Command / notes |
 |------|-------------------|
 | **iOS Simulator dev client** | `cd apps/mnemo-mobile && npm run eas:build:ios:simulator` — profile `development-simulator` (`expo-dev-client` + `ios.simulator: true`). Install the `.app` on a Mac Simulator; then `npm run start:dev`. |
-| **Android production AAB** | `EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform android --profile production` |
+| **Android production AAB** | `EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas build --platform android --profile production` |
 | **iOS production IPA** | First time: run **without** `--non-interactive` so EAS can validate the Apple **distribution** certificate. `eas build --platform all --non-interactive` fails on iOS until that step succeeds once. **Step-by-step:** [IOS_EAS_BUILD.md](./IOS_EAS_BUILD.md). |
-| **Submit Android (Play)** | `npx eas-cli submit --platform android --latest` — first-time Google Play upload requires a **Google Service Account** JSON; Expo walks you through it in **interactive** mode (`--non-interactive` is not supported until credentials exist in EAS). |
-| **Submit iOS (ASC)** | `npx eas-cli submit --platform ios --latest` after a successful iOS build (App Store Connect API key or Apple ID as per [Expo submit](https://docs.expo.dev/submit/ios/)). |
+| **Submit Android (Play)** | `npx eas submit --platform android --latest` — first-time Google Play upload requires a **Google Service Account** JSON; Expo walks you through it in **interactive** mode (`--non-interactive` is not supported until credentials exist in EAS). |
+| **Submit iOS (ASC)** | `npx eas submit --platform ios --latest` after a successful iOS build (App Store Connect API key or Apple ID as per [Expo submit](https://docs.expo.dev/submit/ios/)). |
 
 **App Store encryption:** `app.json` includes `ios.infoPlist.ITSAppUsesNonExemptEncryption: false` for apps that only use HTTPS / standard OS crypto (answer “No” to export compliance in App Store Connect if applicable).
 

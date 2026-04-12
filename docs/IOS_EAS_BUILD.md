@@ -8,7 +8,7 @@ What blocked **non-interactive** builds earlier is **Apple signing not yet valid
 
 1. **Apple Developer Program** (paid).
 2. **Bundle ID** `com.ferrowood.mnemo.mobile` in [Identifiers](https://developer.apple.com/account/resources/identifiers/list) (explicit App ID, matches `app.json`).
-3. **Expo login:** `cd apps/mnemo-mobile && npx eas-cli whoami`.
+3. **Expo login:** `cd apps/mnemo-mobile && npx eas whoami` (the `eas` CLI comes from the `eas-cli` devDependency).
 
 ---
 
@@ -24,7 +24,7 @@ Then from Linux:
 
 ```bash
 cd apps/mnemo-mobile
-EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform ios --profile production --non-interactive
+EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas build --platform ios --profile production --non-interactive
 ```
 
 If that still complains about credentials, use Option B once, or finish any remaining steps the dashboard shows under **Credentials**.
@@ -37,7 +37,7 @@ Use a shell with **interactive stdin** (not a headless agent). From the repo:
 
 ```bash
 cd apps/mnemo-mobile
-EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform ios --profile production
+EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas build --platform ios --profile production
 ```
 
 **Do not** pass `--non-interactive` on this run. Follow prompts to sign in with Apple (browser / 2FA as needed). After credentials are stored on Expo, later builds can use `--non-interactive`.
@@ -53,6 +53,6 @@ Wrapper script (same thing):
 ## After a successful build
 
 - Logs and artifacts: [Expo → mnemo-mobile → Builds](https://expo.dev/accounts/fwgadmin/projects/mnemo-mobile/builds).
-- **TestFlight / App Store:** `npx eas-cli submit --platform ios --latest` (configure [ASC API key for submit](https://docs.expo.dev/submit/ios/) if you have not already).
+- **TestFlight / App Store:** `npx eas submit --platform ios --latest` (configure [ASC API key for submit](https://docs.expo.dev/submit/ios/) if you have not already).
 
 See also [MOBILE_DISTRIBUTION.md](./MOBILE_DISTRIBUTION.md).
