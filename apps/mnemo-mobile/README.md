@@ -12,6 +12,11 @@ npm run start
 
 Then press `i` / `a` for iOS simulator or Android emulator, or scan the QR code with [Expo Go](https://expo.dev/go).
 
+### Dev client on a **physical phone** (EAS internal build)
+
+- **iOS:** Your device **UDID must be registered** before the build, or install will fail or refuse to run. Run `npx eas device:create` in this folder, then **rebuild** with `npx eas build --platform ios --profile development`. See **[docs/TROUBLESHOOTING_DEV_INSTALL.md](./docs/TROUBLESHOOTING_DEV_INSTALL.md)**.
+- **Android:** The `development` profile builds an **APK** for easier sideloading. If install still fails, see the same doc.
+
 ### Development client + iOS Simulator (EAS)
 
 The app uses **`expo-dev-client`** (not Expo Go) for native debugging. To install a **simulator** `.app` built in the cloud:
