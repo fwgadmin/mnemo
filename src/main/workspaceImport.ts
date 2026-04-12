@@ -81,6 +81,8 @@ export async function syncWorkspaceFolder(
   store: INoteStore,
   rootAbs: string,
   mapPath: string,
+  /** When set, new/updated notes use this tenant (inherit workspaces). */
+  tenantId?: string,
 ): Promise<WorkspaceSyncResult> {
   const rootResolved = path.resolve(rootAbs);
   if (!fs.existsSync(rootResolved) || !fs.statSync(rootResolved).isDirectory()) {
@@ -123,7 +125,7 @@ export async function syncWorkspaceFolder(
       delete map[rel];
     }
 
-    const created = await store.create({ title, body, tags });
+    const created = await store.create({ title, body, tags, tenantId });
     map[rel] = created.id;
     imported++;
   }

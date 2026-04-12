@@ -7,23 +7,23 @@ export const USER_GUIDE_PATHS_HEADERS = ['OS', 'Database', 'Vault'] as const;
 
 /** Default paths for GUI, CLI note commands, and reference for MCP --db/--vault. */
 export const USER_GUIDE_PATHS_ROWS: string[][] = [
-  ['Windows', '%APPDATA%\\Mnemo\\mnemo.db', '%APPDATA%\\Mnemo\\vault'],
-  ['macOS', '~/Library/Application Support/Mnemo/mnemo.db', '~/Library/Application Support/Mnemo/vault'],
-  ['Linux (Electron GUI)', '~/.config/Mnemo/mnemo.db', '~/.config/Mnemo/vault'],
-  ['Linux (mnemo note CLI)', '~/.local/share/mnemo/mnemo.db', '~/.local/share/mnemo/vault'],
+  ['Windows', '%APPDATA%\\mnemo-note\\mnemo.db', '…\\vault (same folder as bootstrap userData)'],
+  ['macOS', '~/Library/Application Support/mnemo-note/mnemo.db', '…/vault'],
+  ['Linux (GUI + mnemo CLI)', '~/.config/mnemo-note/mnemo.db', '…/vault'],
+  ['Override', 'Set MNEMO_HOME to a folder; single mnemo.db at that root', ''],
 ];
 
-/** MCP stdio uses ./mnemo.db + ./vault in cwd unless --db / --vault are passed. */
+/** MCP stdio without --db: same bootstrap paths as `mnemo note` (MNEMO_HOME / default userData), not cwd ./mnemo.db. */
 export const MCP_STDIO_DEFAULT_NOTE =
-  'MCP stdio without --db/--vault: SQLite ./mnemo.db and vault ./vault in the current working directory (not the same defaults as mnemo note).';
+  'MCP stdio without --db/--turso: uses the same bootstrap SQLite as mnemo note (see DATA LOCATIONS). Pass --workspace <id> to match a GUI vault when using the shared database.';
 
 export const MCP_RESOURCES_HEADERS = ['URI', 'Description'] as const;
 export const MCP_RESOURCES_ROWS: string[][] = [
-  ['mnemo://notes', 'JSON list of all notes'],
+  ['mnemo://notes', 'JSON list of notes in the active MCP workspace (tenant scope)'],
   ['mnemo://notes/{id}', 'Single note content as Markdown'],
   [
     'mnemo://preferences',
-    'UI preferences JSON (theme, layout, grouped categories, category colors) — same as Settings / ui-preferences.json',
+    'Merged UI preferences for the active workspace (disk + Turso app_kv); namespaced per workspace id like the Settings UI',
   ],
 ];
 
@@ -45,8 +45,14 @@ export const MCP_TOOLS_ROWS: string[][] = [
   ['get_backlinks', 'Get notes linking to a given note (id or ref)'],
   ['link_notes', 'Set outgoing wikilinks from source to targets'],
   ['get_graph', 'Full note graph (nodes include id, title, ref; edges are links)'],
-  ['get_ui_preferences', 'Read merged UI preferences (same as mnemo://preferences)'],
-  ['set_ui_preferences', 'Merge partial UI preferences (theme, layoutOverride, grouped, categoryColors, …)'],
+  [
+    'get_ui_preferences',
+    'Read merged UI prefs for the active workspace (same scope as Settings; per-workspace when using shared DB + profiles)',
+  ],
+  [
+    'set_ui_preferences',
+    'Merge partial UI prefs for the active workspace (theme, layout, Markdown overrides, IDE tab order, …)',
+  ],
 ];
 
 export const MCP_PROMPTS_HEADERS = ['Prompt', 'Description'] as const;
@@ -79,7 +85,7 @@ export const KEYBOARD_SHORTCUTS_ROWS: string[][] = [
   ['Ctrl+Shift+H', 'Toggle note header'],
   ['Ctrl+Shift+L', 'Toggle line numbers'],
   ['Ctrl+Shift+N', 'Toggle note index numbers (#refs)'],
-  ['Ctrl+,', 'Settings (themes, layout)'],
+  ['Ctrl+,', 'Settings (General, Markdown, Workspace, Database tabs)'],
 ];
 
 function tableToPlainText(headers: readonly string[], rows: string[][]): string {
@@ -94,6 +100,7 @@ function tableToPlainText(headers: readonly string[], rows: string[][]): string 
 export const CLI_HELP_TOPICS = [
   'topics',
   'vault',
+  'workspace',
   'note',
   'mcp',
   'mcp-http',
@@ -124,14 +131,19 @@ GET STARTED
   mnemo <word>           If one word and not a command → same as find
 
 OTHER COMMANDS
-  mnemo mcp              MCP server on stdio (editors / agents)
+  mnemo workspace …      List / create / switch / archive / delete vault profiles (see mnemo help workspace)
+  mnemo mcp              MCP server on stdio (editors / agents; optional --workspace)
   mnemo mcp-http         Remote HTTP MCP (Turso / libSQL)
   mnemo completion …     Shell tab-completion script
   mnemo note …           Advanced vault subcommands (legacy form; see mnemo help note)
 
+  Global flags on note commands (after mnemo / before subcommands): --workspace <id>, --db, --vault,
+  --turso-url, --turso-token (see mnemo help vault).
+
 HELP SECTIONS (read these next)
   mnemo help topics      List section names
   mnemo help vault       Paths, --db/--vault, every vault command and flag
+  mnemo help workspace   Vault profiles, tenant id, workspace-profiles.json, CLI commands
   mnemo help mcp         MCP stdio: options, resources, tools
   mnemo help config      ~/.config/mnemo/cli.json and JSON output
   mnemo help desktop     Graphical app and keyboard shortcuts
@@ -147,7 +159,15 @@ function sectionDataLocations(): string {
 ${paths}
 
   ${MCP_STDIO_DEFAULT_NOTE}
-  Set MNEMO_HOME to your app userData folder so mnemo, mnemo mcp, and the graphical app share one vault.
+  Set MNEMO_HOME to your app userData folder so mnemo, mnemo mcp, and the graphical app share one database.
+
+  Next to mnemo.db (same bootstrap folder):
+    workspace-profiles.json     Active workspace id, vault names/ids, optional per-vault storage overrides
+    config.json                 Global libSQL URL/token (Settings → Database tab)
+    ui-preferences.json         Default workspace UI state; ui-preferences.<workspaceId>.json for other vaults
+  Workspaces use tenant_id = workspace id in the shared DB unless a profile uses dedicated SQLite/libSQL (tenant "default" in that file).
+
+  Legacy ~/.config/mnemo may still apply when it holds Turso credentials and mnemo-note does not (same as the desktop app).
 `;
 }
 
@@ -155,11 +175,49 @@ function sectionRemoteDb(): string {
   return `REMOTE DATABASE (CLI / MCP)
   Same precedence: --turso-url / --turso-token, then config.json (from the app’s Settings), then
   MNEMO_TURSO_URL, MNEMO_TURSO_TOKEN (or MNEMO_LIBSQL_URL / MNEMO_LIBSQL_AUTH_TOKEN).
+  Remote mode uses a flat vault folder under the bootstrap root (not workspaces/<id>/).
+`;
+}
+
+function sectionWorkspace(): string {
+  return `WORKSPACE (vault profiles)
+  Same bootstrap root as the GUI: MNEMO_HOME, or the default Electron userData for mnemo-note,
+  with the same legacy ~/.config/mnemo redirect when that folder holds Turso credentials.
+
+  Active workspace (in workspace-profiles.json) sets which tenant_id applies for inherit-mode vaults: tenant_id equals
+  the profile id. Per-vault dedicated SQLite or libSQL URLs are stored in that JSON (edited in the GUI under
+  Settings → Workspace tab → Storage…); there is no separate CLI subcommand for storage overrides.
+
+  mnemo workspace list
+    Print id, name, and which workspace is active.
+
+  mnemo workspace new <name>
+    Create an empty workspace profile. Does not change the active workspace (use switch). The graphical app can
+    create a vault and switch in one step from the Workspace tab.
+
+  mnemo workspace switch <id>
+    Set the active workspace. Commands below then use this id without repeating --workspace:
+    • mnemo note … / mnemo list / mnemo find … when --db is omitted (bootstrap DB)
+    • mnemo mcp when --db is omitted (stdio MCP uses the same profiles file)
+
+  mnemo workspace archive <id>
+    Non-default, non-active workspace only; removes the profile and purges that workspace’s notes (and deletes
+    dedicated SQLite files if the profile used dedicated storage).
+
+  mnemo workspace delete <id>
+    Same constraints as archive; permanent removal.
+
+  Optional: --json / --no-json (see mnemo help config).
 `;
 }
 
 function sectionVaultCommands(): string {
   return `VAULT COMMANDS (store: same --db / --vault / Turso as mnemo mcp)
+  Without --db: uses bootstrap mnemo.db (see DATA LOCATIONS).
+  --workspace <id>  Use this vault’s tenant for the command (must match an id in workspace-profiles.json). If omitted,
+                     uses the active workspace from that file (same as mnemo workspace switch).
+  With --db <path>  Opens that SQLite file only; tenant is always "default" inside that file (--workspace is ignored).
+
   Optional JSON: --json / --no-json, or MNEMO_OUTPUT / cli.json (see mnemo help config).
 
   Short forms (preferred)
@@ -251,10 +309,14 @@ function sectionMcpStdio(): string {
   const mcpTools = tableToPlainText(MCP_TOOLS_HEADERS, MCP_TOOLS_ROWS);
   const mcpPrompts = tableToPlainText(MCP_PROMPTS_HEADERS, MCP_PROMPTS_ROWS);
   return `MCP (stdio)
-  mnemo mcp [--db <path>] [--vault <path>] [--turso-url …] [--turso-token …]
-  Defaults if omitted: ./mnemo.db and ./vault in the current working directory.
-  For the same DB as the graphical app, pass paths from mnemo help vault or set MNEMO_HOME:
-    --db "$MNEMO_HOME/mnemo.db" --vault "$MNEMO_HOME/vault"
+  mnemo mcp [--db <path>] [--vault <path>] [--turso-url …] [--turso-token …] [--workspace <id>]
+  Without --db/--turso: uses the same bootstrap DB and workspace-profiles.json as the GUI (set MNEMO_HOME to match).
+    --workspace <id>  Optional; same meaning as on mnemo note — pick tenant for shared DB. Omit to use active vault.
+  With --db: opens only that file (--workspace ignored; tenant "default").
+  With global Turso credentials (config.json or env): same remote DB as Settings → Database; --workspace still applies.
+
+  Minimal client args (shared DB, active vault):  node …/mnemo-mcp.js
+  Explicit file pair:  --db "$MNEMO_HOME/mnemo.db" --vault "$MNEMO_HOME/vault"
 
 MCP RESOURCES (stdio server)
 ${mcpRes}
@@ -297,7 +359,10 @@ function sectionClients(): string {
   Clients spawn a subprocess; they do not attach to a running app window.
 ${mcpClients}
 
-  Published npm package: command "mnemo", args ["mcp"] (optional --db/--vault) via Electron.
+  Published npm package: command "mnemo", args ["mcp"] (optional --db/--vault/--workspace/--turso-*) via Electron.
+
+  Example args for the same vault as the GUI without listing paths:  "mcp"  (or "mcp", "--workspace", "my-vault-id")
+  when MNEMO_HOME points at app userData.
 `;
 }
 
@@ -309,7 +374,15 @@ function sectionDesktop(): string {
 
   Default UI for new installs: Dark (IDE) — sidebar + editor with tabs. Change theme or layout in Settings (Ctrl+,).
 
-  In-app documentation: Help → Documentation (wikilinks, categories, graph, themes, Markdown).
+  Settings (Ctrl+,) is organized into tabs:
+    General     Theme, layout, note #refs, category color tips
+    Markdown    Editor font/CSS variables for preview
+    Workspace   Folder sync (markdown import), vault list, storage overrides, create/archive/delete vaults
+    Database    libSQL URL/token, save/reconnect, import local → remote, hosted/self-hosted help
+
+  In-app documentation: Help → Documentation (this file in the app).
+
+  Vault switcher: menu bar (or File → New / Manage Vault Workspaces). Matches active workspace in workspace-profiles.json.
 
 GUI KEYBOARD SHORTCUTS
 ${shortcuts}
@@ -333,6 +406,8 @@ export function formatCliHelpFull(): string {
     '',
     sectionRemoteDb(),
     '',
+    sectionWorkspace(),
+    '',
     sectionVaultCommands(),
     '',
     sectionNoteLegacy(),
@@ -355,13 +430,14 @@ export function formatCliHelpTopicsIndex(): string {
   return `Help sections (mnemo help <name>)
 
   topics       This list
-  vault        Database paths, remote DB, all vault commands
+  vault        Paths, --db/--vault/--workspace, remote env, all note commands
+  workspace    workspace-profiles.json, mnemo workspace …, tenants
   note         Legacy mnemo note … only
-  mcp          MCP stdio server
+  mcp          MCP stdio: --workspace, resources, tools, prompts
   mcp-http     MCP over HTTP/SSE
   config       cli.json and JSON output defaults
   clients      MCP client config files (Cursor, Claude, …)
-  desktop      Graphical app and keyboard shortcuts
+  desktop      GUI: Settings tabs, vault switcher, shortcuts
   full         Entire reference (long)
 `;
 }
@@ -376,6 +452,8 @@ export function formatCliHelpTopic(topic: string): string | null {
       return formatCliHelpTopicsIndex();
     case 'vault':
       return [sectionDataLocations(), sectionRemoteDb(), sectionVaultCommands()].join('\n');
+    case 'workspace':
+      return [sectionDataLocations(), sectionWorkspace()].join('\n');
     case 'note':
       return sectionNoteLegacy();
     case 'mcp':

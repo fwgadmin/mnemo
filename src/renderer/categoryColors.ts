@@ -33,3 +33,21 @@ export function readCategoryColors(): Record<string, string> {
     return {};
   }
 }
+
+export function readCategoryColorStamps(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem('mnemo.categoryColorStamps');
+    if (!raw) return {};
+    const j = JSON.parse(raw) as unknown;
+    if (!j || typeof j !== 'object') return {};
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(j)) {
+      if (typeof k === 'string' && typeof v === 'number' && Number.isFinite(v) && v >= 0) {
+        out[k] = v;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}

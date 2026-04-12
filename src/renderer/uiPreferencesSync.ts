@@ -1,6 +1,6 @@
 import type { MnemoUiPreferences } from '../shared/types';
 import { DEFAULT_THEME_ID } from './theme/themes';
-import { readCategoryColors } from './categoryColors';
+import { readCategoryColors, readCategoryColorStamps } from './categoryColors';
 
 function loadBool(key: string, def: boolean): boolean {
   const v = localStorage.getItem(`mnemo.${key}`);
@@ -41,6 +41,7 @@ export function gatherLocalStoragePreferences(): MnemoUiPreferences {
     grouped: localStorage.getItem('mnemo.grouped') !== 'false',
     categoryScopeSubtree: localStorage.getItem('mnemo.categoryScopeSubtree') !== 'false',
     categoryColors: readCategoryColors(),
+    categoryColorStamps: readCategoryColorStamps(),
     ideTabIds: readIdeTabIds(),
   };
 }

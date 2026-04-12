@@ -33,6 +33,7 @@ function idOrRefError(args: { id?: string; ref?: number }): string | null {
 async function resolveToNoteId(
   store: INoteStore,
   args: { id?: string; ref?: number },
+  tenantId: string,
 ): Promise<{ ok: true; id: string } | { ok: false; text: string }> {
   const hasId = args.id != null && args.id.length > 0;
   const hasRef = args.ref != null;
@@ -44,10 +45,16 @@ async function resolveToNoteId(
     if (!n) return { ok: false, text: `Note ${args.id} not found` };
     return { ok: true, id: n.id };
   }
-  const n = await store.readByRef(args.ref!);
+  const n = await store.readByRef(args.ref!, tenantId);
   if (!n) return { ok: false, text: `No note with ref ${args.ref}` };
   return { ok: true, id: n.id };
 }
+
+export type StoreContextResolver = () => Promise<{
+  store: INoteStore;
+  tenantId: string;
+  workspaceId: string;
+}>;
 
 function sortListLikeCli(notes: NoteListItem[]): NoteListItem[] {
   return [...notes].sort((a, b) => {
@@ -61,7 +68,18 @@ function sortListLikeCli(notes: NoteListItem[]): NoteListItem[] {
  * Creates and configures the Mnemo MCP server.
  * Exposes notes as resources, CRUD + search as tools, and prompt templates.
  */
-export function createMcpServer(store: INoteStore): McpServer {
+export function createMcpServer(
+  storeOrResolver: INoteStore | StoreContextResolver,
+): McpServer {
+  const resolve: StoreContextResolver =
+    typeof storeOrResolver === 'function'
+      ? storeOrResolver
+      : async () => ({
+          store: storeOrResolver,
+          tenantId: 'default',
+          workspaceId: 'default',
+        });
+
   const mcp = new McpServer(
     { name: 'mnemo', version: '0.1.0' },
     { capabilities: { resources: {}, tools: {}, prompts: {} } },
@@ -74,13 +92,16 @@ export function createMcpServer(store: INoteStore): McpServer {
     'notes-list',
     'mnemo://notes',
     { description: 'List of all notes in the vault', mimeType: 'application/json' },
-    async () => ({
-      contents: [{
-        uri: 'mnemo://notes',
-        mimeType: 'application/json',
-        text: JSON.stringify(await store.list(), null, 2),
-      }],
-    }),
+    async () => {
+      const { store, tenantId } = await resolve();
+      return {
+        contents: [{
+          uri: 'mnemo://notes',
+          mimeType: 'application/json',
+          text: JSON.stringify(await store.list(tenantId), null, 2),
+        }],
+      };
+    },
   );
 
   mcp.resource(
@@ -91,13 +112,16 @@ export function createMcpServer(store: INoteStore): McpServer {
         'Mnemo UI preferences (theme, layout, Markdown CSS overrides, category colors, IDE tabs, …) — merged from disk + Turso app_kv when connected; same shape as ui-preferences.json',
       mimeType: 'application/json',
     },
-    async () => ({
-      contents: [{
-        uri: 'mnemo://preferences',
-        mimeType: 'application/json',
-        text: JSON.stringify(await readUiPreferencesMerged(store), null, 2),
-      }],
-    }),
+    async () => {
+      const { store, workspaceId } = await resolve();
+      return {
+        contents: [{
+          uri: 'mnemo://preferences',
+          mimeType: 'application/json',
+          text: JSON.stringify(await readUiPreferencesMerged(store, undefined, workspaceId), null, 2),
+        }],
+      };
+    },
   );
 
   // Dynamic resource: read a single note by ID
@@ -106,6 +130,7 @@ export function createMcpServer(store: INoteStore): McpServer {
     new ResourceTemplate('mnemo://notes/{id}', { list: undefined }),
     { description: 'A single note by ID', mimeType: 'text/markdown' },
     async (uri, variables) => {
+      const { store } = await resolve();
       const id = String(variables.id);
       const note = await store.read(id);
       if (!note) {
@@ -133,11 +158,13 @@ export function createMcpServer(store: INoteStore): McpServer {
       hideHeader: z.boolean().optional(),
     },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const note = await store.create({
         title: args.title,
         body: args.body,
         tags: args.tags,
         hideHeader: args.hideHeader,
+        tenantId,
       });
       return { content: [{ type: 'text', text: JSON.stringify(note, null, 2) }] };
     },
@@ -148,6 +175,7 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Read a note by UUID id or by numeric ref (same refs as list/show). Provide exactly one of id or ref.',
     idOrRefShape,
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const bad = idOrRefError(args);
       if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
       let note = null;
@@ -157,7 +185,7 @@ export function createMcpServer(store: INoteStore): McpServer {
           return { content: [{ type: 'text', text: `Note ${args.id} not found` }], isError: true };
         }
       } else if (args.ref != null) {
-        note = await store.readByRef(args.ref);
+        note = await store.readByRef(args.ref, tenantId);
         if (!note) {
           return { content: [{ type: 'text', text: `No note with ref ${args.ref}` }], isError: true };
         }
@@ -179,9 +207,10 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Update an existing note (title, body, tags, hideHeader). Target by UUID id or numeric ref. The first tag is the category folder (same rules as create_note).',
     updateNoteShape,
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const bad = idOrRefError(args);
       if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
-      const resolved = await resolveToNoteId(store, { id: args.id, ref: args.ref });
+      const resolved = await resolveToNoteId(store, { id: args.id, ref: args.ref }, tenantId);
       if (!resolved.ok) {
         return { content: [{ type: 'text', text: resolved.text }], isError: true };
       }
@@ -204,9 +233,10 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Delete a note by UUID id or numeric ref',
     idOrRefShape,
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const bad = idOrRefError(args);
       if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
-      const resolved = await resolveToNoteId(store, args);
+      const resolved = await resolveToNoteId(store, args, tenantId);
       if (!resolved.ok) {
         return { content: [{ type: 'text', text: resolved.text }], isError: true };
       }
@@ -223,7 +253,8 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Full-text search across all notes',
     { query: z.string() },
     async (args) => {
-      const results = await store.search(args.query);
+      const { store, tenantId, workspaceId } = await resolve();
+      const results = await store.search(args.query, tenantId);
       return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
     },
   );
@@ -238,6 +269,7 @@ export function createMcpServer(store: INoteStore): McpServer {
       limit: z.number().int().positive().optional(),
     },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const includeDescendants = args.includeDescendants ?? true;
       if (args.page != null && args.limit == null) {
         return {
@@ -245,7 +277,7 @@ export function createMcpServer(store: INoteStore): McpServer {
           isError: true,
         };
       }
-      let notes = await store.list();
+      let notes = await store.list(tenantId);
       if (args.categoryPath != null && args.categoryPath.trim() !== '') {
         const trimmed = args.categoryPath.trim();
         const folderPath = normalizePath(trimmed) || GENERAL_PATH;
@@ -293,8 +325,9 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Category tree with note counts (same data as `mnemo note categories`). Use flat:true for path\\tdirect\\tsubtree style rows.',
     { flat: z.boolean().optional() },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const flat = args.flat ?? false;
-      const notes = await store.list();
+      const notes = await store.list(tenantId);
       const tree = exportCategoryTreeJson(notes, flat);
       return { content: [{ type: 'text', text: JSON.stringify(tree, null, 2) }] };
     },
@@ -310,13 +343,14 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Move a note to a category folder (General, Unassigned, or nested path like Work/Meetings). Same as `mnemo note set-category`. Preserves secondary tags.',
     setCategoryShape,
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const bad = idOrRefError(args);
       if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
-      const resolved = await resolveToNoteId(store, { id: args.id, ref: args.ref });
+      const resolved = await resolveToNoteId(store, { id: args.id, ref: args.ref }, tenantId);
       if (!resolved.ok) {
         return { content: [{ type: 'text', text: resolved.text }], isError: true };
       }
-      const vaultList = await store.list();
+      const vaultList = await store.list(tenantId);
       try {
         await setNoteCategory(store, vaultList, resolved.id, args.categoryPath);
       } catch (e) {
@@ -333,8 +367,9 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Rename a category folder for all notes in that folder (same as `mnemo note category rename`).',
     { oldPath: z.string(), newPath: z.string() },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       try {
-        const r = await renameCategoryFolder(store, args.oldPath, args.newPath, { silent: true });
+        const r = await renameCategoryFolder(store, args.oldPath, args.newPath, { silent: true, tenantId });
         return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -348,8 +383,9 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Move a category one level toward General (`mnemo note category promote`).',
     { path: z.string() },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       try {
-        const r = await promoteCategoryFolder(store, args.path, { silent: true });
+        const r = await promoteCategoryFolder(store, args.path, { silent: true, tenantId });
         return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -363,8 +399,9 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Nest a category under a parent (`mnemo note category demote`).',
     { folderPath: z.string(), parentPath: z.string() },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       try {
-        const r = await demoteCategoryFolder(store, args.folderPath, args.parentPath, { silent: true });
+        const r = await demoteCategoryFolder(store, args.folderPath, args.parentPath, { silent: true, tenantId });
         return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -378,11 +415,12 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Resolve a note title to its UUID (wikilink target resolution; first exact match in vault).',
     { title: z.string() },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const raw = args.title.trim();
       if (!raw) {
         return { content: [{ type: 'text', text: 'Empty title' }], isError: true };
       }
-      const id = await store.resolveTitle(raw);
+      const id = await store.resolveTitle(raw, tenantId);
       return {
         content: [{ type: 'text', text: JSON.stringify({ title: raw, id }, null, 2) }],
       };
@@ -394,8 +432,9 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Recompute outgoing wikilinks for every note from [[Title]] and title-inference (same as `mnemo note autolink`).',
     { dryRun: z.boolean().optional() },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const dryRun = args.dryRun ?? false;
-      const result = await recomputeAutolinks(store, dryRun);
+      const result = await recomputeAutolinks(store, dryRun, tenantId);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -405,9 +444,10 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Get all notes that link to the given note (target by UUID id or numeric ref)',
     idOrRefShape,
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const bad = idOrRefError(args);
       if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
-      const resolved = await resolveToNoteId(store, args);
+      const resolved = await resolveToNoteId(store, args, tenantId);
       if (!resolved.ok) {
         return { content: [{ type: 'text', text: resolved.text }], isError: true };
       }
@@ -421,6 +461,7 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Set outgoing links from a source note to one or more target notes',
     { sourceId: z.string(), targetIds: z.array(z.string()) },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       await store.updateLinks(args.sourceId, args.targetIds);
       return { content: [{ type: 'text', text: `Linked ${args.sourceId} → [${args.targetIds.join(', ')}]` }] };
     },
@@ -431,9 +472,10 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Get the full note graph (nodes and links)',
     {},
     async () => {
-      const [notes, links] = await Promise.all([store.list(), store.getAllLinks()]);
+      const { store, tenantId } = await resolve();
+      const [notes, links] = await Promise.all([store.list(tenantId), store.getAllLinks(tenantId)]);
       const graph = {
-        nodes: notes.map(n => ({ id: n.id, title: n.title, ref: n.ref })),
+        nodes: notes.map((n: NoteListItem) => ({ id: n.id, title: n.title, ref: n.ref })),
         links,
       };
       return { content: [{ type: 'text', text: JSON.stringify(graph, null, 2) }] };
@@ -450,6 +492,7 @@ export function createMcpServer(store: INoteStore): McpServer {
     grouped: z.boolean().optional(),
     categoryScopeSubtree: z.boolean().optional(),
     categoryColors: z.record(z.string(), z.string()).optional(),
+    categoryColorStamps: z.record(z.string(), z.number()).optional(),
     markdownGlobal: z.record(z.string(), z.string()).optional(),
     markdownByTheme: z.record(z.string(), z.record(z.string(), z.string())).optional(),
     ideTabIds: z.array(z.string().uuid()).optional(),
@@ -460,7 +503,8 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Read merged UI preferences (disk + Turso app_kv when using cloud DB): theme, layout, Markdown CSS overrides (markdownGlobal / markdownByTheme), category colors, IDE tab order, etc. Same JSON as mnemo://preferences.',
     {},
     async () => {
-      const prefs = await readUiPreferencesMerged(store);
+      const { store, workspaceId } = await resolve();
+      const prefs = await readUiPreferencesMerged(store, undefined, workspaceId);
       return { content: [{ type: 'text', text: JSON.stringify(prefs, null, 2) }] };
     },
   );
@@ -470,7 +514,13 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Merge partial UI preferences into ui-preferences.json and mirror the full merged JSON to Turso app_kv (key ui_preferences) when the store is Turso. Markdown map keys must be valid (--mnemo-editor-*, --mnemo-syntax-*).',
     uiPrefFields,
     async (args) => {
-      const merged = await mergeAndWriteUiPreferencesAsync(args as Partial<MnemoUiPreferences>, undefined, store);
+      const { store, tenantId, workspaceId } = await resolve();
+      const merged = await mergeAndWriteUiPreferencesAsync(
+        args as Partial<MnemoUiPreferences>,
+        undefined,
+        store,
+        workspaceId,
+      );
       return { content: [{ type: 'text', text: JSON.stringify(merged, null, 2) }] };
     },
   );
@@ -482,6 +532,7 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Generate a concise summary of a note',
     { id: z.string() },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const note = await store.read(args.id);
       if (!note) {
         return {
@@ -508,6 +559,7 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Analyze relationships and commonalities between two notes',
     { id1: z.string(), id2: z.string() },
     async (args) => {
+      const { store, tenantId, workspaceId } = await resolve();
       const [n1, n2] = await Promise.all([store.read(args.id1), store.read(args.id2)]);
       if (!n1 || !n2) {
         const missing = !n1 ? args.id1 : args.id2;
@@ -542,7 +594,8 @@ export function createMcpServer(store: INoteStore): McpServer {
     'Ask a question using the full vault as context',
     { question: z.string() },
     async (args) => {
-      const notes = await store.list();
+      const { store, tenantId, workspaceId } = await resolve();
+      const notes = await store.list(tenantId);
       const summaries = notes.map(n => `- **${n.title}** (${n.id}): ${n.snippet}`).join('\n');
       return {
         messages: [{

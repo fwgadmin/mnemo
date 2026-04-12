@@ -16,6 +16,26 @@ export function categoryColorStorageKey(path: string): string {
   return normalizePath(path) || GENERAL_PATH;
 }
 
+/** True if path is the Archive bucket or nested under it (archive again would duplicate the prefix). */
+export function isArchiveCategoryPath(folderPath: string): boolean {
+  const n = normalizePath(folderPath) || GENERAL_PATH;
+  return n === 'Archive' || n.startsWith('Archive/');
+}
+
+/** Notes whose category path equals `folderPath` or is nested under it. */
+export function countNotesInCategorySubtree(
+  notes: NoteListItem[],
+  folderPath: string,
+): number {
+  const fp = normalizePath(folderPath) || GENERAL_PATH;
+  let c = 0;
+  for (const n of notes) {
+    const cur = categoryPathFromTags(n.tags, notes);
+    if (cur === fp || cur.startsWith(`${fp}/`)) c++;
+  }
+  return c;
+}
+
 export function hasNonEmptyFirstTag(tags: string[]): boolean {
   return tags.length > 0 && !!normalizePath(tags[0]);
 }

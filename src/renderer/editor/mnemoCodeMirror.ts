@@ -33,6 +33,10 @@ export const mnemoEditorTheme = EditorView.theme(
       border: 'none',
       paddingRight: '8px',
     },
+    '.cm-foldGutter .cm-gutterElement': {
+      padding: '0 2px',
+      verticalAlign: 'middle',
+    },
     '.cm-activeLineGutter': {
       backgroundColor: 'transparent',
       color: 'var(--mnemo-editor-gutter-active-fg)',

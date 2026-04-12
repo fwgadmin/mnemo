@@ -81,6 +81,35 @@ export interface SyncResult {
  * Mnemo uses @libsql/client — same protocol for Turso Cloud, self-hosted libSQL/sqld on a VPS, etc.
  * `tursoUrl` / `tursoToken` are the canonical keys; `libsql*` are optional aliases for clarity.
  */
+/**
+ * Where a workspace’s notes live.
+ * - `inherit`: global connection from config/env; isolate rows with `tenant_id === workspace id`.
+ * - `sqlite`: dedicated local `mnemo.db` + vault (typically `tenant_id` is `default` inside that file).
+ * - `remote`: dedicated libSQL URL + token for that workspace.
+ */
+export type WorkspaceStorage =
+  | { mode: 'inherit' }
+  | { mode: 'sqlite'; dbPath: string; vaultPath: string }
+  | {
+      mode: 'remote';
+      tursoUrl?: string;
+      tursoToken?: string;
+      libsqlUrl?: string;
+      libsqlAuthToken?: string;
+    };
+
+export interface WorkspaceProfileEntry {
+  id: string;
+  name: string;
+  /** Defaults to inherit when omitted (multi-tenant rows in the global DB). */
+  storage?: WorkspaceStorage;
+}
+
+export interface WorkspaceProfilesState {
+  activeWorkspaceId: string;
+  workspaces: WorkspaceProfileEntry[];
+}
+
 export interface AppConfig {
   /** libSQL database URL (Turso `libsql://…`, or `https://…` for many self-hosted servers) */
   tursoUrl?: string;
@@ -113,6 +142,8 @@ export interface MnemoUiPreferences {
   categoryScopeSubtree?: boolean;
   /** Folder path → #hex color */
   categoryColors?: Record<string, string>;
+  /** Per-folder-path last update time (ms) for merge with remote `app_kv` — clears win over stale cloud colors. */
+  categoryColorStamps?: Record<string, number>;
   /**
    * Markdown editor appearance: CSS custom properties (--mnemo-editor-*, --mnemo-syntax-*).
    * `markdownGlobal` applies to every theme; `markdownByTheme[themeId]` merges on top for that theme.
@@ -167,6 +198,8 @@ export interface INoteStore {
   getAllLinks(tenantId?: string): Promise<Array<{ source: string; target: string }>>;
   /** Single round-trip: counts + max(updated_at) for vault change detection. */
   getVaultSnapshot(tenantId?: string): Promise<VaultSnapshot>;
+  /** Remove all notes (and links) for a tenant in this database (inherit workspaces only). */
+  purgeTenantNotes(tenantId: string): Promise<void>;
   close(): void;
 }
 
@@ -205,4 +238,12 @@ export const IPC = {
   /** Pick a folder and import/sync markdown into the vault (`Workspace/…` categories). */
   WORKSPACE_CHOOSE_FOLDER: 'workspace:chooseFolder',
   WORKSPACE_SYNC: 'workspace:sync',
+  /** Local SQLite: list/create/switch workspace profiles (isolated vaults under userData/workspaces/). */
+  WORKSPACE_PROFILES_LIST: 'workspaceProfiles:list',
+  WORKSPACE_PROFILES_CREATE: 'workspaceProfiles:create',
+  WORKSPACE_PROFILES_SWITCH: 'workspaceProfiles:switch',
+  WORKSPACE_PROFILES_PICK_FOLDER: 'workspaceProfiles:pickFolder',
+  WORKSPACE_PROFILES_ARCHIVE: 'workspaceProfiles:archive',
+  WORKSPACE_PROFILES_DELETE: 'workspaceProfiles:delete',
+  WORKSPACE_PROFILES_SET_STORAGE: 'workspaceProfiles:setStorage',
 } as const;

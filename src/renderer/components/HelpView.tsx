@@ -113,6 +113,24 @@ export default function HelpView({ onClose }: HelpViewProps) {
             </KV>
           </Section>
 
+          <Section title="Vault workspaces">
+            <p>
+              Workspaces share one database by default; each workspace id is a <strong>tenant</strong> so notes stay
+              isolated. The menu bar shows the active vault — switch without restarting when using the shared connection.
+              Optional <strong>Storage</strong> overrides per workspace (dedicated SQLite files or libSQL URL) are edited
+              under <Mono>Settings</Mono> (<strong>Workspace</strong> tab → <Mono>Storage…</Mono> on a vault). Use{' '}
+              <Mono>File › New Vault Workspace…</Mono> or <Mono>File › Manage Vault Workspaces…</Mono> to create, import,
+              archive, or delete profiles (new vaults open immediately after creation).
+            </p>
+            <p className="mt-2 text-xs text-mnemo-dim leading-relaxed">
+              CLI: <Mono>mnemo workspace list</Mono>, <Mono>mnemo workspace new</Mono>, <Mono>mnemo workspace switch</Mono>,{' '}
+              <Mono>archive</Mono>, <Mono>delete</Mono>. Note commands use the active workspace when <Mono>--db</Mono> is
+              omitted; pass <Mono>--workspace &lt;id&gt;</Mono> for a one-off tenant. MCP stdio: same <Mono>--workspace</Mono>{' '}
+              flag, or rely on <Mono>workspace-profiles.json</Mono> when using the bootstrap DB. See{' '}
+              <Mono>mnemo help workspace</Mono> and <Mono>mnemo help mcp</Mono>.
+            </p>
+          </Section>
+
           <Section title="Categories &amp; Tags">
             <p>
               Notes can be grouped in the sidebar by category. The <strong>first tag</strong> on a
@@ -137,8 +155,10 @@ export default function HelpView({ onClose }: HelpViewProps) {
               </li>
               <li>
                 In grouped view or IDE Explorer, right-click a category header for{' '}
-                <Mono>Rename</Mono>, <Mono>Promote</Mono>, <Mono>Demote</Mono>, and folder colors (see
-                Settings for details).
+                <Mono>Rename</Mono>, <Mono>Promote</Mono>, <Mono>Demote</Mono>, folder colors,{' '}
+                <strong>Archive folder</strong> (moves every note in that tree under <Mono>Archive/…</Mono>), or{' '}
+                <strong>Delete folder</strong> (permanently deletes all notes in that tree). Folders already under{' '}
+                <Mono>Archive/…</Mono> cannot be archived again from the menu.
               </li>
               <li>
                 <strong>Rename</strong> moves every note whose <strong>first tag equals that folder path
@@ -187,8 +207,9 @@ export default function HelpView({ onClose }: HelpViewProps) {
             </KV>
             <KV label="Themes &amp; layout">
               <strong>Default:</strong> Dark (IDE) — category tree and editor with tabs. <Key>Ctrl+,</Key> opens{' '}
-              <Mono>Settings</Mono> to pick another theme or override layout (classic sidebar, top navigation, or IDE).{' '}
-              Command palette (<Key>Ctrl+P</Key>) includes layout commands when you type <Mono>&gt;</Mono>.
+              <Mono>Settings</Mono> (tabbed: <strong>General</strong> for theme and layout; <strong>Markdown</strong> for
+              preview typography; <strong>Workspace</strong> for disk folder sync and vaults; <strong>Database</strong> for
+              remote libSQL). Command palette (<Key>Ctrl+P</Key>) includes layout commands when you type <Mono>&gt;</Mono>.
             </KV>
             <KV label="Markdown helper">
               <Key>Ctrl+M</Key> toggles the Markdown reference side panel.
@@ -233,9 +254,16 @@ export default function HelpView({ onClose }: HelpViewProps) {
               </p>
 
               <p className="mt-3 font-medium text-mnemo-text">Step 2 — find your data paths</p>
-              <p className="mt-1 text-mnemo-text">Your notes are stored in your OS app-data directory:</p>
+              <p className="mt-1 text-mnemo-text">Your notes live next to <Mono>workspace-profiles.json</Mono> and{' '}
+              <Mono>config.json</Mono> in your OS app-data directory (package name <Mono>mnemo-note</Mono> on most systems):</p>
               <Table headers={[...USER_GUIDE_PATHS_HEADERS]} rows={USER_GUIDE_PATHS_ROWS} />
               <p className="mt-2 text-mnemo-dim text-xs leading-relaxed">{MCP_STDIO_DEFAULT_NOTE}</p>
+              <p className="mt-2 text-mnemo-text text-xs leading-relaxed">
+                To match a specific vault from the GUI (not the active one), add{' '}
+                <Mono>&quot;--workspace&quot;, &quot;&lt;workspace-id&gt;&quot;</Mono> to <Mono>args</Mono> after{' '}
+                <Mono>mnemo-mcp.js</Mono>. Tools and resources use that vault’s tenant; UI preference tools follow the same
+                workspace for namespaced prefs.
+              </p>
 
               <p className="mt-3 font-medium text-mnemo-text">Step 3 — configure your MCP client</p>
               <p className="mt-1 text-mnemo-text">
@@ -243,15 +271,25 @@ export default function HelpView({ onClose }: HelpViewProps) {
                 locations:
               </p>
               <Table headers={[...MCP_CLIENT_CONFIG_HEADERS]} rows={MCP_CLIENT_CONFIG_ROWS} />
-              <p className="mt-2 font-medium text-mnemo-text">Windows</p>
+              <p className="mt-2 font-medium text-mnemo-text">Minimal (same bootstrap DB as GUI — set MNEMO_HOME)</p>
+              <CodeBlock>{`{
+  "mcpServers": {
+    "mnemo": {
+      "command": "node",
+      "args": ["/path/to/mnemo/dist/mnemo-mcp.js"],
+      "env": { "MNEMO_HOME": "/path/to/your/mnemo-userData" }
+    }
+  }
+}`}</CodeBlock>
+              <p className="mt-2 font-medium text-mnemo-text">Windows (explicit db + vault paths)</p>
               <CodeBlock>{`{
   "mcpServers": {
     "mnemo": {
       "command": "node",
       "args": [
         "C:/path/to/mnemo/dist/mnemo-mcp.js",
-        "--db",    "C:/Users/YOU/AppData/Roaming/Mnemo/mnemo.db",
-        "--vault", "C:/Users/YOU/AppData/Roaming/Mnemo/vault"
+        "--db",    "C:/Users/YOU/AppData/Roaming/mnemo-note/mnemo.db",
+        "--vault", "C:/Users/YOU/AppData/Roaming/mnemo-note/vault"
       ]
     }
   }
@@ -263,8 +301,8 @@ export default function HelpView({ onClose }: HelpViewProps) {
       "command": "node",
       "args": [
         "/path/to/mnemo/dist/mnemo-mcp.js",
-        "--db",    "/Users/YOU/Library/Application Support/Mnemo/mnemo.db",
-        "--vault", "/Users/YOU/Library/Application Support/Mnemo/vault"
+        "--db",    "/Users/YOU/Library/Application Support/mnemo-note/mnemo.db",
+        "--vault", "/Users/YOU/Library/Application Support/mnemo-note/vault"
       ]
     }
   }
@@ -276,8 +314,8 @@ export default function HelpView({ onClose }: HelpViewProps) {
       "command": "node",
       "args": [
         "/path/to/mnemo/dist/mnemo-mcp.js",
-        "--db",    "/home/YOU/.config/Mnemo/mnemo.db",
-        "--vault", "/home/YOU/.config/Mnemo/vault"
+        "--db",    "/home/YOU/.config/mnemo-note/mnemo.db",
+        "--vault", "/home/YOU/.config/mnemo-note/vault"
       ]
     }
   }
@@ -379,22 +417,24 @@ SELECT * FROM notes WHERE title LIKE '%mnemo%';
           </Section>
 
           <Section title="Data Storage">
-            <p>Every note is stored in two places:</p>
+            <p>Every note is stored in two places under your app data folder (see table below; package id is often mnemo-note):</p>
             <ul className="mt-2 space-y-1 list-disc list-inside text-mnemo-text">
               <li>
-                <strong>SQLite database</strong> — <Mono>%APPDATA%/Mnemo/mnemo.db</Mono> — powers
-                fast FTS5 search, link tracking, and metadata queries.
+                <strong>SQLite database</strong> — <Mono>mnemo.db</Mono> — powers FTS5 search, link tracking, and metadata.
+                Multiple <strong>workspaces</strong> (tenants) share one file by default; optional per-workspace storage uses
+                separate files (see Settings → Workspace → Storage).
               </li>
               <li>
-                <strong>Markdown vault</strong> — <Mono>%APPDATA%/Mnemo/vault/*.md</Mono> — plain
-                Markdown files with YAML frontmatter. Git-friendly, Obsidian-compatible, and safe
-                to back up or sync.
+                <strong>Markdown vault</strong> — <Mono>vault/*.md</Mono> — plain Markdown with YAML frontmatter.
+                Git-friendly and safe to back up.
               </li>
             </ul>
+            <p className="mt-3 text-mnemo-text text-sm">Default paths</p>
+            <Table headers={[...USER_GUIDE_PATHS_HEADERS]} rows={USER_GUIDE_PATHS_ROWS} />
             <p className="mt-3 text-mnemo-dim text-xs leading-relaxed">
-              The <Mono>mnemo note</Mono> CLI and MCP stdio server default to XDG data{' '}
-              <Mono>~/.local/share/mnemo</Mono> (Linux) unless <Mono>MNEMO_HOME</Mono> is set. Set{' '}
-              <Mono>MNEMO_HOME</Mono> to your app userData directory so the terminal and GUI share one vault.
+              The <Mono>mnemo note</Mono> CLI and MCP stdio server use the same bootstrap paths as the GUI when{' '}
+              <Mono>--db</Mono> is omitted. Set <Mono>MNEMO_HOME</Mono> to your app userData directory so the terminal,
+              MCP, and GUI share one database and <Mono>workspace-profiles.json</Mono>.
             </p>
           </Section>
 

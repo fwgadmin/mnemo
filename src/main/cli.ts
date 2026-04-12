@@ -10,7 +10,21 @@ import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
 import type { INoteStore, Note, NoteListItem } from '../shared/types';
 import { runMcpStdioServer, parseMcpStdioArgs } from './mcp/stdio-bootstrap';
-import { defaultLocalDataDir, resolveTursoCredentials } from './userConfig';
+import {
+  getRemoteLibsqlCredentials,
+  resolveTursoCredentials,
+  resolveWorkspaceBootstrapRoot,
+} from './userConfig';
+import {
+  archiveWorkspaceProfile,
+  createWorkspaceProfile,
+  deleteWorkspaceProfile,
+  getLocalWorkspaceDbPathsForCli,
+  listWorkspaceProfiles,
+  migrateLegacyFlatWorkspace,
+  purgeWorkspaceTenantData,
+  setActiveWorkspace,
+} from './workspaceProfiles';
 import {
   GENERAL_PATH,
   categoryPathFromTags,
@@ -124,13 +138,27 @@ function resolveBundledScript(name: 'mnemo-mcp-http.js'): string {
 }
 
 /** Resolve numeric ref first, then UUID. */
-async function resolveNoteForShow(store: INoteStore, arg: string): Promise<Note | null> {
+async function resolveNoteForShow(store: INoteStore, arg: string, tenantId: string): Promise<Note | null> {
   if (/^\d+$/.test(arg)) {
     const n = parseInt(arg, 10);
-    const byRef = await store.readByRef(n);
+    const byRef = await store.readByRef(n, tenantId);
     if (byRef) return byRef;
   }
   return store.read(arg);
+}
+
+function stripWorkspaceFlag(argv: string[]): { workspaceId: string | null; argv: string[] } {
+  const out: string[] = [];
+  let workspaceId: string | null = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--workspace' && argv[i + 1]) {
+      workspaceId = argv[++i]!;
+      continue;
+    }
+    out.push(a!);
+  }
+  return { workspaceId, argv: out };
 }
 
 function stripStoreArgs(argv: string[]): string[] {
@@ -140,12 +168,13 @@ function stripStoreArgs(argv: string[]): string[] {
       argv[i] === '--db' ||
       argv[i] === '--vault' ||
       argv[i] === '--turso-url' ||
-      argv[i] === '--turso-token'
+      argv[i] === '--turso-token' ||
+      argv[i] === '--workspace'
     ) {
       i++;
       continue;
     }
-    out.push(argv[i]);
+    out.push(argv[i]!);
   }
   return out;
 }
@@ -472,6 +501,7 @@ async function cmdComposeWithStore(
   store: INoteStore,
   outJson: boolean,
   args: string[],
+  tenantId: string,
 ): Promise<void> {
   const category = parseComposeCategoryFromArgs(args);
   const { dir, file } = createTempNoteFile('New note', '');
@@ -491,7 +521,7 @@ async function cmdComposeWithStore(
     if (category !== undefined) {
       tags = tagsForCategoryPath(parseCliCategoryPath(category), []);
     }
-    const note = await store.create({ title: title.trim(), body, tags });
+    const note = await store.create({ title: title.trim(), body, tags, tenantId });
     if (outJson) {
       printJson({ ref: note.ref, id: note.id, title: note.title });
     } else {
@@ -506,9 +536,10 @@ async function cmdEditWithStore(
   store: INoteStore,
   outJson: boolean,
   idArg: string,
-  categoryAfterSave?: string,
+  categoryAfterSave: string | undefined,
+  tenantId: string,
 ): Promise<void> {
-  const note = await resolveNoteForShow(store, idArg);
+  const note = await resolveNoteForShow(store, idArg, tenantId);
   if (!note) {
     console.error('Note not found.');
     process.exit(1);
@@ -528,7 +559,7 @@ async function cmdEditWithStore(
     }
     await store.update({ id: note.id, title: title.trim(), body });
     if (categoryAfterSave !== undefined) {
-      const vaultList = await store.list();
+      const vaultList = await store.list(tenantId);
       try {
         await setNoteCategory(store, vaultList, note.id, categoryAfterSave);
       } catch (e) {
@@ -545,7 +576,7 @@ async function cmdEditWithStore(
         title: updated?.title ?? title,
       };
       if (categoryAfterSave !== undefined) {
-        const list = await store.list();
+        const list = await store.list(tenantId);
         payload.folder = categoryPathFromTags(updated?.tags ?? note.tags, list);
       }
       printJson(payload);
@@ -574,10 +605,10 @@ async function cmdCompose(argv: string[]): Promise<void> {
     console.error('Internal error: cmdCompose');
     process.exit(1);
   }
-  const store = await openStoreForNote(tail);
+  const { store, tenantId } = await openStoreForNote(tail);
   const args = stripStoreArgs(tail);
   try {
-    await cmdComposeWithStore(store, outJson, args);
+    await cmdComposeWithStore(store, outJson, args, tenantId);
   } finally {
     store.close();
   }
@@ -590,11 +621,11 @@ async function cmdEdit(argv: string[]): Promise<void> {
     process.exit(1);
   }
   const tail = av.slice(1);
-  const store = await openStoreForNote(tail);
+  const { store, tenantId } = await openStoreForNote(tail);
   const args = stripStoreArgs(tail);
   const { refArg, category } = parseEditArgs(args);
   try {
-    await cmdEditWithStore(store, outJson, refArg, category);
+    await cmdEditWithStore(store, outJson, refArg, category, tenantId);
   } finally {
     store.close();
   }
@@ -672,14 +703,14 @@ const TOP_LEVEL_VAULT = new Set([
 
 async function cmdRecent(argv: string[]): Promise<void> {
   const { outJson, argv: av } = resolveJsonOutput(argv);
-  const store = await openStoreForNote(av);
+  const { store, tenantId } = await openStoreForNote(av);
   const rest = stripStoreArgs(av);
   if (rest.length) {
     console.error('Unexpected arguments (use mnemo --help)');
     process.exit(1);
   }
   try {
-    let notes = await store.list();
+    let notes = await store.list(tenantId);
     notes = [...notes].sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
     const top = notes.slice(0, 10);
     if (outJson) {
@@ -701,20 +732,177 @@ async function cmdRecent(argv: string[]): Promise<void> {
   }
 }
 
-async function openStoreForNote(argv: string[]): Promise<INoteStore> {
-  const parsed = parseMcpStdioArgs(argv);
-  const hasDb = argv.includes('--db');
-  const hasVault = argv.includes('--vault');
-  const dbPath = hasDb ? parsed.dbPath : path.join(defaultLocalDataDir(), 'mnemo.db');
-  const vaultPath = hasVault ? parsed.vaultPath : path.join(defaultLocalDataDir(), 'vault');
-
+async function openStoreForNote(argv: string[]): Promise<{ store: INoteStore; tenantId: string }> {
+  const { workspaceId: wsFlag, argv: av } = stripWorkspaceFlag(argv);
+  const parsed = parseMcpStdioArgs(av);
+  const hasDb = av.includes('--db');
+  const hasVault = av.includes('--vault');
   const { tursoUrl, tursoToken } = resolveTursoCredentials(parsed);
+
+  let tenantId: string;
+  if (hasDb) {
+    tenantId = 'default';
+  } else {
+    const root = resolveWorkspaceBootstrapRoot();
+    migrateLegacyFlatWorkspace(root);
+    const profiles = listWorkspaceProfiles(root);
+    const w = wsFlag?.trim();
+    tenantId =
+      w && profiles.workspaces.some(x => x.id === w) ? w : profiles.activeWorkspaceId;
+  }
+
   if (tursoUrl && tursoToken) {
+    const bootstrap = resolveWorkspaceBootstrapRoot();
+    const vaultPath = hasVault ? parsed.vaultPath : path.join(bootstrap, 'vault');
     const turso = new TursoNoteStore(tursoUrl, tursoToken, vaultPath);
     await turso.initSchema();
-    return turso;
+    return { store: turso, tenantId };
   }
-  return new LocalNoteStore(dbPath, vaultPath);
+
+  if (hasDb) {
+    const dbPath = parsed.dbPath;
+    const vaultPath = hasVault ? parsed.vaultPath : path.join(path.dirname(dbPath), 'vault');
+    return { store: new LocalNoteStore(dbPath, vaultPath), tenantId };
+  }
+
+  const { dbPath, vaultPath } = getLocalWorkspaceDbPathsForCli();
+  return { store: new LocalNoteStore(dbPath, vaultPath), tenantId };
+}
+
+async function cmdWorkspace(argv: string[]): Promise<void> {
+  const { outJson, argv: av } = resolveJsonOutput(argv);
+  const sub = av[0]?.toLowerCase();
+  const tail = av.slice(1);
+  const root = resolveWorkspaceBootstrapRoot();
+  migrateLegacyFlatWorkspace(root);
+
+  if (!sub || sub === 'list' || sub === 'ls') {
+    const st = listWorkspaceProfiles(root);
+    if (outJson) {
+      printJson(st);
+    } else {
+      for (const w of st.workspaces) {
+        const mark = w.id === st.activeWorkspaceId ? ' (active)' : '';
+        console.log(`${w.id}\t${w.name}${mark}`);
+      }
+    }
+    return;
+  }
+
+  if (sub === 'new') {
+    const name = tail.join(' ').trim();
+    if (!name) {
+      console.error('Usage: mnemo workspace new <name>');
+      process.exit(1);
+    }
+    const { state, newId } = createWorkspaceProfile(root, name);
+    if (outJson) {
+      printJson({ ok: true, newId, profiles: state });
+    } else {
+      console.log(`Created workspace ${newId} (${name}). Switch with: mnemo workspace switch ${newId}`);
+    }
+    return;
+  }
+
+  if (sub === 'switch') {
+    const id = tail[0]?.trim();
+    if (!id || tail.length > 1) {
+      console.error('Usage: mnemo workspace switch <id>');
+      process.exit(1);
+    }
+    const next = setActiveWorkspace(root, id);
+    if (!next) {
+      console.error(`Unknown workspace id: ${id}`);
+      process.exit(1);
+    }
+    if (outJson) {
+      printJson({ ok: true, profiles: next });
+    } else {
+      console.log(`Active workspace is now ${next.activeWorkspaceId}.`);
+    }
+    return;
+  }
+
+  if (sub === 'archive') {
+    const id = tail[0]?.trim();
+    if (!id || tail.length > 1) {
+      console.error('Usage: mnemo workspace archive <id>');
+      process.exit(1);
+    }
+    const before = listWorkspaceProfiles(root);
+    const entry = before.workspaces.find(w => w.id === id);
+    const r = archiveWorkspaceProfile(root, id);
+    if (!r) {
+      console.error(
+        'Cannot archive: need a non-default, non-active vault, at least two vaults, and a valid id.',
+      );
+      process.exit(1);
+    }
+    if (entry) {
+      await purgeWorkspaceTenantData(root, entry);
+      const st = entry.storage ?? { mode: 'inherit' as const };
+      if (st.mode === 'sqlite') {
+        try {
+          fs.unlinkSync(st.dbPath);
+        } catch {
+          /* ignore */
+        }
+        try {
+          fs.rmSync(st.vaultPath, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    if (outJson) {
+      printJson({ ok: true, profiles: r.state });
+    } else {
+      console.log(`Archived workspace ${id}.`);
+    }
+    return;
+  }
+
+  if (sub === 'delete') {
+    const id = tail[0]?.trim();
+    if (!id || tail.length > 1) {
+      console.error('Usage: mnemo workspace delete <id>');
+      process.exit(1);
+    }
+    const before = listWorkspaceProfiles(root);
+    const entry = before.workspaces.find(w => w.id === id);
+    const r = deleteWorkspaceProfile(root, id);
+    if (!r) {
+      console.error(
+        'Cannot delete: need a non-default, non-active vault, at least two vaults, and a valid id.',
+      );
+      process.exit(1);
+    }
+    if (entry) {
+      await purgeWorkspaceTenantData(root, entry);
+      const st = entry.storage ?? { mode: 'inherit' as const };
+      if (st.mode === 'sqlite') {
+        try {
+          fs.unlinkSync(st.dbPath);
+        } catch {
+          /* ignore */
+        }
+        try {
+          fs.rmSync(st.vaultPath, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    if (outJson) {
+      printJson({ ok: true, profiles: r.state });
+    } else {
+      console.log(`Deleted workspace ${id}.`);
+    }
+    return;
+  }
+
+  console.error(`Unknown workspace subcommand "${sub}". See mnemo help workspace`);
+  process.exit(1);
 }
 
 function noteJsonShow(note: Note): Record<string, unknown> {
@@ -736,7 +924,7 @@ async function cmdNote(argv: string[]): Promise<void> {
   const { outJson, argv: noteArgv } = resolveJsonOutput(argv);
   const sub = noteArgv[0];
   const rest = noteArgv.slice(1);
-  const store = await openStoreForNote(rest);
+  const { store, tenantId } = await openStoreForNote(rest);
   const args = stripStoreArgs(rest);
 
   try {
@@ -763,7 +951,7 @@ async function cmdNote(argv: string[]): Promise<void> {
           console.error('Do not combine --from with --page or --limit.');
           process.exit(1);
         }
-        let notes = await store.list();
+        let notes = await store.list(tenantId);
         if (catRaw !== null) {
           const trimmed = catRaw.trim();
           const folderPath = trimmed ? normalizePath(trimmed) || GENERAL_PATH : GENERAL_PATH;
@@ -832,7 +1020,7 @@ async function cmdNote(argv: string[]): Promise<void> {
               pageSize: effectivePagerSize,
             },
             async (ref) => {
-              await cmdEditWithStore(store, false, String(ref));
+              await cmdEditWithStore(store, false, String(ref), undefined, tenantId);
             },
           );
           break;
@@ -892,7 +1080,7 @@ async function cmdNote(argv: string[]): Promise<void> {
           console.error('Usage: mnemo note show <ref | uuid>');
           process.exit(1);
         }
-        const note = await resolveNoteForShow(store, id);
+        const note = await resolveNoteForShow(store, id, tenantId);
         if (!note) {
           console.error('Note not found.');
           process.exit(1);
@@ -915,9 +1103,9 @@ async function cmdNote(argv: string[]): Promise<void> {
           );
           process.exit(1);
         }
-        let hits = await store.search(q);
+        let hits = await store.search(q, tenantId);
         if (searchCat !== null) {
-          const fullList = await store.list();
+          const fullList = await store.list(tenantId);
           const trimmed = searchCat.trim();
           const folderPath = trimmed ? normalizePath(trimmed) || GENERAL_PATH : GENERAL_PATH;
           const allowed = new Set(
@@ -948,19 +1136,19 @@ async function cmdNote(argv: string[]): Promise<void> {
       }
       case 'compose':
       case 'write': {
-        await cmdComposeWithStore(store, outJson, args);
+        await cmdComposeWithStore(store, outJson, args, tenantId);
         break;
       }
       case 'edit': {
         const { refArg, category } = parseEditArgs(args);
-        await cmdEditWithStore(store, outJson, refArg, category);
+        await cmdEditWithStore(store, outJson, refArg, category, tenantId);
         break;
       }
       case 'new': {
         const hasEdit = args.includes('-e') || args.includes('--edit');
         if (hasEdit) {
           const filtered = args.filter((a) => a !== '-e' && a !== '--edit');
-          await cmdComposeWithStore(store, outJson, filtered);
+          await cmdComposeWithStore(store, outJson, filtered, tenantId);
           break;
         }
         const { title, body, category } = parseNewArgs(args);
@@ -975,7 +1163,7 @@ async function cmdNote(argv: string[]): Promise<void> {
         if (category !== undefined) {
           tags = tagsForCategoryPath(parseCliCategoryPath(category), []);
         }
-        const note = await store.create({ title, body, tags });
+        const note = await store.create({ title, body, tags, tenantId });
         if (outJson) {
           printJson({ ref: note.ref, id: note.id, title: note.title });
         } else {
@@ -1019,7 +1207,7 @@ async function cmdNote(argv: string[]): Promise<void> {
         } else {
           tags = [];
         }
-        const note = await store.create({ title, body, tags });
+        const note = await store.create({ title, body, tags, tenantId });
         if (outJson) {
           printJson({ ref: note.ref, id: note.id, title: note.title });
         } else {
@@ -1029,8 +1217,8 @@ async function cmdNote(argv: string[]): Promise<void> {
       }
       case 'graph': {
         const { format } = parseGraphArgs(args);
-        const list = await store.list();
-        const links = await store.getAllLinks();
+        const list = await store.list(tenantId);
+        const links = await store.getAllLinks(tenantId);
         const graphNodes = list.map(n => ({ id: n.id, ref: n.ref, title: n.title }));
         if (outJson) {
           printJson({ format, nodes: graphNodes, links });
@@ -1050,7 +1238,7 @@ async function cmdNote(argv: string[]): Promise<void> {
           console.error('Usage: mnemo note categories [--flat]');
           process.exit(1);
         }
-        const notes = await store.list();
+        const notes = await store.list(tenantId);
         if (outJson) {
           printJson({ flat, categories: exportCategoryTreeJson(notes, flat) });
         } else {
@@ -1069,12 +1257,12 @@ async function cmdNote(argv: string[]): Promise<void> {
           console.error('Usage: mnemo note set-category <ref | uuid> <category>');
           process.exit(1);
         }
-        const idNote = await resolveNoteForShow(store, idArg);
+        const idNote = await resolveNoteForShow(store, idArg, tenantId);
         if (!idNote) {
           console.error('Note not found.');
           process.exit(1);
         }
-        const vaultList = await store.list();
+        const vaultList = await store.list(tenantId);
         try {
           await setNoteCategory(store, vaultList, idNote.id, categoryRaw);
         } catch (e) {
@@ -1102,7 +1290,7 @@ async function cmdNote(argv: string[]): Promise<void> {
             process.exit(1);
           }
           try {
-            const r = await renameCategoryFolder(store, oldP, newP, { silent: outJson });
+            const r = await renameCategoryFolder(store, oldP, newP, { silent: outJson, tenantId });
             if (outJson) {
               printJson({ ok: true, op: 'rename', ...r });
             }
@@ -1119,7 +1307,7 @@ async function cmdNote(argv: string[]): Promise<void> {
             process.exit(1);
           }
           try {
-            const r = await promoteCategoryFolder(store, p, { silent: outJson });
+            const r = await promoteCategoryFolder(store, p, { silent: outJson, tenantId });
             if (outJson) {
               printJson({ ok: true, op: 'promote', ...r });
             }
@@ -1138,6 +1326,7 @@ async function cmdNote(argv: string[]): Promise<void> {
           try {
             const r = await demoteCategoryFolder(store, parsed.folderPath, parsed.parentPath, {
               silent: outJson,
+              tenantId,
             });
             if (outJson) {
               printJson({ ok: true, op: 'demote', ...r });
@@ -1156,7 +1345,7 @@ async function cmdNote(argv: string[]): Promise<void> {
         for (const a of args) {
           if (a === '--dry-run' || a === '-n') dryRun = true;
         }
-        const { notesChanged, newEdges } = await recomputeAutolinks(store, dryRun);
+        const { notesChanged, newEdges } = await recomputeAutolinks(store, dryRun, tenantId);
         if (outJson) {
           printJson({ dryRun, notesChanged, newEdges });
         } else {
@@ -1278,6 +1467,11 @@ async function main(): Promise<void> {
 
   if (cmd === 'note') {
     await cmdNote(rest);
+    return;
+  }
+
+  if (cmd === 'workspace') {
+    await cmdWorkspace(rest);
     return;
   }
 

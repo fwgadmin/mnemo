@@ -24,8 +24,10 @@ const MENUS: MenuDef[] = [
       { separator: true, label: '' },
       { label: 'Open…', cmd: 'open', shortcut: 'Ctrl+O' },
       { label: 'Open File as Tab…', cmd: 'open-file-tab', shortcut: 'Ctrl+Shift+O' },
+      { label: 'New Vault Workspace…', cmd: 'vault-new' },
       { label: 'Open Workspace Folder…', cmd: 'workspace-choose' },
       { label: 'Sync Workspace', cmd: 'workspace-sync' },
+      { label: 'Manage Vault Workspaces…', cmd: 'vault-manage' },
       { separator: true, label: '' },
       { label: 'Quit', cmd: 'quit' },
     ],
@@ -93,7 +95,7 @@ export default function MenuBar({ onCommand }: MenuBarProps) {
   return (
     <div
       ref={barRef}
-      className="mnemo-menu-bar flex items-center h-7 bg-mnemo-app border-b border-mnemo-border shrink-0 select-none pl-3"
+      className="mnemo-menu-bar flex items-center h-7 bg-mnemo-app shrink-0 select-none pl-3"
     >
       {MENUS.map((menu) => (
         <div key={menu.label} className="relative">

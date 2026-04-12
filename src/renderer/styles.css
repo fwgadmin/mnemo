@@ -13,6 +13,8 @@
   /* Grouped sidebar: soft edges vs panel (avoids harsh / mis-resolved border opacity on CSS vars) */
   --mnemo-sidebar-category-edge: color-mix(in srgb, var(--mnemo-border) 28%, var(--mnemo-bg-panel) 72%);
   --mnemo-sidebar-category-separator: color-mix(in srgb, var(--mnemo-border) 38%, var(--mnemo-bg-panel) 62%);
+  /* IDE folder tree: left guides (nested borders stack — keep mix low so lines stay hairline-subtle) */
+  --mnemo-sidebar-tree-guide: color-mix(in srgb, var(--mnemo-border) 9%, var(--mnemo-bg-panel) 91%);
   --mnemo-text: #e4e4e7;
   --mnemo-text-muted: #888888;
   --mnemo-text-dim: #555555;

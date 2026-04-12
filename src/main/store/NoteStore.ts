@@ -117,32 +117,19 @@ export class LocalNoteStore implements INoteStore {
     const id = uuidv4();
     const tenantId = input.tenantId ?? 'default';
     const tags = input.tags ?? [];
-
-    const nextRefRow = this.db
-      .prepare('SELECT COALESCE(MAX(ref), 0) + 1 AS n FROM notes WHERE tenant_id = ?')
-      .get(tenantId) as { n: number };
-    const nextRef = nextRefRow.n;
-
     const hideHeader = input.hideHeader ? 1 : 0;
-    const stmt = this.db.prepare(`
-      INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, nextRef, hideHeader);
 
-    const note: Note = {
-      id,
-      ref: nextRef,
-      title: input.title,
-      body: input.body,
-      tags,
-      created: now,
-      modified: now,
-      tenantId,
-      links: [],
-      hideHeader: !!input.hideHeader,
-    };
+    /** Single statement so MAX(ref)+1 and INSERT are atomic (same as Turso). */
+    this.db
+      .prepare(
+        `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+         VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ref), 0) + 1 FROM notes AS n WHERE n.tenant_id = ?), ?)`,
+      )
+      .run(id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, tenantId, hideHeader);
 
+    const row = this.db.prepare('SELECT * FROM notes WHERE id = ?').get(id) as any;
+    if (!row) return Promise.reject(new Error('NoteStore.create: inserted row not found'));
+    const note = this.rowToNote(row);
     this.writeMdFile(note);
     return Promise.resolve(note);
   }
@@ -332,6 +319,18 @@ export class LocalNoteStore implements INoteStore {
       contentBytes: row.content_bytes,
       appKvMaxUpdatedAt: null,
     });
+  }
+
+  async purgeTenantNotes(tenantId: string): Promise<void> {
+    const ids = this.db.prepare('SELECT id FROM notes WHERE tenant_id = ?').all(tenantId) as { id: string }[];
+    for (const { id } of ids) {
+      try {
+        fs.unlinkSync(path.join(this.vaultPath, `${id}.md`));
+      } catch {
+        /* missing */
+      }
+    }
+    this.db.prepare('DELETE FROM notes WHERE tenant_id = ?').run(tenantId);
   }
 
   close(): void {

@@ -6,9 +6,11 @@ import {
   buildCategoryTree,
   categoryColorStorageKey,
   categoryPathFromTags,
+  countNotesInCategorySubtree,
   distinctCategoryPaths,
   filterNotesByCategory,
   findNodeByPath,
+  isArchiveCategoryPath,
   isValidDemoteParent,
   normalizePath,
   promoteCategoryPath,
@@ -63,6 +65,10 @@ export interface SidebarProps {
   onRenameCategory?: (oldPath: string, newPath: string) => void | Promise<void>;
   onPromoteCategory?: (path: string) => void | Promise<void>;
   onDemoteCategory?: (path: string, parentPath: string) => void | Promise<void>;
+  /** Move all notes in folder + subtree under Archive/… */
+  onArchiveCategory?: (path: string) => void | Promise<void>;
+  /** Permanently delete all notes in folder + subtree */
+  onDeleteCategory?: (path: string) => void | Promise<void>;
   grouped: boolean;
   onGroupedChange: (v: boolean) => void;
   includeSubfolders: boolean;
@@ -94,6 +100,8 @@ export default function Sidebar({
   onRenameCategory,
   onPromoteCategory,
   onDemoteCategory,
+  onArchiveCategory,
+  onDeleteCategory,
   grouped,
   onGroupedChange,
   includeSubfolders,
@@ -173,6 +181,12 @@ export default function Sidebar({
     if (!folderColorMenu || !onDemoteCategory) return false;
     return categoryPathsList.some(p => isValidDemoteParent(folderColorMenu.path, p));
   }, [folderColorMenu, onDemoteCategory, categoryPathsList]);
+
+  const folderSubtreeNoteCount = useMemo(() => {
+    if (!folderColorMenu) return 0;
+    return countNotesInCategorySubtree(vaultNotes, folderColorMenu.path);
+  }, [folderColorMenu, vaultNotes]);
+
   const tree = useMemo(() => buildCategoryTree(vaultNotes), [vaultNotes]);
 
   const displayedNotes = useMemo(() => {
@@ -714,6 +728,25 @@ export default function Sidebar({
         if (!folderColorMenu) return;
         onSetCategoryColor(folderColorMenu.path, null);
         setFolderColorMenu(null);
+      }}
+      canArchiveCategory={Boolean(
+        folderColorMenu &&
+          onArchiveCategory &&
+          !isArchiveCategoryPath(folderColorMenu.path) &&
+          folderSubtreeNoteCount > 0,
+      )}
+      onArchiveCategory={() => {
+        if (!folderColorMenu || !onArchiveCategory) return;
+        const p = folderColorMenu.path;
+        setFolderColorMenu(null);
+        void onArchiveCategory(p);
+      }}
+      canDeleteCategory={Boolean(folderColorMenu && onDeleteCategory && folderSubtreeNoteCount > 0)}
+      onDeleteCategory={() => {
+        if (!folderColorMenu || !onDeleteCategory) return;
+        const p = folderColorMenu.path;
+        setFolderColorMenu(null);
+        void onDeleteCategory(p);
       }}
     />
   );

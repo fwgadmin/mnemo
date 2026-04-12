@@ -65,6 +65,7 @@ function shouldRunVaultCli(argv) {
     cmd === 'mcp' ||
     cmd === 'note' ||
     cmd === 'completion' ||
+    cmd === 'workspace' ||
     cmd === 'add' ||
     cmd === 'a' ||
     cmd === 'find' ||
@@ -107,6 +108,7 @@ GET STARTED
   mnemo help             What to run first (same as mnemo --help)
   mnemo help topics      List help sections (vault, mcp, config, …)
   mnemo help vault       Paths, flags, and every vault command
+  mnemo help workspace   Local vault workspaces (CLI)
 
 OTHER
   mnemo gui              Graphical app (see mnemo help desktop after build)

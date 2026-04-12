@@ -215,7 +215,9 @@ export default function IdeSolutionTree({
             onDragOver={e => onDragOver(e, node.path)}
             onDrop={e => onDrop(e, node.path)}
             onDragLeave={onDragLeave}
-            className={`border-l border-mnemo-border/[0.14] pl-0.5 ${isDrag ? 'rounded-b-sm bg-mnemo-active/12' : ''}`}
+            className={`border-l border-[color:var(--mnemo-sidebar-tree-guide)] pl-0.5 ${
+              isDrag ? 'rounded-b-sm bg-mnemo-active/12' : ''
+            }`}
           >
             {childFolders.map(ch => renderNode(ch, depth + 1))}
             {notesHere.length > 0 && (

@@ -14,8 +14,9 @@ export interface AutolinkRecomputeResult {
 export async function recomputeAutolinks(
   store: INoteStore,
   dryRun: boolean,
+  tenantId?: string,
 ): Promise<AutolinkRecomputeResult> {
-  const list = await store.list();
+  const list = await store.list(tenantId);
   const index = list.map((n) => ({ id: n.id, title: n.title, ref: n.ref }));
   let notesChanged = 0;
   let newEdges = 0;
@@ -24,7 +25,7 @@ export async function recomputeAutolinks(
     if (!note) continue;
     const explicitIds: string[] = [];
     for (const t of extractWikilinks(note.body)) {
-      const r = await store.resolveTitle(t);
+      const r = await store.resolveTitle(t, tenantId);
       if (r) explicitIds.push(r);
     }
     const inferredIds = inferLinkTargetIds(note.body, note.id, index);
