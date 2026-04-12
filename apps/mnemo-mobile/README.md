@@ -12,6 +12,16 @@ npm run start
 
 Then press `i` / `a` for iOS simulator or Android emulator, or scan the QR code with [Expo Go](https://expo.dev/go).
 
+## iOS production build (EAS)
+
+The **first** App Store–style build must be run **interactively** on your Mac (Apple sign-in / 2FA). See **[docs/IOS_EAS_BUILD.md](../../docs/IOS_EAS_BUILD.md)** or run:
+
+```bash
+./scripts/ios-eas-production-build.sh
+```
+
+from `apps/mnemo-mobile` after `chmod +x scripts/ios-eas-production-build.sh`.
+
 ## Stack (planned)
 
 - **Expo** — dev client, EAS Build / Submit / Update
