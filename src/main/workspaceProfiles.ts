@@ -64,14 +64,12 @@ function parseStorage(e: Record<string, unknown>): WorkspaceStorage | undefined 
   return undefined;
 }
 
-/** Parse workspace-profiles JSON (disk or Turso app_kv). */
-export function parseWorkspaceProfilesState(j: unknown): WorkspaceProfilesState {
-  if (!j || typeof j !== 'object') return defaultProfiles();
+/**
+ * Workspace list + storage only (Turso app_kv). Does not include activeWorkspaceId — that stays on each device.
+ */
+export function parseWorkspaceProfilesWorkspacesOnly(j: unknown): WorkspaceProfilesState['workspaces'] {
+  if (!j || typeof j !== 'object') return defaultProfiles().workspaces;
   const o = j as Record<string, unknown>;
-  const active =
-    typeof o.activeWorkspaceId === 'string' && o.activeWorkspaceId.trim().length > 0
-      ? o.activeWorkspaceId.trim()
-      : DEFAULT_WORKSPACE_ID;
   const wsRaw = o.workspaces;
   const workspaces: WorkspaceProfilesState['workspaces'] = [];
   if (Array.isArray(wsRaw)) {
@@ -93,6 +91,86 @@ export function parseWorkspaceProfilesState(j: unknown): WorkspaceProfilesState 
   if (!workspaces.some(w => w.id === DEFAULT_WORKSPACE_ID)) {
     workspaces.unshift({ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } });
   }
+  if (workspaces.length === 0) return defaultProfiles().workspaces;
+  return workspaces;
+}
+
+/** Pick a valid active id for this device given a workspace list (used when merging remote list with local selection). */
+export function combineLocalActiveWithWorkspaces(
+  localActive: string,
+  workspaces: WorkspaceProfilesState['workspaces'],
+): WorkspaceProfilesState {
+  const active = workspaces.some(w => w.id === localActive) ? localActive : DEFAULT_WORKSPACE_ID;
+  return { activeWorkspaceId: active, workspaces };
+}
+
+/** JSON stored in Turso app_kv — workspace definitions only; never activeWorkspaceId. */
+export function workspaceProfilesRemotePayload(state: WorkspaceProfilesState): { workspaces: WorkspaceProfilesState['workspaces'] } {
+  return { workspaces: state.workspaces };
+}
+
+/**
+ * Union remote + local workspace entries by id so a minimal/stale cloud payload cannot wipe local vaults.
+ * Same id: merge fields; remote can add name/storage when missing locally.
+ */
+export function mergeWorkspaceListsUnion(
+  local: WorkspaceProfilesState['workspaces'],
+  remote: WorkspaceProfilesState['workspaces'],
+): WorkspaceProfilesState['workspaces'] {
+  const byId = new Map<string, WorkspaceProfileEntry>();
+  for (const w of local) byId.set(w.id, { ...w });
+  for (const w of remote) {
+    const prev = byId.get(w.id);
+    if (!prev) {
+      byId.set(w.id, { ...w });
+    } else {
+      byId.set(w.id, {
+        ...prev,
+        ...w,
+        id: w.id,
+        name: w.name || prev.name,
+        storage: w.storage ?? prev.storage,
+      });
+    }
+  }
+  const out = [...byId.values()];
+  if (!out.some(w => w.id === DEFAULT_WORKSPACE_ID)) {
+    out.unshift({ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } });
+  }
+  return out;
+}
+
+/** Add inherit-mode profile rows for tenant_ids that have notes but no profile row (repair after bad sync). */
+export function augmentWorkspacesWithTenantIdsFromDb(
+  workspaces: WorkspaceProfilesState['workspaces'],
+  tenantIds: string[],
+): WorkspaceProfilesState['workspaces'] {
+  const byId = new Map(workspaces.map(w => [w.id, w] as const));
+  for (const tid of tenantIds) {
+    const t = tid.trim();
+    if (!t || byId.has(t)) continue;
+    byId.set(t, {
+      id: t,
+      name: t === DEFAULT_WORKSPACE_ID ? 'Default' : t,
+      storage: { mode: 'inherit' },
+    });
+  }
+  const out = [...byId.values()];
+  if (!out.some(w => w.id === DEFAULT_WORKSPACE_ID)) {
+    out.unshift({ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } });
+  }
+  return out;
+}
+
+/** Parse workspace-profiles JSON on disk (includes per-device activeWorkspaceId). */
+export function parseWorkspaceProfilesState(j: unknown): WorkspaceProfilesState {
+  if (!j || typeof j !== 'object') return defaultProfiles();
+  const o = j as Record<string, unknown>;
+  const active =
+    typeof o.activeWorkspaceId === 'string' && o.activeWorkspaceId.trim().length > 0
+      ? o.activeWorkspaceId.trim()
+      : DEFAULT_WORKSPACE_ID;
+  const workspaces = parseWorkspaceProfilesWorkspacesOnly(j);
   if (!workspaces.some(w => w.id === active)) {
     return defaultProfiles();
   }
@@ -125,7 +203,7 @@ function mirrorWorkspaceProfilesToKv(data: WorkspaceProfilesState): void {
     const { getGlobalStore } = require('./storeResolver') as typeof import('./storeResolver');
     const st = getGlobalStore();
     if (st instanceof TursoNoteStore) {
-      void st.setKv(WORKSPACE_PROFILES_KV_KEY, JSON.stringify(data));
+      void st.setKv(WORKSPACE_PROFILES_KV_KEY, JSON.stringify(workspaceProfilesRemotePayload(data)));
     }
   } catch {
     /* ignore */

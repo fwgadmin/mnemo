@@ -426,7 +426,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     syncedBodyRef.current = normalizeLineSeparators(note.body);
     onEditorLiveBodyRef.current?.(normalizeLineSeparators(note.body));
 
+    // Defer focus past the current event turn so it wins over sidebar/list focus after a click (Windows).
+    const focusTimer = window.setTimeout(() => {
+      viewRef.current?.focus();
+    }, 0);
+
     return () => {
+      window.clearTimeout(focusTimer);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (previewThrottleRef.current) clearTimeout(previewThrottleRef.current);
       viewRef.current?.destroy();

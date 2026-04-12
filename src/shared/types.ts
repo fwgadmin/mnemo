@@ -200,6 +200,10 @@ export interface INoteStore {
   getVaultSnapshot(tenantId?: string): Promise<VaultSnapshot>;
   /** Remove all notes (and links) for a tenant in this database (inherit workspaces only). */
   purgeTenantNotes(tenantId: string): Promise<void>;
+  /** Distinct tenant_id values present in notes (inherit DB); used to repair workspace list vs profile sync. */
+  listDistinctTenantIds(): Promise<string[]>;
+  /** Note counts per tenant_id in this store (inherit / global DB). */
+  getNoteCountsByTenant(): Promise<Record<string, number>>;
   close(): void;
 }
 

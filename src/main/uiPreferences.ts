@@ -158,8 +158,11 @@ export function sanitizePrefs(raw: unknown): MnemoUiPreferences {
   const mbt = sanitizeMarkdownByTheme(o.markdownByTheme);
   if (mbt) out.markdownByTheme = mbt;
 
-  const tabIds = sanitizeIdeTabIds(o.ideTabIds);
-  if (tabIds?.length) out.ideTabIds = tabIds;
+  // Include explicit [] so mergePrefs can clear persisted tabs; omitting the key would skip deletion.
+  if ('ideTabIds' in o) {
+    const tabIds = sanitizeIdeTabIds(o.ideTabIds);
+    out.ideTabIds = tabIds?.length ? tabIds : [];
+  }
 
   if (typeof o.workspaceFolder === 'string') {
     const w = o.workspaceFolder.trim();

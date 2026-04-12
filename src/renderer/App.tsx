@@ -151,6 +151,8 @@ export default function App() {
   const notesRef = useRef(notes);
   useEffect(() => { notesRef.current = notes; }, [notes]);
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
+  /** When tabs reference notes in another tenant, list() is empty but read(id) works — cache titles for the tab strip. */
+  const [ideTabTitleOverrides, setIdeTabTitleOverrides] = useState<Record<string, string>>({});
   const openTabIdsRef = useRef(openTabIds);
   useEffect(() => { openTabIdsRef.current = openTabIds; }, [openTabIds]);
 
@@ -184,11 +186,12 @@ export default function App() {
       focusTitleForNoteIdRef.current = null;
       return;
     }
+    // Run after Editor mount’s setTimeout(0) body focus so title wins for new notes (effect order vs child Editor is not guaranteed).
     const t = window.setTimeout(() => {
       focusTitleForNoteIdRef.current = null;
       if (activeNoteRef.current?.id !== id) return;
       editorRef.current?.focusTitle();
-    }, 0);
+    }, 10);
     return () => clearTimeout(t);
   }, [activeNote?.id, activeNote?.hideHeader, showNoteHeader]);
 
@@ -262,7 +265,9 @@ export default function App() {
     }
     if (file.markdownGlobal !== undefined) setMarkdownGlobal(file.markdownGlobal);
     if (file.markdownByTheme !== undefined) setMarkdownByTheme(file.markdownByTheme);
-    if (file.ideTabIds !== undefined && file.ideTabIds.length > 0) setOpenTabIds(file.ideTabIds);
+    if (file.ideTabIds !== undefined) {
+      setOpenTabIds(file.ideTabIds.length > 0 ? file.ideTabIds : []);
+    }
   }, []);
 
   const refreshMergedPreferencesFromStore = useCallback(async () => {
@@ -274,6 +279,8 @@ export default function App() {
     }
   }, [applyMergedPreferences]);
 
+  const LAST_STORE_TYPE_KEY = 'mnemo.lastStoreType';
+
   /** Load ui-preferences.json (MCP + disk); bootstrap file from localStorage if missing. */
   useEffect(() => {
     let cancelled = false;
@@ -281,10 +288,42 @@ export default function App() {
       try {
         const file = await window.mnemo.preferences.read();
         if (cancelled) return;
-        if (Object.keys(file).length > 0) {
+
+        let storeType: 'turso' | 'local';
+        try {
+          storeType = await window.mnemo.config.storeType();
+        } catch {
+          storeType = 'local';
+        }
+        const prevStoreType = localStorage.getItem(LAST_STORE_TYPE_KEY) as 'turso' | 'local' | null;
+        const storeBackendChanged = prevStoreType != null && prevStoreType !== storeType;
+
+        if (storeBackendChanged) {
+          // e.g. remote credentials removed → local SQLite; old IDE tab UUIDs are not valid for this vault
+          setOpenTabIds([]);
+          try {
+            localStorage.removeItem('mnemo.ideTabIds');
+          } catch {
+            /* quota */
+          }
+          const rest = { ...file };
+          delete rest.ideTabIds;
+          if (Object.keys(file).length > 0) {
+            applyMergedPreferences(rest);
+          } else {
+            await window.mnemo.preferences.save(gatherLocalStoragePreferences());
+          }
+          void window.mnemo.preferences.save({ ideTabIds: [] });
+        } else if (Object.keys(file).length > 0) {
           applyMergedPreferences(file);
         } else {
           await window.mnemo.preferences.save(gatherLocalStoragePreferences());
+        }
+
+        try {
+          localStorage.setItem(LAST_STORE_TYPE_KEY, storeType);
+        } catch {
+          /* quota */
         }
       } finally {
         if (!cancelled) setPrefsReady(true);
@@ -675,6 +714,7 @@ export default function App() {
           return mruOpenTabIds(prev, tabId);
         });
       }
+      window.setTimeout(() => editorRef.current?.focus(), 0);
       return;
     }
     const note = await window.mnemo.notes.read(id);
@@ -685,6 +725,8 @@ export default function App() {
         return mruOpenTabIds(prev, id);
       });
     }
+    // Same note id does not remount Editor; click may leave focus on the sidebar so keys never reach CodeMirror (esp. Windows).
+    window.setTimeout(() => editorRef.current?.focus(), 0);
   }, []);
 
   const handleArchiveCategory = useCallback(
@@ -843,6 +885,7 @@ export default function App() {
       const id = list[nextIdx]!.id;
       const note = await window.mnemo.notes.read(id);
       setActiveNote(note);
+      window.setTimeout(() => editorRef.current?.focus(), 0);
     },
     [handleSelectNote],
   );
@@ -1345,6 +1388,30 @@ export default function App() {
     }
   }, [handleSelectNote, loadNotes]);
 
+  useEffect(() => {
+    if (effectiveLayout !== 'ide') {
+      setIdeTabTitleOverrides({});
+      return;
+    }
+    const missing = openTabIds.filter(id => !isFileTabId(id) && !vaultNotes.some(n => n.id === id));
+    if (missing.length === 0) {
+      setIdeTabTitleOverrides({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const next: Record<string, string> = {};
+      for (const id of missing) {
+        const n = await window.mnemo.notes.read(id);
+        if (n?.title) next[id] = n.title;
+      }
+      if (!cancelled) setIdeTabTitleOverrides(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveLayout, openTabIds, vaultNotes]);
+
   const ideTabItems = useMemo(() => {
     const byId = new Map(vaultNotes.map(n => [n.id, n] as const));
     return openTabIds.map(id => {
@@ -1360,9 +1427,10 @@ export default function App() {
       const n = byId.get(id);
       const catPath = n ? categoryPathFromTags(n.tags, vaultNotes) : GENERAL_PATH;
       const accentColor = colorForCategoryPath(catPath, resolvedCategoryColors);
-      return { id, title: n?.title || 'Untitled', accentColor, isFile: false };
+      const title = n?.title || ideTabTitleOverrides[id] || 'Untitled';
+      return { id, title, accentColor, isFile: false };
     });
-  }, [openTabIds, vaultNotes, resolvedCategoryColors]);
+  }, [openTabIds, vaultNotes, resolvedCategoryColors, ideTabTitleOverrides]);
 
   /** Restore editor when IDE layout has tabs but no active note (e.g. fresh load). */
   useEffect(() => {
