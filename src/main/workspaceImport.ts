@@ -7,6 +7,7 @@ import * as path from 'path';
 const matter = require('gray-matter');
 import type { INoteStore } from '../shared/types';
 import { tagsForCategoryPath } from './cliCategory';
+import { refreshOutgoingLinksAfterBodyWrites } from './noteOutgoingLinks';
 
 const SKIP_DIR_NAMES = new Set([
   'node_modules',
@@ -96,6 +97,8 @@ export async function syncWorkspaceFolder(
   const map = loadMap(mapPath);
   let imported = 0;
   let updated = 0;
+  const touchedIds: string[] = [];
+  const tenant = tenantId ?? 'default';
 
   const seen = new Set<string>();
 
@@ -119,6 +122,7 @@ export async function syncWorkspaceFolder(
       const existing = await store.read(existingId);
       if (existing) {
         await store.update({ id: existingId, title, body, tags });
+        touchedIds.push(existingId);
         updated++;
         continue;
       }
@@ -127,7 +131,12 @@ export async function syncWorkspaceFolder(
 
     const created = await store.create({ title, body, tags, tenantId });
     map[rel] = created.id;
+    touchedIds.push(created.id);
     imported++;
+  }
+
+  if (touchedIds.length > 0) {
+    await refreshOutgoingLinksAfterBodyWrites(store, touchedIds, tenant);
   }
 
   for (const rel of Object.keys(map)) {

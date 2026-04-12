@@ -220,6 +220,8 @@ export const IPC = {
   NOTE_GRAPH: 'note:graph',
   NOTE_UPDATE_LINKS: 'note:updateLinks',
   NOTE_RESOLVE_TITLE: 'note:resolveTitle',
+  /** After renaming a note: rewrite [[oldTitle]] wikilinks and recompute inferred links for the tenant. */
+  NOTE_RELOCATE_WIKILINKS_ON_RENAME: 'note:relocateWikilinksOnRename',
   // File operations
   FILE_SAVE_AS: 'file:saveAs',
   FILE_OPEN: 'file:open',
