@@ -12,9 +12,19 @@ import { defaultLocalDataDir, legacyElectronUserDataDir } from './userConfig';
 
 const UI_PREFS_KV_KEY = 'ui_preferences';
 
-function candidateReadPaths(electronUserData?: string): string[] {
+function prefsKvKey(workspaceId?: string): string {
+  if (!workspaceId || workspaceId === 'default') {
+    return UI_PREFS_KV_KEY;
+  }
+  return `${UI_PREFS_KV_KEY}:${workspaceId}`;
+}
+
+function candidateReadPaths(electronUserData?: string, workspaceId?: string): string[] {
   const out: string[] = [];
   if (electronUserData) {
+    if (workspaceId && workspaceId !== 'default') {
+      out.push(path.join(electronUserData, `ui-preferences.${workspaceId}.json`));
+    }
     out.push(path.join(electronUserData, 'ui-preferences.json'));
   }
   const home = process.env['MNEMO_HOME']?.trim();
@@ -26,8 +36,11 @@ function candidateReadPaths(electronUserData?: string): string[] {
   return out;
 }
 
-function resolveWritePath(electronUserData?: string): string {
+function resolveWritePath(electronUserData?: string, workspaceId?: string): string {
   if (electronUserData) {
+    if (workspaceId && workspaceId !== 'default') {
+      return path.join(electronUserData, `ui-preferences.${workspaceId}.json`);
+    }
     return path.join(electronUserData, 'ui-preferences.json');
   }
   const home = process.env['MNEMO_HOME']?.trim();
@@ -130,6 +143,16 @@ export function sanitizePrefs(raw: unknown): MnemoUiPreferences {
     out.categoryColors = cc;
   }
 
+  if (o.categoryColorStamps && typeof o.categoryColorStamps === 'object' && !Array.isArray(o.categoryColorStamps)) {
+    const st: Record<string, number> = {};
+    for (const [k, v] of Object.entries(o.categoryColorStamps)) {
+      if (typeof k === 'string' && typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e15) {
+        st[k] = v;
+      }
+    }
+    out.categoryColorStamps = st;
+  }
+
   const mg = sanitizeMarkdownVarMap(o.markdownGlobal);
   if (mg) out.markdownGlobal = mg;
   const mbt = sanitizeMarkdownByTheme(o.markdownByTheme);
@@ -147,8 +170,8 @@ export function sanitizePrefs(raw: unknown): MnemoUiPreferences {
   return out;
 }
 
-export function readUiPreferencesFromDisk(electronUserData?: string): MnemoUiPreferences {
-  for (const p of candidateReadPaths(electronUserData)) {
+function readFirstExistingPrefs(paths: string[]): MnemoUiPreferences {
+  for (const p of paths) {
     try {
       const raw = fs.readFileSync(p, 'utf-8');
       return sanitizePrefs(JSON.parse(raw) as unknown);
@@ -159,12 +182,105 @@ export function readUiPreferencesFromDisk(electronUserData?: string): MnemoUiPre
   return {};
 }
 
+/**
+ * Non-default workspaces: `candidateReadPaths` used to fall through to `ui-preferences.json`, which
+ * re-applied the default vault's `ideTabIds` after a switch. Merge base defaults with
+ * `ui-preferences.<workspaceId>.json` and never inherit `ideTabIds` from base unless the workspace
+ * file explicitly lists them (so new vaults start with no IDE tabs).
+ */
+export function readUiPreferencesFromDisk(electronUserData?: string, workspaceId?: string): MnemoUiPreferences {
+  if (!workspaceId || workspaceId === 'default') {
+    for (const p of candidateReadPaths(electronUserData, workspaceId)) {
+      try {
+        const raw = fs.readFileSync(p, 'utf-8');
+        return sanitizePrefs(JSON.parse(raw) as unknown);
+      } catch {
+        /* try next */
+      }
+    }
+    return {};
+  }
+
+  if (electronUserData) {
+    const base = readFirstExistingPrefs(candidateReadPaths(electronUserData, undefined));
+    const wsPath = path.join(electronUserData, `ui-preferences.${workspaceId}.json`);
+    let rawWs: unknown;
+    try {
+      rawWs = JSON.parse(fs.readFileSync(wsPath, 'utf-8'));
+    } catch {
+      const { ideTabIds: _omit, ...rest } = base;
+      return rest;
+    }
+    const wsHasIdeTabKey = typeof rawWs === 'object' && rawWs !== null && 'ideTabIds' in rawWs;
+    const wsSan = sanitizePrefs(rawWs);
+    const merged = mergePrefs(base, wsSan);
+    if (!wsHasIdeTabKey) {
+      delete merged.ideTabIds;
+    } else {
+      const cleaned = sanitizeIdeTabIds((rawWs as { ideTabIds?: unknown }).ideTabIds);
+      if (!cleaned?.length) delete merged.ideTabIds;
+      else merged.ideTabIds = cleaned;
+    }
+    return merged;
+  }
+
+  for (const p of candidateReadPaths(electronUserData, workspaceId)) {
+    try {
+      const raw = fs.readFileSync(p, 'utf-8');
+      return sanitizePrefs(JSON.parse(raw) as unknown);
+    } catch {
+      /* try next */
+    }
+  }
+  return {};
+}
+
+/** Last-write-wins per folder key when merging disk vs Turso (uses per-key timestamps). */
+export function mergeCategoryColorDiskCloud(
+  disk: MnemoUiPreferences,
+  cloud: MnemoUiPreferences,
+): Pick<MnemoUiPreferences, 'categoryColors' | 'categoryColorStamps'> {
+  const dc = disk.categoryColors ?? {};
+  const cc = cloud.categoryColors ?? {};
+  const ds = disk.categoryColorStamps ?? {};
+  const cs = cloud.categoryColorStamps ?? {};
+  const keys = new Set([
+    ...Object.keys(dc),
+    ...Object.keys(cc),
+    ...Object.keys(ds),
+    ...Object.keys(cs),
+  ]);
+  const outColors: Record<string, string> = {};
+  const outStamps: Record<string, number> = {};
+  for (const k of keys) {
+    const hasD = Object.prototype.hasOwnProperty.call(dc, k);
+    const hasC = Object.prototype.hasOwnProperty.call(cc, k);
+    const sd = ds[k] ?? (hasD ? 1 : 0);
+    const sc = cs[k] ?? (hasC ? 1 : 0);
+    if (sd > sc) {
+      if (dc[k]) outColors[k] = dc[k]!;
+      outStamps[k] = sd;
+    } else if (sc > sd) {
+      if (cc[k]) outColors[k] = cc[k]!;
+      outStamps[k] = sc;
+    } else {
+      if (cc[k]) outColors[k] = cc[k]!;
+      outStamps[k] = Math.max(sd, sc);
+    }
+  }
+  return {
+    categoryColors: Object.keys(outColors).length ? outColors : undefined,
+    categoryColorStamps: Object.keys(outStamps).length ? outStamps : undefined,
+  };
+}
+
 export function mergePrefs(
   current: MnemoUiPreferences,
   incoming: Partial<MnemoUiPreferences>,
 ): MnemoUiPreferences {
   const {
     categoryColors: incomingCc,
+    categoryColorStamps: incomingStamps,
     workspaceFolder: incomingWs,
     markdownGlobal: incomingMg,
     markdownByTheme: incomingMbt,
@@ -178,6 +294,13 @@ export function mergePrefs(
       next.categoryColors = { ...incomingCc };
     } else {
       delete next.categoryColors;
+    }
+  }
+  if (incomingStamps !== undefined) {
+    if (incomingStamps && typeof incomingStamps === 'object' && !Array.isArray(incomingStamps)) {
+      next.categoryColorStamps = { ...incomingStamps };
+    } else {
+      delete next.categoryColorStamps;
     }
   }
   if (incomingWs !== undefined) {
@@ -216,11 +339,12 @@ export function mergePrefs(
 export function mergeAndWriteUiPreferences(
   partial: Partial<MnemoUiPreferences>,
   electronUserData?: string,
+  workspaceId?: string,
 ): MnemoUiPreferences {
-  const current = readUiPreferencesFromDisk(electronUserData);
+  const current = readUiPreferencesFromDisk(electronUserData, workspaceId);
   const partialClean = sanitizePrefs(partial as unknown) as MnemoUiPreferences;
   const merged = mergePrefs(current, partialClean);
-  const writePath = resolveWritePath(electronUserData);
+  const writePath = resolveWritePath(electronUserData, workspaceId);
   fs.mkdirSync(path.dirname(writePath), { recursive: true });
   fs.writeFileSync(writePath, JSON.stringify(merged, null, 2), 'utf-8');
   return merged;
@@ -230,14 +354,21 @@ export function mergeAndWriteUiPreferences(
 export async function readUiPreferencesMerged(
   store: INoteStore | null | undefined,
   electronUserData?: string,
+  workspaceId?: string,
 ): Promise<MnemoUiPreferences> {
-  const disk = readUiPreferencesFromDisk(electronUserData);
+  const disk = readUiPreferencesFromDisk(electronUserData, workspaceId);
   if (store instanceof TursoNoteStore) {
     try {
-      const raw = await store.getKv(UI_PREFS_KV_KEY);
+      const raw = await store.getKv(prefsKvKey(workspaceId));
       if (raw) {
         const cloud = sanitizePrefs(JSON.parse(raw) as unknown);
-        return mergePrefs(disk, cloud);
+        const merged = mergePrefs(disk, cloud);
+        const cc = mergeCategoryColorDiskCloud(disk, cloud);
+        return {
+          ...merged,
+          categoryColors: cc.categoryColors,
+          categoryColorStamps: cc.categoryColorStamps,
+        };
       }
     } catch {
       /* ignore */
@@ -251,15 +382,16 @@ export async function mergeAndWriteUiPreferencesAsync(
   partial: Partial<MnemoUiPreferences>,
   electronUserData?: string,
   store?: INoteStore | null,
+  workspaceId?: string,
 ): Promise<MnemoUiPreferences> {
-  const current = await readUiPreferencesMerged(store, electronUserData);
+  const current = await readUiPreferencesMerged(store, electronUserData, workspaceId);
   const partialClean = sanitizePrefs(partial as unknown) as MnemoUiPreferences;
   const merged = mergePrefs(current, partialClean);
-  const writePath = resolveWritePath(electronUserData);
+  const writePath = resolveWritePath(electronUserData, workspaceId);
   fs.mkdirSync(path.dirname(writePath), { recursive: true });
   fs.writeFileSync(writePath, JSON.stringify(merged, null, 2), 'utf-8');
   if (store instanceof TursoNoteStore) {
-    await store.setKv(UI_PREFS_KV_KEY, JSON.stringify(merged));
+    await store.setKv(prefsKvKey(workspaceId), JSON.stringify(merged));
   }
   return merged;
 }

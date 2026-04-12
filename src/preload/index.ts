@@ -11,6 +11,8 @@ import type {
   SyncResult,
   MnemoUiPreferences,
   VaultSnapshot,
+  WorkspaceProfilesState,
+  WorkspaceStorage,
 } from '../shared/types';
 
 export interface MnemoAPI {
@@ -63,6 +65,33 @@ export interface MnemoAPI {
       | { ok: false; error: string }
     >;
   };
+  /** Vault workspaces: shared DB + tenant_id, or optional dedicated sqlite/remote per profile. */
+  workspaceProfiles: {
+    list(): Promise<
+      | { ok: true; localMode: boolean; profiles: WorkspaceProfilesState }
+      | { ok: false; error: string }
+    >;
+    create(
+      name: string,
+      importFolder?: string | null,
+    ): Promise<
+      | { ok: true; profiles: WorkspaceProfilesState; newWorkspaceId: string; imported?: number; updated?: number }
+      | { ok: false; error: string }
+    >;
+    pickImportFolder(): Promise<{ ok: true; path: string } | { ok: false; path: null }>;
+    switchTo(id: string): Promise<
+      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
+    >;
+    setStorage(id: string, storage: WorkspaceStorage): Promise<
+      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
+    >;
+    archiveVault(id: string): Promise<
+      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
+    >;
+    deleteVault(id: string): Promise<
+      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
+    >;
+  };
 }
 
 const api: MnemoAPI = {
@@ -110,6 +139,17 @@ const api: MnemoAPI = {
   workspace: {
     chooseFolder: () => ipcRenderer.invoke(IPC.WORKSPACE_CHOOSE_FOLDER),
     sync: () => ipcRenderer.invoke(IPC.WORKSPACE_SYNC),
+  },
+  workspaceProfiles: {
+    list: () => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_LIST),
+    create: (name: string, importFolder?: string | null) =>
+      ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_CREATE, name, importFolder ?? null),
+    pickImportFolder: () => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_PICK_FOLDER),
+    switchTo: (id: string) => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_SWITCH, id),
+    setStorage: (id: string, storage: WorkspaceStorage) =>
+      ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_SET_STORAGE, id, storage),
+    archiveVault: (id: string) => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_ARCHIVE, id),
+    deleteVault: (id: string) => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_DELETE, id),
   },
 };
 

@@ -94,7 +94,7 @@ export async function renameCategoryFolder(
   store: INoteStore,
   oldPathRaw: string,
   newPathRaw: string,
-  opts?: { silent?: boolean },
+  opts?: { silent?: boolean; tenantId?: string },
 ): Promise<{ updated: number; oldPath: string; newPath: string }> {
   const oldPath = parseCliCategoryPath(oldPathRaw);
   const newPath = parseCliCategoryPath(newPathRaw);
@@ -103,7 +103,7 @@ export async function renameCategoryFolder(
   }
   const migrateSubtreePrefix = newPath !== UNASSIGNED_PATH;
 
-  const initialList = await store.list();
+  const initialList = await store.list(opts?.tenantId);
   let updated = 0;
   for (const n of initialList) {
     const cur = categoryPathFromTags(n.tags, initialList);
@@ -145,7 +145,7 @@ export async function renameCategoryFolder(
 export async function promoteCategoryFolder(
   store: INoteStore,
   pathRaw: string,
-  opts?: { silent?: boolean },
+  opts?: { silent?: boolean; tenantId?: string },
 ): Promise<{ updated: number; oldPath: string; newPath: string }> {
   const p = parseCliCategoryPath(pathRaw);
   const next = promoteCategoryPath(p);
@@ -159,7 +159,7 @@ export async function demoteCategoryFolder(
   store: INoteStore,
   pathRaw: string,
   parentRaw: string,
-  opts?: { silent?: boolean },
+  opts?: { silent?: boolean; tenantId?: string },
 ): Promise<{ updated: number; oldPath: string; newPath: string }> {
   const path = parseCliCategoryPath(pathRaw);
   const parent = parseCliCategoryPath(parentRaw);

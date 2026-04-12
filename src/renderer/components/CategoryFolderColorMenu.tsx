@@ -18,6 +18,10 @@ interface CategoryFolderColorMenuProps {
   onRequestDemote: () => void;
   canClear: boolean;
   onClearColor: () => void;
+  canArchiveCategory?: boolean;
+  onArchiveCategory?: () => void;
+  canDeleteCategory?: boolean;
+  onDeleteCategory?: () => void;
 }
 
 function normalizePickerHex(hex: string | null | undefined, fallback: string): string {
@@ -50,6 +54,10 @@ export default function CategoryFolderColorMenu({
   onRequestDemote,
   canClear,
   onClearColor,
+  canArchiveCategory = false,
+  onArchiveCategory,
+  canDeleteCategory = false,
+  onDeleteCategory,
 }: CategoryFolderColorMenuProps) {
   const showRename = Boolean(onRequestRename);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -226,6 +234,36 @@ export default function CategoryFolderColorMenu({
         >
           Clear folder color
         </button>
+      )}
+      {(canArchiveCategory || canDeleteCategory) && (
+        <div className="border-t border-mnemo-border/80 pt-1 pb-1">
+          {canArchiveCategory && onArchiveCategory && (
+            <button
+              type="button"
+              className="w-full px-3 py-1.5 text-xs text-left text-amber-600 dark:text-amber-400 hover:bg-mnemo-hover cursor-pointer"
+              onMouseDown={e => e.stopPropagation()}
+              onClick={e => {
+                e.stopPropagation();
+                onArchiveCategory();
+              }}
+            >
+              Archive folder (move to Archive/…)
+            </button>
+          )}
+          {canDeleteCategory && onDeleteCategory && (
+            <button
+              type="button"
+              className="w-full px-3 py-1.5 text-xs text-left text-red-600 dark:text-red-400 hover:bg-mnemo-hover cursor-pointer"
+              onMouseDown={e => e.stopPropagation()}
+              onClick={e => {
+                e.stopPropagation();
+                onDeleteCategory();
+              }}
+            >
+              Delete folder (all notes in tree)
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

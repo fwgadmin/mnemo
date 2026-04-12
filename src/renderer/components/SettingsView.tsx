@@ -1,13 +1,23 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig, SyncResult } from '../../shared/types';
+import type { AppConfig, SyncResult, WorkspaceProfilesState, WorkspaceStorage } from '../../shared/types';
 import { THEMES, type LayoutPreset } from '../theme/themes';
 import MarkdownEditorSettings from './MarkdownEditorSettings';
 
 type LayoutOverride = 'inherit' | LayoutPreset;
 
+const SETTINGS_TABS = [
+  { id: 'general' as const, label: 'General' },
+  { id: 'markdown' as const, label: 'Markdown' },
+  { id: 'workspace' as const, label: 'Workspace' },
+  { id: 'database' as const, label: 'Database' },
+];
+type SettingsTabId = (typeof SETTINGS_TABS)[number]['id'];
+
 interface Props {
   onClose: () => void;
   onSaved?: () => void;
+  /** Reload notes and merged prefs after switching vault workspace from this screen. */
+  onWorkspaceChanged?: () => void | Promise<void>;
   themeId: string;
   onThemeIdChange: (id: string) => void;
   layoutOverride: LayoutOverride;
@@ -23,6 +33,7 @@ interface Props {
 export default function SettingsView({
   onClose,
   onSaved,
+  onWorkspaceChanged,
   themeId,
   onThemeIdChange,
   layoutOverride,
@@ -48,18 +59,29 @@ export default function SettingsView({
   const [status, setStatus]         = useState<{ ok: boolean; msg: string } | null>(null);
   const [workspaceFolder, setWorkspaceFolder] = useState('');
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [vaultProfiles, setVaultProfiles] = useState<WorkspaceProfilesState | null>(null);
+  const [storageEditId, setStorageEditId] = useState<string | null>(null);
+  const [storageDraft, setStorageDraft] = useState<WorkspaceStorage>({ mode: 'inherit' });
+  const [newVaultName, setNewVaultName] = useState('');
+  const [newVaultImportFolder, setNewVaultImportFolder] = useState<string | null>(null);
+  const [vaultProfileBusy, setVaultProfileBusy] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
 
   useEffect(() => {
     (async () => {
-      const [cfg, type, prefs] = await Promise.all([
+      const [cfg, type, prefs, vp] = await Promise.all([
         window.mnemo.config.read(),
         window.mnemo.config.storeType(),
         window.mnemo.preferences.read(),
+        window.mnemo.workspaceProfiles.list(),
       ]);
       setTursoUrl(cfg.tursoUrl ?? cfg.libsqlUrl ?? '');
       setTursoToken(cfg.tursoToken ?? cfg.libsqlAuthToken ?? '');
       setStoreType(type);
       setWorkspaceFolder(prefs.workspaceFolder ?? '');
+      if (vp.ok) {
+        setVaultProfiles(vp.profiles);
+      }
     })();
   }, []);
 
@@ -108,18 +130,59 @@ export default function SettingsView({
   };
 
   return (
-    <div className="flex flex-col h-full bg-mnemo-panel text-mnemo-muted p-8 overflow-y-auto">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-xl font-semibold text-mnemo-text">Settings</h1>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-mnemo-dim hover:text-mnemo-text transition-colors text-lg leading-none"
-          aria-label="Close settings"
-        >✕</button>
+    <div className="flex flex-col h-full min-h-0 bg-mnemo-panel text-mnemo-muted">
+      <div className="shrink-0 px-6 pt-6 pb-3 border-b border-mnemo-border">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <h1 className="text-xl font-semibold text-mnemo-text">Settings</h1>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-mnemo-dim hover:text-mnemo-text transition-colors text-lg leading-none shrink-0"
+            aria-label="Close settings"
+          >
+            ✕
+          </button>
+        </div>
+        <nav className="flex flex-wrap gap-1" aria-label="Settings sections">
+          {SETTINGS_TABS.map(t => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={settingsTab === t.id}
+              onClick={() => setSettingsTab(t.id)}
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors border border-transparent ${
+                settingsTab === t.id
+                  ? 'bg-mnemo-panel-elevated text-mnemo-text border-mnemo-border shadow-sm'
+                  : 'text-mnemo-dim hover:text-mnemo-text hover:bg-mnemo-hover'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
       </div>
 
-      <section className="mb-8 max-w-lg">
+      {status && (
+        <div
+          className={`shrink-0 px-6 py-2.5 text-xs border-b border-mnemo-border ${
+            status.ok
+              ? lightUi
+                ? 'bg-emerald-50/90 text-emerald-950 dark:bg-emerald-950/30 dark:text-emerald-200'
+                : 'bg-emerald-950/35 text-emerald-200'
+              : lightUi
+                ? 'bg-red-50 text-red-900'
+                : 'bg-red-950/40 text-red-300'
+          }`}
+        >
+          {status.msg}
+        </div>
+      )}
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6">
+      {settingsTab === 'general' && (
+      <>
+      <section className="mb-2 max-w-2xl">
         <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Appearance</h2>
         <div className="space-y-4">
           <div>
@@ -184,8 +247,11 @@ export default function SettingsView({
           accent on the active note in the list.
         </p>
       </section>
+      </>
+      )}
 
-      <section className="mb-8 max-w-2xl">
+      {settingsTab === 'markdown' && (
+      <section className="mb-2 max-w-2xl">
         <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Markdown appearance</h2>
         <MarkdownEditorSettings
           scope={markdownScope}
@@ -202,7 +268,10 @@ export default function SettingsView({
           }}
         />
       </section>
+      )}
 
+      {settingsTab === 'workspace' && (
+      <>
       <section className="mb-8 max-w-2xl">
         <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Workspace folder</h2>
         <p className="text-xs text-mnemo-dim mb-4 leading-relaxed">
@@ -276,6 +345,355 @@ export default function SettingsView({
         </div>
       </section>
 
+      {vaultProfiles && (
+        <section className="mb-8 max-w-2xl">
+          <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Vault workspaces</h2>
+          <p className="text-xs text-mnemo-dim mb-4 leading-relaxed">
+            By default, workspaces share one database and are isolated by <strong className="text-mnemo-muted">tenant id</strong>{' '}
+            (same as workspace id). You can optionally give a workspace its own SQLite files or libSQL URL in{' '}
+            <strong className="text-mnemo-muted">Storage</strong>. Switching workspaces updates the note list immediately
+            when using the shared connection; dedicated databases switch without restarting the app.{' '}
+            <strong className="text-mnemo-muted">Archive</strong> / <strong className="text-mnemo-muted">Delete</strong>{' '}
+            remove the profile and purge that workspace’s notes (dedicated SQLite: deletes the DB and vault folder). You need
+            at least two vaults, and you cannot archive or delete the active or Default vault.             The <strong className="text-mnemo-muted">Workspace folder</strong> block above syncs markdown into the{' '}
+            <strong className="text-mnemo-muted">current</strong> workspace.
+          </p>
+          <ul className="space-y-2 mb-4">
+            {vaultProfiles.workspaces.map(w => {
+              const canRemoveVault =
+                w.id !== 'default' &&
+                w.id !== vaultProfiles.activeWorkspaceId &&
+                vaultProfiles.workspaces.length > 1;
+              const st = w.storage?.mode ?? 'inherit';
+              return (
+                <li
+                  key={w.id}
+                  className="flex flex-col gap-2 text-xs text-mnemo-muted bg-mnemo-panel-elevated border border-mnemo-border rounded px-3 py-2"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0">
+                    <span className="text-mnemo-text font-medium">{w.name}</span>
+                    <span className="ml-2 font-mono text-[10px] text-mnemo-dim break-all">{w.id}</span>
+                    {w.id === vaultProfiles.activeWorkspaceId ? (
+                      <span className="ml-2 text-emerald-500/90">active</span>
+                    ) : null}
+                    <span className="ml-2 text-[10px] text-mnemo-dim">storage: {st}</span>
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 shrink-0">
+                    {w.id !== vaultProfiles.activeWorkspaceId ? (
+                      <button
+                        type="button"
+                        disabled={vaultProfileBusy}
+                        onClick={async () => {
+                          setVaultProfileBusy(true);
+                          try {
+                            const r = await window.mnemo.workspaceProfiles.switchTo(w.id);
+                            if (!r.ok) {
+                              setStatus({ ok: false, msg: r.error });
+                            } else if (onWorkspaceChanged) {
+                              await onWorkspaceChanged();
+                            }
+                          } finally {
+                            setVaultProfileBusy(false);
+                          }
+                        }}
+                        className="px-2 py-1 rounded border border-mnemo-border-strong text-mnemo-text hover:bg-mnemo-hover disabled:opacity-50"
+                      >
+                        Switch…
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={vaultProfileBusy}
+                      onClick={() => {
+                        setStorageEditId(storageEditId === w.id ? null : w.id);
+                        setStorageDraft(w.storage ?? { mode: 'inherit' });
+                      }}
+                      className="px-2 py-1 rounded border border-mnemo-border text-mnemo-dim hover:text-mnemo-text hover:bg-mnemo-hover disabled:opacity-50"
+                    >
+                      Storage…
+                    </button>
+                    {canRemoveVault ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={vaultProfileBusy}
+                          onClick={async () => {
+                            if (
+                              !window.confirm(
+                                `Archive workspace “${w.name}”? Notes for this workspace will be removed from the database (and dedicated files deleted if applicable).`,
+                              )
+                            ) {
+                              return;
+                            }
+                            setVaultProfileBusy(true);
+                            try {
+                              const r = await window.mnemo.workspaceProfiles.archiveVault(w.id);
+                              if (r.ok) {
+                                setVaultProfiles(r.profiles);
+                                setStatus({ ok: true, msg: `Archived “${w.name}”.` });
+                              } else {
+                                setStatus({ ok: false, msg: r.error });
+                              }
+                            } finally {
+                              setVaultProfileBusy(false);
+                            }
+                          }}
+                          className="px-2 py-1 rounded border border-amber-700/50 text-amber-700 dark:text-amber-400 hover:bg-mnemo-hover disabled:opacity-50"
+                        >
+                          Archive
+                        </button>
+                        <button
+                          type="button"
+                          disabled={vaultProfileBusy}
+                          onClick={async () => {
+                            if (
+                              !window.confirm(
+                                `Permanently delete vault “${w.name}” and all notes in it? This cannot be undone.`,
+                              )
+                            ) {
+                              return;
+                            }
+                            setVaultProfileBusy(true);
+                            try {
+                              const r = await window.mnemo.workspaceProfiles.deleteVault(w.id);
+                              if (r.ok) {
+                                setVaultProfiles(r.profiles);
+                                setStatus({ ok: true, msg: `Deleted vault “${w.name}”.` });
+                              } else {
+                                setStatus({ ok: false, msg: r.error });
+                              }
+                            } finally {
+                              setVaultProfileBusy(false);
+                            }
+                          }}
+                          className="px-2 py-1 rounded border border-red-700/50 text-red-700 dark:text-red-400 hover:bg-mnemo-hover disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                  </div>
+                  {storageEditId === w.id ? (
+                    <div className="pl-1 pt-2 border-t border-mnemo-border space-y-2 w-full max-w-xl">
+                      <div className="text-[10px] text-mnemo-dim uppercase tracking-wide">Storage override</div>
+                      <select
+                        value={storageDraft.mode}
+                        onChange={e => {
+                          const m = e.target.value as WorkspaceStorage['mode'];
+                          if (m === 'inherit') setStorageDraft({ mode: 'inherit' });
+                          else if (m === 'sqlite') {
+                            setStorageDraft(
+                              storageDraft.mode === 'sqlite'
+                                ? storageDraft
+                                : { mode: 'sqlite', dbPath: '', vaultPath: '' },
+                            );
+                          } else {
+                            setStorageDraft(
+                              storageDraft.mode === 'remote'
+                                ? storageDraft
+                                : { mode: 'remote', tursoUrl: '', tursoToken: '' },
+                            );
+                          }
+                        }}
+                        className="w-full bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text text-xs"
+                      >
+                        <option value="inherit">Inherit global database (tenant = workspace id)</option>
+                        <option value="sqlite">Dedicated SQLite files</option>
+                        <option value="remote">Dedicated libSQL (URL + token)</option>
+                      </select>
+                      {storageDraft.mode === 'sqlite' ? (
+                        <div className="flex flex-col gap-1.5">
+                          <input
+                            type="text"
+                            placeholder="Absolute path to mnemo.db"
+                            value={storageDraft.dbPath}
+                            onChange={e =>
+                              setStorageDraft({
+                                mode: 'sqlite',
+                                dbPath: e.target.value,
+                                vaultPath: storageDraft.mode === 'sqlite' ? storageDraft.vaultPath : '',
+                              })
+                            }
+                            className="w-full font-mono text-xs bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Absolute path to vault directory"
+                            value={storageDraft.mode === 'sqlite' ? storageDraft.vaultPath : ''}
+                            onChange={e =>
+                              setStorageDraft({
+                                mode: 'sqlite',
+                                dbPath: storageDraft.mode === 'sqlite' ? storageDraft.dbPath : '',
+                                vaultPath: e.target.value,
+                              })
+                            }
+                            className="w-full font-mono text-xs bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text"
+                          />
+                        </div>
+                      ) : null}
+                      {storageDraft.mode === 'remote' ? (
+                        <div className="flex flex-col gap-1.5">
+                          <input
+                            type="text"
+                            placeholder="Database URL (libsql://… or https://…)"
+                            value={storageDraft.tursoUrl ?? ''}
+                            onChange={e =>
+                              setStorageDraft({
+                                mode: 'remote',
+                                tursoUrl: e.target.value,
+                                tursoToken: storageDraft.mode === 'remote' ? storageDraft.tursoToken ?? '' : '',
+                              })
+                            }
+                            className="w-full font-mono text-xs bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text"
+                          />
+                          <input
+                            type="password"
+                            placeholder="Auth token"
+                            value={storageDraft.tursoToken ?? ''}
+                            onChange={e =>
+                              setStorageDraft({
+                                mode: 'remote',
+                                tursoUrl: storageDraft.mode === 'remote' ? storageDraft.tursoUrl ?? '' : '',
+                                tursoToken: e.target.value,
+                              })
+                            }
+                            className="w-full font-mono text-xs bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text"
+                          />
+                        </div>
+                      ) : null}
+                      <p className="text-[10px] text-mnemo-dim leading-snug">
+                        Tokens in workspace profiles are stored in plain JSON on disk (v1). Dedicated SQLite uses a single
+                        tenant inside that file.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={vaultProfileBusy}
+                          onClick={async () => {
+                            setVaultProfileBusy(true);
+                            try {
+                              const r = await window.mnemo.workspaceProfiles.setStorage(w.id, storageDraft);
+                              if (r.ok) {
+                                setVaultProfiles(r.profiles);
+                                setStorageEditId(null);
+                                setStatus({ ok: true, msg: `Storage updated for “${w.name}”.` });
+                              } else {
+                                setStatus({ ok: false, msg: r.error });
+                              }
+                            } finally {
+                              setVaultProfileBusy(false);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded bg-mnemo-accent text-mnemo-on-accent text-xs font-medium"
+                        >
+                          Save storage
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStorageEditId(null)}
+                          className="px-3 py-1.5 rounded border border-mnemo-border text-xs text-mnemo-dim hover:text-mnemo-text"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2 items-center">
+              <input
+                type="text"
+                value={newVaultName}
+                onChange={e => setNewVaultName(e.target.value)}
+                placeholder="New workspace name"
+                className="flex-1 min-w-[12rem] bg-mnemo-panel-elevated border border-mnemo-border rounded px-3 py-1.5 text-sm text-mnemo-text"
+              />
+            </div>
+            <div className="text-[10px] text-mnemo-dim uppercase tracking-wide">Optional import into new vault</div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="flex-1 min-w-[12rem] text-xs font-mono text-mnemo-text bg-mnemo-panel-elevated border border-mnemo-border rounded px-3 py-2 break-all min-h-[2rem]">
+                {newVaultImportFolder ?? '— none — (empty vault)'}
+              </div>
+              <button
+                type="button"
+                disabled={vaultProfileBusy}
+                onClick={async () => {
+                  setVaultProfileBusy(true);
+                  try {
+                    const r = await window.mnemo.workspaceProfiles.pickImportFolder();
+                    if (r.ok) setNewVaultImportFolder(r.path);
+                  } finally {
+                    setVaultProfileBusy(false);
+                  }
+                }}
+                className="px-3 py-1.5 bg-mnemo-panel-elevated hover:bg-mnemo-hover border border-mnemo-border rounded text-sm text-mnemo-text transition-colors disabled:opacity-50"
+              >
+                Pick folder…
+              </button>
+              <button
+                type="button"
+                disabled={vaultProfileBusy || !newVaultImportFolder}
+                onClick={() => setNewVaultImportFolder(null)}
+                className="px-3 py-1.5 border border-mnemo-border rounded text-sm text-mnemo-dim hover:text-mnemo-text disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <button
+                type="button"
+                disabled={vaultProfileBusy || !newVaultName.trim()}
+                onClick={async () => {
+                  setVaultProfileBusy(true);
+                  try {
+                    const r = await window.mnemo.workspaceProfiles.create(
+                      newVaultName.trim(),
+                      newVaultImportFolder ?? undefined,
+                    );
+                    if (r.ok) {
+                      setNewVaultName('');
+                      setNewVaultImportFolder(null);
+                      const extra =
+                        r.imported !== undefined
+                          ? ` Imported ${r.imported}, updated ${r.updated ?? 0} from disk.`
+                          : '';
+                      const sw = await window.mnemo.workspaceProfiles.switchTo(r.newWorkspaceId);
+                      if (!sw.ok) {
+                        setStatus({ ok: false, msg: sw.error });
+                        setVaultProfiles(r.profiles);
+                      } else {
+                        setVaultProfiles(sw.profiles);
+                        if (onWorkspaceChanged) await onWorkspaceChanged();
+                        setStatus({
+                          ok: true,
+                          msg: `Workspace created and opened.${extra}`,
+                        });
+                      }
+                    } else {
+                      setStatus({ ok: false, msg: r.error });
+                    }
+                  } finally {
+                    setVaultProfileBusy(false);
+                  }
+                }}
+                className="px-4 py-1.5 bg-mnemo-panel-elevated hover:bg-mnemo-hover border border-mnemo-border-strong rounded text-sm text-mnemo-text transition-colors disabled:opacity-50"
+              >
+                Create workspace
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+      </>
+      )}
+
+      {settingsTab === 'database' && (
+      <>
       {/* Connection status badge — light themes need darker green on solid tint for WCAG contrast */}
       {storeType && (
         <div className={`inline-flex items-center gap-2 mb-8 px-3 py-1.5 rounded text-xs font-medium w-fit ${
@@ -348,13 +766,6 @@ export default function SettingsView({
             </div>
           </div>
         </div>
-
-        {/* Status message */}
-        {status && (
-          <p className={`mt-3 text-xs ${status.ok ? successMsgClass : lightUi ? 'text-red-700' : 'text-red-400'}`}>
-            {status.msg}
-          </p>
-        )}
 
         <div className="flex gap-3 mt-5">
           <button
@@ -445,6 +856,9 @@ export default function SettingsView({
           </p>
         </div>
       </section>
+      </>
+      )}
+      </div>
     </div>
   );
 }

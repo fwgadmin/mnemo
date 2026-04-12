@@ -6,6 +6,12 @@ import * as path from 'path';
 import * as os from 'os';
 import type { AppConfig } from '../shared/types';
 
+function configHasRemoteCredentials(cfg: AppConfig): boolean {
+  const url = cfg.tursoUrl?.trim() || cfg.libsqlUrl?.trim();
+  const token = cfg.tursoToken?.trim() || cfg.libsqlAuthToken?.trim();
+  return Boolean(url && token);
+}
+
 export function defaultLocalDataDir(): string {
   const fromEnv = process.env['MNEMO_HOME']?.trim();
   if (fromEnv) return path.resolve(fromEnv);
@@ -27,10 +33,58 @@ export function legacyElectronUserDataDir(): string {
   return path.join(config, name);
 }
 
+/** Electron `app.getPath('userData')` for package name `mnemo-note` (npm package name). */
+export function electronDefaultUserDataDirMnemoNote(): string {
+  const name = 'mnemo-note';
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', name);
+  }
+  if (process.platform === 'win32') {
+    const base = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    return path.join(base, name);
+  }
+  const config = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  return path.join(config, name);
+}
+
+/**
+ * Bootstrap root for `workspace-profiles.json` and `workspaces/<id>/`: same rules as Electron
+ * (MNEMO_HOME, else legacy `mnemo` userData when it holds Turso creds and `mnemo-note` does not).
+ */
+export function resolveWorkspaceBootstrapRoot(): string {
+  const raw = process.env['MNEMO_HOME']?.trim();
+  if (raw) return path.resolve(raw);
+
+  const legacyDir = legacyElectronUserDataDir();
+  const currentDir = electronDefaultUserDataDirMnemoNote();
+  const legacyCfgPath = path.join(legacyDir, 'config.json');
+  const currentCfgPath = path.join(currentDir, 'config.json');
+  let legacyCfg: AppConfig | null = null;
+  let currentCfg: AppConfig | null = null;
+  try {
+    if (fs.existsSync(legacyCfgPath)) {
+      legacyCfg = JSON.parse(fs.readFileSync(legacyCfgPath, 'utf-8')) as AppConfig;
+    }
+  } catch {
+    legacyCfg = null;
+  }
+  try {
+    if (fs.existsSync(currentCfgPath)) {
+      currentCfg = JSON.parse(fs.readFileSync(currentCfgPath, 'utf-8')) as AppConfig;
+    }
+  } catch {
+    currentCfg = null;
+  }
+  const legacyRemote = legacyCfg != null && configHasRemoteCredentials(legacyCfg);
+  const currentRemote = currentCfg != null && configHasRemoteCredentials(currentCfg);
+  if (legacyRemote && !currentRemote && legacyDir !== currentDir) {
+    return legacyDir;
+  }
+  return currentDir;
+}
+
 function hasRemoteCredentialsInFile(cfg: AppConfig): boolean {
-  const url = cfg.tursoUrl?.trim() || cfg.libsqlUrl?.trim();
-  const token = cfg.tursoToken?.trim() || cfg.libsqlAuthToken?.trim();
-  return Boolean(url && token);
+  return configHasRemoteCredentials(cfg);
 }
 
 /**

@@ -7,6 +7,8 @@ import GraphView from './components/GraphView';
 import CommandPalette from './components/CommandPalette';
 import HelpView from './components/HelpView';
 import MenuBar from './components/MenuBar';
+import WorkspaceSwitcher from './components/WorkspaceSwitcher';
+import NewVaultWorkspaceDialog from './components/NewVaultWorkspaceDialog';
 import MarkdownHelper from './components/MarkdownHelper';
 import SettingsView from './components/SettingsView';
 import RemoteUpdateIndicator from './components/RemoteUpdateIndicator';
@@ -20,14 +22,16 @@ import EditorTabBar from './components/EditorTabBar';
 import {
   categoryColorStorageKey,
   categoryPathFromTags,
+  countNotesInCategorySubtree,
   GENERAL_PATH,
+  isArchiveCategoryPath,
   isValidDemoteParent,
   normalizePath,
   pathNestedUnderParent,
   promoteCategoryPath,
   UNASSIGNED_PATH,
 } from './categoryPath';
-import { colorForCategoryPath, readCategoryColors } from './categoryColors';
+import { colorForCategoryPath, readCategoryColors, readCategoryColorStamps } from './categoryColors';
 import { buildEffectiveCategoryColors, getSuggestedCategorySwatches } from './categoryColorPalette';
 import { gatherLocalStoragePreferences } from './uiPreferencesSync';
 import { applyThemeToDocument, DEFAULT_THEME_ID, getTheme } from './theme/themes';
@@ -94,6 +98,7 @@ export default function App() {
   /** Stable #ref in sidebar / graph — off by default (CLI-oriented) */
   const [showNoteRefs, setShowNoteRefs] = useState(() => loadPref('showNoteRefs', false));
   const [categoryColors, setCategoryColors] = useState<Record<string, string>>(readCategoryColors);
+  const [categoryColorStamps, setCategoryColorStamps] = useState<Record<string, number>>(readCategoryColorStamps);
   const [activeTab, setActiveTab] = useState<ActiveTab>('note');
   const [saveSignal, setSaveSignal] = useState(0);
   /** Bumps on explicit ↻ / Reload Note List so the editor replaces its buffer from DB. */
@@ -102,6 +107,8 @@ export default function App() {
   const [remotePollIndicatorVisible, setRemotePollIndicatorVisible] = useState(false);
   const remotePollIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showNewVaultDialog, setShowNewVaultDialog] = useState(false);
+  const [vaultSwitcherNonce, setVaultSwitcherNonce] = useState(0);
   const [themeId, setThemeId] = useState(readThemeId);
   const [layoutOverride, setLayoutOverride] = useState<LayoutOverride>(readLayoutOverride);
   const [sidebarGrouped, setSidebarGrouped] = useState(() => localStorage.getItem('mnemo.grouped') !== 'false');
@@ -151,6 +158,8 @@ export default function App() {
   const lastVaultFingerprintRef = useRef<string>('');
 
   const editorRef = useRef<EditorHandle | null>(null);
+  /** After New Note, focus title once the editor for that id is mounted (when header is visible). */
+  const focusTitleForNoteIdRef = useRef<string | null>(null);
   const [previewBody, setPreviewBody] = useState('');
   const handleEditorLiveBody = useCallback((body: string) => {
     setPreviewBody(body);
@@ -163,6 +172,25 @@ export default function App() {
     }
     setPreviewBody(activeNote.body);
   }, [activeNote?.id]);
+
+  useEffect(() => {
+    const id = focusTitleForNoteIdRef.current;
+    if (!id) return;
+    if (activeNote?.id !== id) {
+      focusTitleForNoteIdRef.current = null;
+      return;
+    }
+    if (!showNoteHeader || activeNote.hideHeader) {
+      focusTitleForNoteIdRef.current = null;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      focusTitleForNoteIdRef.current = null;
+      if (activeNoteRef.current?.id !== id) return;
+      editorRef.current?.focusTitle();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [activeNote?.id, activeNote?.hideHeader, showNoteHeader]);
 
   useLayoutEffect(() => {
     applyThemeToDocument(themeDef);
@@ -224,6 +252,14 @@ export default function App() {
       }
       setCategoryColors(file.categoryColors);
     }
+    if (file.categoryColorStamps !== undefined) {
+      try {
+        localStorage.setItem('mnemo.categoryColorStamps', JSON.stringify(file.categoryColorStamps));
+      } catch {
+        /* quota */
+      }
+      setCategoryColorStamps(file.categoryColorStamps);
+    }
     if (file.markdownGlobal !== undefined) setMarkdownGlobal(file.markdownGlobal);
     if (file.markdownByTheme !== undefined) setMarkdownByTheme(file.markdownByTheme);
     if (file.ideTabIds !== undefined && file.ideTabIds.length > 0) setOpenTabIds(file.ideTabIds);
@@ -273,6 +309,7 @@ export default function App() {
         grouped: sidebarGrouped,
         categoryScopeSubtree: sidebarIncludeSubfolders,
         categoryColors,
+        categoryColorStamps,
         markdownGlobal,
         markdownByTheme,
         ideTabIds: openTabIds,
@@ -290,6 +327,7 @@ export default function App() {
     sidebarGrouped,
     sidebarIncludeSubfolders,
     categoryColors,
+    categoryColorStamps,
     markdownGlobal,
     markdownByTheme,
     openTabIds,
@@ -306,6 +344,7 @@ export default function App() {
 
   const handleSetCategoryColor = useCallback((path: string, color: string | null) => {
     const key = categoryColorStorageKey(path);
+    const now = Date.now();
     setCategoryColors(prev => {
       const next = { ...prev };
       if (color == null) {
@@ -315,6 +354,15 @@ export default function App() {
       }
       try {
         localStorage.setItem('mnemo.categoryColors', JSON.stringify(next));
+      } catch {
+        /* ignore quota */
+      }
+      return next;
+    });
+    setCategoryColorStamps(prev => {
+      const next = { ...prev, [key]: now };
+      try {
+        localStorage.setItem('mnemo.categoryColorStamps', JSON.stringify(next));
       } catch {
         /* ignore quota */
       }
@@ -349,10 +397,24 @@ export default function App() {
 
   const loadNotes = useCallback(async () => {
     const list = await window.mnemo.notes.list();
+    vaultNotesRef.current = list;
     setVaultNotes(list);
     setNotes(list);
     await captureVaultFingerprint();
   }, [captureVaultFingerprint]);
+
+  const handleWorkspaceChanged = useCallback(async () => {
+    setVaultSwitcherNonce(n => n + 1);
+    setActiveNote(null);
+    setOpenTabIds([]);
+    await loadNotes();
+    await refreshMergedPreferencesFromStore();
+    // Drop note tabs that do not exist in this vault (defense in depth vs stale prefs / cloud KV).
+    setOpenTabIds(prev => {
+      const ids = new Set(vaultNotesRef.current.map(n => n.id));
+      return prev.filter(id => isFileTabId(id) || ids.has(id));
+    });
+  }, [loadNotes, refreshMergedPreferencesFromStore]);
 
   /**
    * Reload sidebar/search lists from DB. Auto-refresh does not reload the open note body (avoids clobbering unsaved edits).
@@ -361,6 +423,7 @@ export default function App() {
   const syncNotesFromStore = useCallback(
     async (opts?: { reloadActiveNote?: boolean }) => {
       const list = await window.mnemo.notes.list();
+      vaultNotesRef.current = list;
       setVaultNotes(list);
       const q = searchQueryRef.current.trim();
       if (q) {
@@ -514,6 +577,40 @@ export default function App() {
         return next;
       });
 
+      setCategoryColorStamps(prev => {
+        const next = { ...prev };
+        if (newKey === UNASSIGNED_PATH) {
+          const t = next[oldKey];
+          if (t !== undefined && oldKey !== newKey) {
+            delete next[oldKey];
+            next[newKey] = t;
+          }
+        } else {
+          const keys = Object.keys(next);
+          for (const k of keys) {
+            if (k !== oldKey && !k.startsWith(`${oldKey}/`)) continue;
+            const t = next[k];
+            delete next[k];
+            const rest = k === oldKey ? '' : k.slice(oldKey.length + 1);
+            const nk =
+              newKey === GENERAL_PATH
+                ? rest
+                  ? `${GENERAL_PATH}/${rest}`
+                  : GENERAL_PATH
+                : rest
+                  ? `${newKey}/${rest}`
+                  : newKey;
+            next[nk] = t;
+          }
+        }
+        try {
+          localStorage.setItem('mnemo.categoryColorStamps', JSON.stringify(next));
+        } catch {
+          /* ignore quota */
+        }
+        return next;
+      });
+
       await loadNotes();
       if (activeNote) {
         const n = await window.mnemo.notes.read(activeNote.id);
@@ -588,6 +685,139 @@ export default function App() {
     }
   }, []);
 
+  const handleArchiveCategory = useCallback(
+    async (folderPath: string) => {
+      const fp = normalizePath(folderPath) || GENERAL_PATH;
+      if (isArchiveCategoryPath(fp)) return;
+      const list = await window.mnemo.notes.list();
+      const nMove = countNotesInCategorySubtree(list, fp);
+      if (nMove === 0) return;
+      if (
+        !window.confirm(
+          `Move ${nMove} note(s) from “${fp}” (including subfolders) under Archive/…?`,
+        )
+      ) {
+        return;
+      }
+      for (const n of list) {
+        const cur = categoryPathFromTags(n.tags, list);
+        if (cur !== fp && !cur.startsWith(`${fp}/`)) continue;
+        const otherTags = n.tags.slice(1);
+        const newFirst = `Archive/${cur}`;
+        await window.mnemo.notes.update({ id: n.id, tags: [newFirst, ...otherTags] });
+      }
+
+      setCategoryColors(prev => {
+        const next = { ...prev };
+        const keys = Object.keys(next);
+        for (const k of keys) {
+          if (k !== fp && !k.startsWith(`${fp}/`)) continue;
+          const c = next[k];
+          delete next[k];
+          const nk = categoryColorStorageKey(`Archive/${k}`);
+          next[nk] = c;
+        }
+        try {
+          localStorage.setItem('mnemo.categoryColors', JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+      setCategoryColorStamps(prev => {
+        const next = { ...prev };
+        const keys = Object.keys(next);
+        for (const k of keys) {
+          if (k !== fp && !k.startsWith(`${fp}/`)) continue;
+          const t = next[k];
+          delete next[k];
+          const nk = categoryColorStorageKey(`Archive/${k}`);
+          next[nk] = t;
+        }
+        try {
+          localStorage.setItem('mnemo.categoryColorStamps', JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+
+      await loadNotes();
+      const curId = activeNoteRef.current?.id;
+      if (curId) {
+        const n = await window.mnemo.notes.read(curId);
+        if (n) setActiveNote(n);
+      }
+    },
+    [loadNotes],
+  );
+
+  const handleDeleteCategory = useCallback(
+    async (folderPath: string) => {
+      const fp = normalizePath(folderPath) || GENERAL_PATH;
+      const list = await window.mnemo.notes.list();
+      const ids: string[] = [];
+      for (const n of list) {
+        const cur = categoryPathFromTags(n.tags, list);
+        if (cur === fp || cur.startsWith(`${fp}/`)) ids.push(n.id);
+      }
+      if (ids.length === 0) return;
+      if (
+        !window.confirm(
+          `Permanently delete ${ids.length} note(s) in “${fp}” and subfolders? This cannot be undone.`,
+        )
+      ) {
+        return;
+      }
+      const del = new Set(ids);
+      const beforeTabs = openTabIdsRef.current;
+      const nextTabIds = beforeTabs.filter(x => !del.has(x));
+      setOpenTabIds(nextTabIds);
+
+      for (const id of ids) {
+        await window.mnemo.notes.delete(id);
+      }
+
+      setCategoryColors(prev => {
+        const next = { ...prev };
+        for (const k of Object.keys(next)) {
+          if (k === fp || k.startsWith(`${fp}/`)) delete next[k];
+        }
+        try {
+          localStorage.setItem('mnemo.categoryColors', JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+      setCategoryColorStamps(prev => {
+        const next = { ...prev };
+        for (const k of Object.keys(next)) {
+          if (k === fp || k.startsWith(`${fp}/`)) delete next[k];
+        }
+        try {
+          localStorage.setItem('mnemo.categoryColorStamps', JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+
+      await loadNotes();
+      const activeId = activeNoteRef.current?.id;
+      if (activeId && del.has(activeId)) {
+        if (effectiveLayoutRef.current === 'ide' && nextTabIds.length > 0) {
+          const tidx = beforeTabs.indexOf(activeId);
+          const pickIdx = Math.min(Math.max(0, tidx <= 0 ? 0 : tidx - 1), nextTabIds.length - 1);
+          await handleSelectNote(nextTabIds[pickIdx]!);
+        } else {
+          setActiveNote(null);
+        }
+      }
+    },
+    [loadNotes, handleSelectNote],
+  );
+
   const navigateNoteByDelta = useCallback(
     async (delta: number) => {
       const q = searchQueryRef.current.trim();
@@ -622,11 +852,14 @@ export default function App() {
       tags: [],
     });
     await loadNotes();
+    if (showNoteHeader && !note.hideHeader) {
+      focusTitleForNoteIdRef.current = note.id;
+    }
     setActiveNote(note);
     if (effectiveLayoutRef.current === 'ide') {
       setOpenTabIds(prev => mruOpenTabIds(prev, note.id));
     }
-  }, [loadNotes]);
+  }, [loadNotes, showNoteHeader]);
 
   const handleCloseAllTabs = useCallback(() => {
     setOpenTabIds([]);
@@ -812,6 +1045,12 @@ export default function App() {
         }
         break;
       }
+      case 'vault-new':
+        setShowNewVaultDialog(true);
+        break;
+      case 'vault-manage':
+        setShowSettings(true);
+        break;
       case 'toggle-sidebar':
         setShowSidebar(s => !s);
         break;
@@ -968,6 +1207,7 @@ export default function App() {
         setActiveNote({ ...updated, links: targetIds });
       }
       const list = await window.mnemo.notes.list();
+      vaultNotesRef.current = list;
       setVaultNotes(list);
       setNotes(list);
     }
@@ -1203,6 +1443,8 @@ export default function App() {
     onRenameCategory: handleRenameCategory,
     onPromoteCategory: handlePromoteCategory,
     onDemoteCategory: handleDemoteCategory,
+    onArchiveCategory: handleArchiveCategory,
+    onDeleteCategory: handleDeleteCategory,
     grouped: sidebarGrouped,
     onGroupedChange: setSidebarGrouped,
     includeSubfolders: sidebarIncludeSubfolders,
@@ -1303,6 +1545,7 @@ export default function App() {
     <div className="absolute inset-0 z-50 bg-mnemo-app">
       <SettingsView
         onClose={() => setShowSettings(false)}
+        onWorkspaceChanged={handleWorkspaceChanged}
         themeId={themeId}
         onThemeIdChange={setThemeId}
         layoutOverride={layoutOverride}
@@ -1324,7 +1567,16 @@ export default function App() {
 
   return (
     <div className="relative flex flex-col h-screen w-screen bg-mnemo-app text-mnemo-text">
-      <MenuBar onCommand={handleMenuCommand} />
+      {/* box-content so border-b is outside h-7; border-box + h-7 left 27px for flex kids and MenuBar (h-7) painted over the divider. */}
+      <div className="box-content flex h-7 items-stretch shrink-0 border-b border-mnemo-border bg-mnemo-app">
+        <MenuBar onCommand={handleMenuCommand} />
+        <WorkspaceSwitcher
+          refreshNonce={vaultSwitcherNonce}
+          onNewVault={() => setShowNewVaultDialog(true)}
+          onManageVaults={() => setShowSettings(true)}
+          onWorkspaceChanged={handleWorkspaceChanged}
+        />
+      </div>
       <div className="flex flex-1 overflow-hidden min-h-0 min-w-0">
         {effectiveLayout === 'top' ? (
           <TopNavLayout>
@@ -1374,6 +1626,14 @@ export default function App() {
       </div>
       {commandPaletteOverlay}
       {settingsOverlay}
+      {showNewVaultDialog && (
+        <NewVaultWorkspaceDialog
+          open={showNewVaultDialog}
+          onClose={() => setShowNewVaultDialog(false)}
+          onCreated={() => setVaultSwitcherNonce(n => n + 1)}
+          onWorkspaceChanged={handleWorkspaceChanged}
+        />
+      )}
     </div>
   );
 }

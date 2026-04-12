@@ -19,13 +19,36 @@ try {
 }
 import { LocalNoteStore, migrateNoteDatabaseHideHeader, migrateNoteDatabaseRef } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
-import type { INoteStore, AppConfig, SyncResult, MnemoUiPreferences } from '../shared/types';
+import type { INoteStore, AppConfig, MnemoUiPreferences, SyncResult, WorkspaceStorage } from '../shared/types';
 import { IPC } from '../shared/types';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from './uiPreferences';
 import { defaultLocalDataDir, getRemoteLibsqlCredentials, legacyElectronUserDataDir } from './userConfig';
 import { syncWorkspaceFolder } from './workspaceImport';
+import {
+  applyBootstrapRootOnly,
+  archiveWorkspaceProfile,
+  createWorkspaceProfile,
+  deleteWorkspaceProfile,
+  getElectronBootstrapRoot,
+  importFolderIntoWorkspaceProfile,
+  ensureWorkspaceProfilesOnDisk,
+  listWorkspaceProfiles,
+  setActiveWorkspace,
+  setWorkspaceProfileStorage,
+} from './workspaceProfiles';
+import { runLegacyWorkspaceMigration } from './workspaceMigration';
+import {
+  closeDedicatedStores,
+  ensureActiveContext,
+  getActiveWorkspaceId,
+  getGlobalStore,
+  purgeWorkspaceNotesForProfile,
+  setActiveWorkspaceId,
+  setGlobalStore,
+  setStoreResolverBootstrapRoot,
+} from './storeResolver';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const matter = require('gray-matter');
@@ -145,6 +168,7 @@ if (!app.isReady()) {
       /* ignore */
     }
   }
+  applyBootstrapRootOnly(app, configHasRemoteCredentials);
 }
 
 
@@ -226,20 +250,42 @@ function writeConfig(cfg: AppConfig): void {
   fs.writeFileSync(getConfigPath(), JSON.stringify(cfg, null, 2), 'utf-8');
 }
 
+/** Per-workspace import map under userData; one-time copy from legacy global path. */
+function resolveWorkspaceImportMapPath(): string {
+  const ud = app.getPath('userData');
+  const id = getActiveWorkspaceId();
+  const name = id === 'default' ? 'workspace-import-map.json' : `workspace-import-map.${id}.json`;
+  const target = path.join(ud, name);
+  const legacy = path.join(defaultLocalDataDir(), 'workspace-import-map.json');
+  if (!fs.existsSync(target) && fs.existsSync(legacy)) {
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(legacy, target);
+    } catch {
+      /* ignore */
+    }
+  }
+  return target;
+}
+
 async function initStore(): Promise<void> {
   const cfg = readConfig();
-  // config.json + env — Turso Cloud, self-hosted libSQL/sqld, or any @libsql/client endpoint
+  const root = app.getPath('userData');
+  setStoreResolverBootstrapRoot(root);
   const { url: tursoUrl, token: tursoToken } = getRemoteLibsqlCredentials(cfg);
   if (tursoUrl && tursoToken) {
-    const turso = new TursoNoteStore(tursoUrl, tursoToken);
+    const vaultPath = path.join(root, 'vault');
+    const turso = new TursoNoteStore(tursoUrl, tursoToken, vaultPath);
     await turso.initSchema();
     store = turso;
   } else {
-    const userDataPath = app.getPath('userData');
-    const dbPath = path.join(userDataPath, 'mnemo.db');
-    const vaultPath = path.join(userDataPath, 'vault');
+    const dbPath = path.join(root, 'mnemo.db');
+    const vaultPath = path.join(root, 'vault');
     store = new LocalNoteStore(dbPath, vaultPath);
   }
+  setGlobalStore(store);
+  const profiles = ensureWorkspaceProfilesOnDisk(root);
+  setActiveWorkspaceId(profiles.activeWorkspaceId);
 }
 
 function createWindow(): BrowserWindow {
@@ -282,8 +328,10 @@ function buildMenu(mainWindow: BrowserWindow): void {
         { type: 'separator' },
         { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: send('open') },
         { label: 'Open File as Tab…', accelerator: 'CmdOrCtrl+Shift+O', click: send('open-file-tab') },
+        { label: 'New Vault Workspace…', click: send('vault-new') },
         { label: 'Open Workspace Folder…', click: send('workspace-choose') },
         { label: 'Sync Workspace', click: send('workspace-sync') },
+        { label: 'Manage Vault Workspaces…', click: send('vault-manage') },
         { type: 'separator' },
         { role: 'quit' },
       ],
@@ -338,52 +386,66 @@ function applyApplicationMenu(mainWindow: BrowserWindow): void {
 }
 
 function registerIpcHandlers(): void {
-  ipcMain.handle(IPC.NOTE_CREATE, (_event, input: CreateNoteInput) => {
-    return store.create(input);
+  ipcMain.handle(IPC.NOTE_CREATE, async (_event, input: CreateNoteInput) => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.create({ ...input, tenantId: input.tenantId ?? ctx.tenantId });
   });
 
-  ipcMain.handle(IPC.NOTE_READ, (_event, id: string) => {
-    return store.read(id);
+  ipcMain.handle(IPC.NOTE_READ, async (_event, id: string) => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.read(id);
   });
 
-  ipcMain.handle(IPC.NOTE_UPDATE, (_event, input: UpdateNoteInput) => {
-    return store.update(input);
+  ipcMain.handle(IPC.NOTE_UPDATE, async (_event, input: UpdateNoteInput) => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.update(input);
   });
 
-  ipcMain.handle(IPC.NOTE_DELETE, (_event, id: string) => {
-    return store.delete(id);
+  ipcMain.handle(IPC.NOTE_DELETE, async (_event, id: string) => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.delete(id);
   });
 
-  ipcMain.handle(IPC.NOTE_LIST, (_event, tenantId?: string) => {
-    return store.list(tenantId);
+  ipcMain.handle(IPC.NOTE_LIST, async () => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.list(ctx.tenantId);
   });
 
-  ipcMain.handle(IPC.NOTE_VAULT_SNAPSHOT, (_event, tenantId?: string) => {
-    return store.getVaultSnapshot(tenantId);
+  ipcMain.handle(IPC.NOTE_VAULT_SNAPSHOT, async () => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.getVaultSnapshot(ctx.tenantId);
   });
 
-  ipcMain.handle(IPC.NOTE_SEARCH, (_event, query: string, tenantId?: string) => {
-    return store.search(query, tenantId);
+  ipcMain.handle(IPC.NOTE_SEARCH, async (_event, query: string) => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.search(query, ctx.tenantId);
   });
 
-  ipcMain.handle(IPC.NOTE_BACKLINKS, (_event, noteId: string) => {
-    return store.getBacklinks(noteId);
+  ipcMain.handle(IPC.NOTE_BACKLINKS, async (_event, noteId: string) => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.getBacklinks(noteId);
   });
 
-  ipcMain.handle(IPC.NOTE_GRAPH, async (_event, tenantId?: string) => {
-    const [notes, links] = await Promise.all([store.list(tenantId), store.getAllLinks(tenantId)]);
+  ipcMain.handle(IPC.NOTE_GRAPH, async () => {
+    const ctx = await ensureActiveContext();
+    const [notes, links] = await Promise.all([
+      ctx.store.list(ctx.tenantId),
+      ctx.store.getAllLinks(ctx.tenantId),
+    ]);
     return {
       nodes: notes.map(n => ({ id: n.id, title: n.title, ref: n.ref })),
       links,
     };
   });
 
-  ipcMain.handle(IPC.NOTE_UPDATE_LINKS, (_event, sourceId: string, targetIds: string[]) => {
-    return store.updateLinks(sourceId, targetIds);
+  ipcMain.handle(IPC.NOTE_UPDATE_LINKS, async (_event, sourceId: string, targetIds: string[]) => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.updateLinks(sourceId, targetIds);
   });
 
-  ipcMain.handle(IPC.NOTE_RESOLVE_TITLE, (_event, title: string, tenantId?: string) => {
-    return store.resolveTitle(title, tenantId);
+  ipcMain.handle(IPC.NOTE_RESOLVE_TITLE, async (_event, title: string) => {
+    const ctx = await ensureActiveContext();
+    return ctx.store.resolveTitle(title, ctx.tenantId);
   });
 
   ipcMain.handle(IPC.FILE_SAVE_AS, async (_event, { title, body }: { title: string; body: string }) => {
@@ -451,10 +513,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.CONFIG_SAVE, async (_event, cfg: AppConfig) => {
     writeConfig(cfg);
     store?.close();
+    closeDedicatedStores();
     await initStore();
-    // Recreate MCP server against the new store
     mcpServer?.close();
-    mcpServer = createMcpServer(store);
+    mcpServer = createMcpServer(ensureActiveContext);
     return true;
   });
 
@@ -463,7 +525,8 @@ function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(IPC.CONFIG_SYNC_LOCAL, async (): Promise<SyncResult> => {
-    if (!(store instanceof TursoNoteStore)) {
+    const gs = getGlobalStore();
+    if (!(gs instanceof TursoNoteStore)) {
       throw new Error('Not connected to a remote libSQL database — configure one in Settings first.');
     }
     const dbPath = path.join(app.getPath('userData'), 'mnemo.db');
@@ -492,18 +555,20 @@ function registerIpcHandlers(): void {
       const links = localDb
         .prepare('SELECT source_id, target_id FROM note_links')
         .all() as Array<{ source_id: string; target_id: string }>;
-      return await store.importNotes(notes, links);
+      return await gs.importNotes(notes, links);
     } finally {
       localDb.close();
     }
   });
 
-  ipcMain.handle(IPC.UI_PREFERENCES_READ, () =>
-    readUiPreferencesMerged(store, app.getPath('userData')),
-  );
+  ipcMain.handle(IPC.UI_PREFERENCES_READ, async () => {
+    const ctx = await ensureActiveContext();
+    return readUiPreferencesMerged(ctx.store, app.getPath('userData'), ctx.workspaceId);
+  });
 
   ipcMain.handle(IPC.UI_PREFERENCES_SAVE, async (_event, partial: Partial<MnemoUiPreferences>) => {
-    await mergeAndWriteUiPreferencesAsync(partial, app.getPath('userData'), store);
+    const ctx = await ensureActiveContext();
+    await mergeAndWriteUiPreferencesAsync(partial, app.getPath('userData'), ctx.store, ctx.workspaceId);
     return true;
   });
 
@@ -521,36 +586,181 @@ function registerIpcHandlers(): void {
     if (result.canceled || !result.filePaths[0]) {
       return { ok: false as const, path: null };
     }
-    const root = path.resolve(result.filePaths[0]);
-    await mergeAndWriteUiPreferencesAsync({ workspaceFolder: root }, app.getPath('userData'), store);
-    const mapPath = path.join(defaultLocalDataDir(), 'workspace-import-map.json');
-    const stats = await syncWorkspaceFolder(store, root, mapPath);
+    const folderRoot = path.resolve(result.filePaths[0]);
+    const ctx = await ensureActiveContext();
+    await mergeAndWriteUiPreferencesAsync(
+      { workspaceFolder: folderRoot },
+      app.getPath('userData'),
+      ctx.store,
+      ctx.workspaceId,
+    );
+    const mapPath = resolveWorkspaceImportMapPath();
+    const stats = await syncWorkspaceFolder(ctx.store, folderRoot, mapPath, ctx.tenantId);
     return {
       ok: true as const,
-      path: root,
+      path: folderRoot,
       imported: stats.imported,
       updated: stats.updated,
     };
   });
 
   ipcMain.handle(IPC.WORKSPACE_SYNC, async () => {
-    const prefs = await readUiPreferencesMerged(store, app.getPath('userData'));
-    const root = prefs.workspaceFolder?.trim();
-    if (!root) {
+    const ctx = await ensureActiveContext();
+    const prefs = await readUiPreferencesMerged(ctx.store, app.getPath('userData'), ctx.workspaceId);
+    const folderRoot = prefs.workspaceFolder?.trim();
+    if (!folderRoot) {
       return { ok: false as const, error: 'No workspace folder configured (use File → Open Workspace Folder…).' };
     }
-    const mapPath = path.join(defaultLocalDataDir(), 'workspace-import-map.json');
-    const stats = await syncWorkspaceFolder(store, root, mapPath);
+    const mapPath = resolveWorkspaceImportMapPath();
+    const stats = await syncWorkspaceFolder(ctx.store, folderRoot, mapPath, ctx.tenantId);
     return { ok: true as const, imported: stats.imported, updated: stats.updated };
   });
+
+  ipcMain.handle(IPC.WORKSPACE_PROFILES_PICK_FOLDER, async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import markdown from folder (new vault)',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) {
+      return { ok: false as const, path: null };
+    }
+    return { ok: true as const, path: path.resolve(result.filePaths[0]) };
+  });
+
+  ipcMain.handle(IPC.WORKSPACE_PROFILES_LIST, () => {
+    const root = getElectronBootstrapRoot();
+    return { ok: true as const, localMode: true, profiles: listWorkspaceProfiles(root) };
+  });
+
+  ipcMain.handle(IPC.WORKSPACE_PROFILES_CREATE, async (_event, name: unknown, importFolder: unknown) => {
+    const root = getElectronBootstrapRoot();
+    const gs = getGlobalStore();
+    if (!gs) {
+      return { ok: false as const, error: 'Store not ready.' };
+    }
+    const { state, newId } = createWorkspaceProfile(root, typeof name === 'string' ? name : '');
+    const folder =
+      typeof importFolder === 'string' && importFolder.trim().length > 0 ? importFolder.trim() : null;
+    if (folder) {
+      try {
+        const stats = await importFolderIntoWorkspaceProfile(root, newId, folder, gs);
+        return {
+          ok: true as const,
+          profiles: state,
+          newWorkspaceId: newId,
+          imported: stats.imported,
+          updated: stats.updated,
+        };
+      } catch (e) {
+        return {
+          ok: false as const,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    }
+    return { ok: true as const, profiles: state, newWorkspaceId: newId };
+  });
+
+  ipcMain.handle(IPC.WORKSPACE_PROFILES_SWITCH, (_event, id: unknown) => {
+    const root = getElectronBootstrapRoot();
+    const next = setActiveWorkspace(root, typeof id === 'string' ? id : '');
+    if (!next) {
+      return { ok: false as const, error: 'Unknown workspace.' };
+    }
+    setActiveWorkspaceId(next.activeWorkspaceId);
+    return { ok: true as const, profiles: next };
+  });
+
+  ipcMain.handle(IPC.WORKSPACE_PROFILES_ARCHIVE, async (_event, id: unknown) => {
+    const root = getElectronBootstrapRoot();
+    const wid = typeof id === 'string' ? id : '';
+    const profilesBefore = listWorkspaceProfiles(root);
+    const entry = profilesBefore.workspaces.find(w => w.id === wid);
+    const result = archiveWorkspaceProfile(root, wid);
+    if (!result) {
+      return {
+        ok: false as const,
+        error:
+          'Cannot archive: switch to another workspace first, keep at least two vaults, and do not archive the Default vault.',
+      };
+    }
+    if (entry) await purgeWorkspaceNotesForProfile(entry);
+    const st = entry?.storage ?? { mode: 'inherit' as const };
+    if (st.mode === 'sqlite') {
+      try {
+        fs.unlinkSync(st.dbPath);
+      } catch {
+        /* ignore */
+      }
+      try {
+        fs.rmSync(st.vaultPath, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+    return { ok: true as const, profiles: result.state };
+  });
+
+  ipcMain.handle(IPC.WORKSPACE_PROFILES_DELETE, async (_event, id: unknown) => {
+    const root = getElectronBootstrapRoot();
+    const wid = typeof id === 'string' ? id : '';
+    const profilesBefore = listWorkspaceProfiles(root);
+    const entry = profilesBefore.workspaces.find(w => w.id === wid);
+    const result = deleteWorkspaceProfile(root, wid);
+    if (!result) {
+      return {
+        ok: false as const,
+        error:
+          'Cannot delete: switch to another workspace first, keep at least two vaults, and do not delete the Default vault.',
+      };
+    }
+    if (entry) await purgeWorkspaceNotesForProfile(entry);
+    const st = entry?.storage ?? { mode: 'inherit' as const };
+    if (st.mode === 'sqlite') {
+      try {
+        fs.unlinkSync(st.dbPath);
+      } catch {
+        /* ignore */
+      }
+      try {
+        fs.rmSync(st.vaultPath, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+    return { ok: true as const, profiles: result.state };
+  });
+
+  ipcMain.handle(
+    IPC.WORKSPACE_PROFILES_SET_STORAGE,
+    (_event, id: unknown, storage: unknown) => {
+      const root = getElectronBootstrapRoot();
+      if (typeof id !== 'string' || !id.trim()) {
+        return { ok: false as const, error: 'Invalid workspace id.' };
+      }
+      if (!storage || typeof storage !== 'object' || Array.isArray(storage)) {
+        return { ok: false as const, error: 'Invalid storage payload.' };
+      }
+      const s = storage as WorkspaceStorage;
+      if (s.mode !== 'inherit' && s.mode !== 'sqlite' && s.mode !== 'remote') {
+        return { ok: false as const, error: 'Invalid storage mode.' };
+      }
+      closeDedicatedStores();
+      const next = setWorkspaceProfileStorage(root, id.trim(), s);
+      if (!next) {
+        return { ok: false as const, error: 'Unknown workspace.' };
+      }
+      return { ok: true as const, profiles: next };
+    },
+  );
 }
 
 app.whenReady().then(async () => {
+  runLegacyWorkspaceMigration(app.getPath('userData'));
   await initStore();
   registerIpcHandlers();
 
-  // Create MCP server (available for stdio entry point; lifecycle managed externally)
-  mcpServer = createMcpServer(store);
+  mcpServer = createMcpServer(ensureActiveContext);
 
   const mainWindow = createWindow();
   applyApplicationMenu(mainWindow);
@@ -578,5 +788,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   mcpServer?.close();
+  closeDedicatedStores();
   store?.close();
 });

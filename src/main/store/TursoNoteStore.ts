@@ -42,6 +42,17 @@ const SCHEMA_STATEMENTS = [
   )`,
 ];
 
+function isTenantRefUniqueConstraint(err: unknown): boolean {
+  const parts: string[] = [];
+  if (err instanceof Error) {
+    parts.push(err.message);
+    const c = (err as Error & { cause?: unknown }).cause;
+    if (c instanceof Error) parts.push(c.message);
+  } else parts.push(String(err));
+  const msg = parts.join(' ');
+  return msg.includes('UNIQUE constraint failed') && (msg.includes('notes.ref') || msg.includes('tenant_id'));
+}
+
 const FTS_STATEMENTS = [
   `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, body, tags, content='notes', content_rowid='rowid')`,
   `CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
@@ -145,33 +156,42 @@ export class TursoNoteStore implements INoteStore {
     const id = uuidv4();
     const tenantId = input.tenantId ?? 'default';
     const tags = input.tags ?? [];
-
-    const maxRow = await this.client.execute({
-      sql: 'SELECT COALESCE(MAX(ref), 0) + 1 AS n FROM notes WHERE tenant_id = ?',
-      args: [tenantId],
-    });
-    const nextRef = maxRow.rows[0]?.['n'] as number;
-
     const hideHeader = input.hideHeader ? 1 : 0;
-    await this.client.execute({
-      sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, nextRef, hideHeader],
-    });
 
-    const note: Note = {
+    /**
+     * Each libSQL `execute` uses its own logical connection, so a separate SELECT MAX + INSERT
+     * is not atomic and two concurrent creates can race on the same next ref.
+     * Compute ref inside the INSERT so allocation + insert are one statement.
+     */
+    const sql = `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+      VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ref), 0) + 1 FROM notes AS n WHERE n.tenant_id = ?), ?)`;
+    const args = [
       id,
-      ref: nextRef,
-      title: input.title,
-      body: input.body,
-      tags,
-      created: now,
-      modified: now,
+      input.title,
+      input.body,
+      JSON.stringify(tags),
       tenantId,
-      links: [],
-      hideHeader: !!input.hideHeader,
-    };
+      now,
+      now,
+      tenantId,
+      hideHeader,
+    ] as import('@libsql/client').InValue[];
 
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        await this.client.execute({ sql, args });
+        break;
+      } catch (e) {
+        if (attempt < 7 && isTenantRefUniqueConstraint(e)) {
+          await new Promise(r => setTimeout(r, 15 * (attempt + 1)));
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    const note = await this.read(id);
+    if (!note) throw new Error('TursoNoteStore.create: inserted row not read back');
     this.writeMdFile(note);
     return note;
   }
@@ -388,6 +408,27 @@ export class TursoNoteStore implements INoteStore {
       sql: `INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
       args: [key, value, now],
+    });
+  }
+
+  async purgeTenantNotes(tenantId: string): Promise<void> {
+    const r = await this.client.execute({
+      sql: 'SELECT id FROM notes WHERE tenant_id = ?',
+      args: [tenantId],
+    });
+    if (this.vaultPath) {
+      for (const row of r.rows) {
+        const id = row['id'] as string;
+        try {
+          fs.unlinkSync(path.join(this.vaultPath, `${id}.md`));
+        } catch {
+          /* missing */
+        }
+      }
+    }
+    await this.client.execute({
+      sql: 'DELETE FROM notes WHERE tenant_id = ?',
+      args: [tenantId],
     });
   }
 

@@ -202,6 +202,8 @@ export interface EditorHandle {
   isDirty: () => boolean;
   scrollToLine: (line: number) => void;
   focus: () => void;
+  /** When the title header is shown, move focus to the title field (e.g. after New Note). */
+  focusTitle: () => void;
 }
 
 interface EditorProps {
@@ -339,6 +341,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       focus: () => {
         viewRef.current?.focus();
       },
+      focusTitle: () => {
+        const t = titleRef.current;
+        if (!t) return;
+        t.focus();
+        t.select();
+      },
     }),
     [saveNow],
   );
@@ -373,8 +381,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       },
     });
 
+    /** Fold gutter left of line numbers so folding sits outside the number column. */
     const gutterExtensions = showLineNumbers
-      ? [lineNumbers(), highlightActiveLineGutter(), foldGutter()]
+      ? [foldGutter(), lineNumbers(), highlightActiveLineGutter()]
       : [foldGutter()];
 
     const state = EditorState.create({
@@ -483,7 +492,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     if (!viewRef.current) return;
     viewRef.current.dispatch({
       effects: lineNumbersCompartment.current.reconfigure(
-        showLineNumbers ? [lineNumbers(), highlightActiveLineGutter(), foldGutter()] : [foldGutter()],
+        showLineNumbers ? [foldGutter(), lineNumbers(), highlightActiveLineGutter()] : [foldGutter()],
       ),
     });
   }, [showLineNumbers]);
