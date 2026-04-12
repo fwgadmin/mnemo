@@ -12,15 +12,30 @@ npm run start
 
 Then press `i` / `a` for iOS simulator or Android emulator, or scan the QR code with [Expo Go](https://expo.dev/go).
 
+### Development client + iOS Simulator (EAS)
+
+The app uses **`expo-dev-client`** (not Expo Go) for native debugging. To install a **simulator** `.app` built in the cloud:
+
+```bash
+cd apps/mnemo-mobile
+npm run eas:build:ios:simulator
+```
+
+This uses the `development-simulator` profile (`ios.simulator: true`, `developmentClient: true`). When the build finishes, download the artifact from the Expo dashboard, extract it on a Mac, and drag the `.app` onto the iOS Simulator (or use `xcrun simctl install`). Then start Metro with:
+
+```bash
+npm run start:dev
+```
+
 ## iOS production build (EAS)
 
-**No Mac required**—EAS builds iOS in the cloud. On **Linux**, prefer configuring an [App Store Connect API key](https://docs.expo.dev/submit/ios/#submitting-your-app-using-app-store-connect-api-key) in Expo so builds can run non-interactively (same pattern as many Expo apps). Alternately run an interactive `eas build` once from a normal terminal.
-
-See **[docs/IOS_EAS_BUILD.md](../../docs/IOS_EAS_BUILD.md)** or:
+The **first** App Store–style build must be run **interactively** on your Mac (Apple sign-in / 2FA). See **[docs/IOS_EAS_BUILD.md](../../docs/IOS_EAS_BUILD.md)** or run:
 
 ```bash
 ./scripts/ios-eas-production-build.sh
 ```
+
+from `apps/mnemo-mobile` after `chmod +x scripts/ios-eas-production-build.sh`.
 
 ## Stack (planned)
 
