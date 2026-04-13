@@ -1,3 +1,4 @@
+import './src/bootstrap/screensNative';
 import { registerRootComponent } from 'expo';
 
 import App from './App';

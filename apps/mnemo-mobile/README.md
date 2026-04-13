@@ -22,6 +22,8 @@ The offline banner uses **`expo-network`** (not `@react-native-community/netinfo
 
 If you see **`Unimplemented component: RNCSafeAreaProvider`**, the binary is missing **`react-native-safe-area-context`** native code. The app falls back to approximate safe-area padding, but you should **rebuild the dev client** so the real provider is linked.
 
+If you see **`Unimplemented component: RNSScreenNavigationContainer`** (or **`RNSScreen`**), the binary is missing **`react-native-screens`**. The app calls `enableScreens(false)` so navigation still works with non-native screens until you **rebuild the dev client**.
+
 ```bash
 cd apps/mnemo-mobile
 eas build --profile development --platform ios   # or android, or development-simulator for iOS sim
