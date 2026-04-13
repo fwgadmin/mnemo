@@ -22,7 +22,7 @@ The offline banner uses **`expo-network`** (not `@react-native-community/netinfo
 
 If you see **`Unimplemented component: RNCSafeAreaProvider`**, the binary is missing **`react-native-safe-area-context`** native code. The app falls back to approximate safe-area padding, but you should **rebuild the dev client** so the real provider is linked.
 
-If you see **`Unimplemented component: RNSScreenNavigationContainer`** (or **`RNSScreen`**), the binary is missing **`react-native-screens`**. The app calls `enableScreens(false)` so navigation still works with non-native screens until you **rebuild the dev client**.
+If you see **`RNSScreenStack`**, **`RNSScreenContentWrapper`**, **`RNSScreenNavigationContainer`**, etc., your dev client is missing **`react-native-screens`** native views. The app uses **`@react-navigation/stack`** (JS stack) for Notes/Settings so navigation does not depend on those components. You can still **rebuild** a dev client with a current `react-native-screens` if you want native-stack behavior later.
 
 ```bash
 cd apps/mnemo-mobile
@@ -71,7 +71,7 @@ from `apps/mnemo-mobile` after `chmod +x scripts/ios-eas-production-build.sh`.
 ## Stack
 
 - **Expo** — dev client, EAS Build / Submit / Update
-- **React Navigation** — bottom tabs (Notes / Settings) + native stack for list, detail, editor, search
+- **React Navigation** — bottom tabs (Notes / Settings) + **JS stack** (`@react-navigation/stack`) for list, detail, editor, search (avoids `RNSScreenStack` when `react-native-screens` native code is missing)
 - **Data** — Turso remote libSQL via `@libsql/client/web` (HTTP/WebSocket only; avoids the Node `sqlite3` build that Metro cannot bundle). Same model as desktop `TursoNoteStore`. No local `better-sqlite3` on device.
 - **Secrets** — Turso URL, token, and tenant id in **Expo Secure Store** when the native module is present; otherwise AsyncStorage or session memory (see **Native modules** above).
 

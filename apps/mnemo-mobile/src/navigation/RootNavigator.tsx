@@ -1,6 +1,6 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createStackNavigator } from '@react-navigation/stack';
 import React from 'react';
 import { useColorScheme } from 'react-native';
 import { NoteDetailScreen } from '../screens/NoteDetailScreen';
@@ -11,14 +11,21 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import type { NotesStackParamList, RootTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
-const NotesStack = createNativeStackNavigator<NotesStackParamList>();
-const SettingsStack = createNativeStackNavigator();
+const NotesStack = createStackNavigator<NotesStackParamList>();
+const SettingsStack = createStackNavigator();
+
+const stackHeaderStyle = {
+  elevation: 0,
+  shadowOpacity: 0,
+  borderBottomWidth: 0,
+};
 
 function NotesStackNavigator() {
   return (
     <NotesStack.Navigator
       screenOptions={{
-        headerShadowVisible: false,
+        headerStyle: stackHeaderStyle,
+        cardStyle: { backgroundColor: 'transparent' },
       }}>
       <NotesStack.Screen name="NotesList" component={NotesListScreen} options={{ title: 'Notes', headerShown: false }} />
       <NotesStack.Screen name="NoteDetail" component={NoteDetailScreen} options={{ title: 'Note' }} />
@@ -30,7 +37,7 @@ function NotesStackNavigator() {
 
 function SettingsStackNavigator() {
   return (
-    <SettingsStack.Navigator>
+    <SettingsStack.Navigator screenOptions={{ headerStyle: stackHeaderStyle }}>
       <SettingsStack.Screen name="SettingsMain" component={SettingsScreen} options={{ title: 'Settings' }} />
     </SettingsStack.Navigator>
   );

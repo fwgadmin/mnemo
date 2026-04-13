@@ -1,5 +1,5 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -22,7 +22,7 @@ import { GENERAL_PATH, normalizePath } from '../lib/categoryPath';
 import type { NotesStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/theme';
 
-type Nav = NativeStackNavigationProp<NotesStackParamList>;
+type Nav = StackNavigationProp<NotesStackParamList>;
 
 function tagsFromCategoryInput(category: string, previousTags: string[]): string[] {
   const c = normalizePath(category);

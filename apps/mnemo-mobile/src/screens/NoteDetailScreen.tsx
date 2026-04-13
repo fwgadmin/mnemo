@@ -1,5 +1,5 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,7 +19,7 @@ import type { NotesStackParamList } from '../navigation/types';
 import type { Note, NoteListItem } from '../types';
 import { useAppTheme } from '../theme/theme';
 
-type Nav = NativeStackNavigationProp<NotesStackParamList>;
+type Nav = StackNavigationProp<NotesStackParamList>;
 
 function bodyForMarkdown(body: string): string {
   return body.replace(WIKILINK_PATTERN, (_, inner: string) => {

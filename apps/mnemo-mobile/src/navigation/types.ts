@@ -1,4 +1,4 @@
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { StackScreenProps } from '@react-navigation/stack';
 
 export type NotesStackParamList = {
   NotesList: undefined;
@@ -12,7 +12,7 @@ export type RootTabParamList = {
   Settings: undefined;
 };
 
-export type NotesListScreenProps = NativeStackScreenProps<NotesStackParamList, 'NotesList'>;
-export type NoteDetailScreenProps = NativeStackScreenProps<NotesStackParamList, 'NoteDetail'>;
-export type NoteEditorScreenProps = NativeStackScreenProps<NotesStackParamList, 'NoteEditor'>;
-export type SearchScreenProps = NativeStackScreenProps<NotesStackParamList, 'Search'>;
+export type NotesListScreenProps = StackScreenProps<NotesStackParamList, 'NotesList'>;
+export type NoteDetailScreenProps = StackScreenProps<NotesStackParamList, 'NoteDetail'>;
+export type NoteEditorScreenProps = StackScreenProps<NotesStackParamList, 'NoteEditor'>;
+export type SearchScreenProps = StackScreenProps<NotesStackParamList, 'Search'>;
