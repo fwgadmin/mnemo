@@ -13,13 +13,15 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useConnection } from '../context/ConnectionContext';
+import { useThemePreference } from '../context/ThemePreferenceContext';
 import { useMainTab } from '../navigation/MainTabContext';
 import { loadConnection } from '../storage/connectionCredentials';
-import { useAppTheme } from '../theme/theme';
+import { UI_RADIUS, useAppTheme } from '../theme/theme';
 
 export function SettingsScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
+  const { mode, setMode } = useThemePreference();
   const { setMainTab } = useMainTab();
   const { applyCredentials, clearCredentials, refreshClient, configured, lastError } = useConnection();
 
@@ -95,9 +97,39 @@ export function SettingsScreen() {
           paddingBottom: insets.bottom + 24,
         }}
         keyboardShouldPersistTaps="handled">
-        <Text style={[styles.h1, { color: theme.text }]}>Turso</Text>
+        <Text style={[styles.h1, { color: theme.text }]}>Appearance</Text>
         <Text style={[styles.help, { color: theme.textMuted }]}>
-          Use the same libsql URL and token as the desktop Mnemo app. Values are stored in the device secure store.
+          Light / Dark / System follows the device when System is selected. Your choice is saved on this phone only and
+          does not sync with the desktop app.
+        </Text>
+        <View style={styles.segmentRow}>
+          {(['light', 'dark', 'system'] as const).map(m => (
+            <Pressable
+              key={m}
+              onPress={() => void setMode(m)}
+              style={[
+                styles.segmentChip,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: mode === m ? theme.surfaceActive : theme.surface,
+                },
+              ]}>
+              <Text
+                style={{
+                  color: theme.text,
+                  fontWeight: mode === m ? '600' : '400',
+                  fontSize: 14,
+                }}>
+                {m === 'light' ? 'Light' : m === 'dark' ? 'Dark' : 'System'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={[styles.h1, { color: theme.text, marginTop: 28 }]}>Database (Turso)</Text>
+        <Text style={[styles.help, { color: theme.textMuted }]}>
+          Use the same libsql URL and token as Mnemo desktop if you want a shared vault. Credentials are stored in the
+          device secure store (or a fallback) and persist across launches.
         </Text>
 
         {lastError ? (
@@ -178,21 +210,21 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, marginBottom: 4, marginTop: 12 },
   input: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: UI_RADIUS,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
   },
   primaryBtn: {
     marginTop: 20,
-    borderRadius: 10,
+    borderRadius: UI_RADIUS,
     paddingVertical: 14,
     alignItems: 'center',
   },
   primaryBtnText: { fontSize: 16, fontWeight: '600' },
   secondaryBtn: {
     marginTop: 12,
-    borderRadius: 10,
+    borderRadius: UI_RADIUS,
     paddingVertical: 12,
     alignItems: 'center',
     borderWidth: 1,
@@ -201,4 +233,16 @@ const styles = StyleSheet.create({
   err: { marginBottom: 8, fontSize: 14 },
   ok: { marginTop: 16, fontSize: 14 },
   clearWrap: { marginTop: 28, alignItems: 'center' },
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  segmentChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: UI_RADIUS,
+    borderWidth: 1,
+  },
 });

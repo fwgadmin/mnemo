@@ -1,14 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  Dimensions,
-  Pressable,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Dimensions, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CategoriesScreen } from '../screens/CategoriesScreen';
+import { useAppTheme } from '../theme/theme';
 import { NotesListScreen } from '../screens/NotesListScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { MainTabProvider } from './MainTabContext';
@@ -18,36 +12,60 @@ import { MainTabProvider } from './MainTabContext';
  * One root stack handles pushes (detail, editor, search); this screen is only "Main".
  */
 export function MainTabsScreen() {
-  const scheme = useColorScheme();
+  const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
-  const [tab, setTab] = useState<'notes' | 'settings'>('notes');
+  const [tab, setTab] = useState<'notes' | 'categories' | 'settings'>('notes');
   const [notesRefreshToken, setNotesRefreshToken] = useState(0);
+  const [categoriesRefreshToken, setCategoriesRefreshToken] = useState(0);
+  const [pendingNotesCategoryFilter, setPendingNotesCategoryFilter] = useState<string | null>(null);
 
-  const setMainTab = useCallback((t: 'notes' | 'settings') => {
+  const clearPendingNotesCategoryFilter = useCallback(() => {
+    setPendingNotesCategoryFilter(null);
+  }, []);
+
+  const openNotesWithCategoryFilter = useCallback((pathOrShowAll: string) => {
+    setPendingNotesCategoryFilter(pathOrShowAll);
+    setTab('notes');
+    setNotesRefreshToken(n => n + 1);
+  }, []);
+
+  const setMainTab = useCallback((t: 'notes' | 'categories' | 'settings') => {
     setTab(t);
     if (t === 'notes') {
       setNotesRefreshToken(n => n + 1);
+    }
+    if (t === 'categories') {
+      setCategoriesRefreshToken(n => n + 1);
     }
   }, []);
 
   useEffect(() => {
     setNotesRefreshToken(n => n + 1);
+    setCategoriesRefreshToken(n => n + 1);
   }, []);
 
-  const active = '#2563eb';
-  const inactive = '#6b7280';
-  const barBg = scheme === 'dark' ? '#181b26' : '#ffffff';
-  const border = scheme === 'dark' ? '#2d3344' : '#e2e4e8';
-  const pageBg = scheme === 'dark' ? '#0f1117' : '#f6f7f9';
+  const active = theme.primary;
+  const inactive = theme.textMuted;
+  const barBg = theme.categoryBar;
+  const border = theme.border;
+  const pageBg = theme.background;
   const minH = Math.max(windowH, Dimensions.get('screen').height);
 
   return (
-    <MainTabProvider value={{ setMainTab }}>
+    <MainTabProvider
+      value={{
+        setMainTab,
+        openNotesWithCategoryFilter,
+        pendingNotesCategoryFilter,
+        clearPendingNotesCategoryFilter,
+      }}>
       <View style={[styles.root, { backgroundColor: pageBg, minHeight: minH }]}>
         <View style={[styles.body, { backgroundColor: pageBg }]}>
           {tab === 'notes' ? (
             <NotesListScreen refreshToken={notesRefreshToken} />
+          ) : tab === 'categories' ? (
+            <CategoriesScreen refreshToken={categoriesRefreshToken} />
           ) : (
             <SettingsScreen />
           )}
@@ -55,6 +73,9 @@ export function MainTabsScreen() {
         <View style={[styles.tabBar, { backgroundColor: barBg, borderTopColor: border, paddingBottom: insets.bottom }]}>
           <Pressable style={styles.tabItem} onPress={() => setMainTab('notes')}>
             <Text style={[styles.tabLabel, { color: tab === 'notes' ? active : inactive }]}>Notes</Text>
+          </Pressable>
+          <Pressable style={styles.tabItem} onPress={() => setMainTab('categories')}>
+            <Text style={[styles.tabLabel, { color: tab === 'categories' ? active : inactive }]}>Categories</Text>
           </Pressable>
           <Pressable style={styles.tabItem} onPress={() => setMainTab('settings')}>
             <Text style={[styles.tabLabel, { color: tab === 'settings' ? active : inactive }]}>Settings</Text>

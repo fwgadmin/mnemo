@@ -4,7 +4,7 @@ import type { RootStackParamList } from './types';
 export type MobileStackEntry =
   | { name: 'Main' }
   | { name: 'NoteDetail'; params: { noteId: string } }
-  | { name: 'NoteEditor'; params: { noteId?: string; initialTitle?: string } }
+  | { name: 'NoteEditor'; params: { noteId: string } }
   | { name: 'Search' };
 
 export type MobileNavApi = {

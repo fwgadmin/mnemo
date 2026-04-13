@@ -3,11 +3,15 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { CategoryColorsProvider } from './context/CategoryColorsContext';
 import { ConnectionProvider, useConnection } from './context/ConnectionContext';
+import { useThemePreference } from './context/ThemePreferenceContext';
 import { RootNavigator } from './navigation/RootNavigator';
+import { useAppTheme } from './theme/theme';
 
 function AppInner() {
-  const scheme = useColorScheme();
+  const { resolvedScheme } = useThemePreference();
+  const theme = useAppTheme();
   const { height } = useWindowDimensions();
   const { bootstrapping } = useConnection();
 
@@ -17,20 +21,22 @@ function AppInner() {
 
   if (bootstrapping) {
     return (
-      <View style={[styles.boot, { minHeight: height }]}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.bootHint}>Connecting…</Text>
+      <View style={[styles.boot, { minHeight: height, backgroundColor: theme.surfaceActive }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[styles.bootHint, { color: theme.primary }]}>Connecting…</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.appRoot, { minHeight: height }]}>
-      <AppErrorBoundary>
-        <RootNavigator />
-      </AppErrorBoundary>
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-    </View>
+    <CategoryColorsProvider>
+      <View style={[styles.appRoot, { minHeight: height, backgroundColor: theme.background }]}>
+        <AppErrorBoundary>
+          <RootNavigator />
+        </AppErrorBoundary>
+        <StatusBar style={resolvedScheme === 'dark' ? 'light' : 'dark'} />
+      </View>
+    </CategoryColorsProvider>
   );
 }
 
@@ -45,17 +51,15 @@ export function AppShell() {
 const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
-    backgroundColor: '#f6f7f9',
   },
   boot: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#dbeafe',
   },
   bootHint: {
     marginTop: 12,
     fontSize: 15,
-    color: '#1e40af',
+    fontWeight: '500',
   },
 });

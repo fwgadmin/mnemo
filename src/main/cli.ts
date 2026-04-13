@@ -1126,8 +1126,8 @@ async function cmdNote(argv: string[]): Promise<void> {
             })),
           });
         } else {
-          for (const h of hits) {
-            const snip = h.snippet.replace(/\s+/g, ' ').trim();
+        for (const h of hits) {
+          const snip = h.snippet.replace(/\s+/g, ' ').trim();
             console.log(formatListLine(h.ref, h.title));
             if (snip) {
               console.log(`  ${snip}`);

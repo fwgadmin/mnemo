@@ -11,15 +11,16 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchNotes } from '../data/turso';
 import { useConnection } from '../context/ConnectionContext';
+import { loadNoteListCache } from '../sync/noteCache';
 import { useMobileNav } from '../navigation/MobileNavContext';
 import type { SearchResult } from '../types';
-import { useAppTheme } from '../theme/theme';
+import { UI_RADIUS, useAppTheme } from '../theme/theme';
 
 export function SearchScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const { navigate, goBack } = useMobileNav();
-  const { client, tenantId } = useConnection();
+  const { client, tenantId, isOnline } = useConnection();
 
   const [q, setQ] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -32,14 +33,34 @@ export function SearchScreen() {
     }
     setLoading(true);
     try {
-      const rows = await searchNotes(client, q.trim(), tenantId);
-      setResults(rows);
+      if (isOnline) {
+        const rows = await searchNotes(client, q.trim(), tenantId);
+        setResults(rows);
+      } else {
+        const cached = await loadNoteListCache(tenantId);
+        const ql = q.trim().toLowerCase();
+        const filtered = (cached ?? []).filter(
+          n =>
+            n.title.toLowerCase().includes(ql) ||
+            (n.snippet ?? '').toLowerCase().includes(ql),
+        );
+        setResults(
+          filtered.slice(0, 50).map((n, i) => ({
+            ref: n.ref,
+            id: n.id,
+            title: n.title,
+            snippet: n.snippet,
+            rank: i,
+            hideHeader: n.hideHeader,
+          })),
+        );
+      }
     } catch {
       setResults([]);
     } finally {
       setLoading(false);
     }
-  }, [client, q, tenantId]);
+  }, [client, q, tenantId, isOnline]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
@@ -54,7 +75,7 @@ export function SearchScreen() {
           value={q}
           onChangeText={setQ}
           onSubmitEditing={() => void runSearch()}
-          placeholder="Search notes (FTS)"
+          placeholder={isOnline ? 'Search notes (full-text)' : 'Search cached titles & snippets'}
           placeholderTextColor={theme.textMuted}
           returnKeyType="search"
           autoFocus
@@ -105,24 +126,24 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: UI_RADIUS,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
   },
   btn: {
     marginTop: 10,
-    borderRadius: 10,
+    borderRadius: UI_RADIUS,
     paddingVertical: 12,
     alignItems: 'center',
   },
   row: {
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: UI_RADIUS,
     padding: 14,
     marginBottom: 10,
   },
-  t: { fontSize: 17, fontWeight: '600' },
-  snip: { fontSize: 14, marginTop: 6 },
+  t: { fontSize: 17, fontWeight: '600', lineHeight: 22 },
+  snip: { fontSize: 14, marginTop: 6, lineHeight: 20 },
   empty: { textAlign: 'center', marginTop: 32, fontSize: 15 },
 });

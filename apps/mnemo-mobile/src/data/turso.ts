@@ -3,7 +3,7 @@
  */
 /** Use `/web` so Metro never bundles `node.js` → `sqlite3.js` (native `libsql` + `node:buffer`). */
 import { createClient, type Client } from '@libsql/client/web';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'expo-crypto';
 import type { CreateNoteInput, Note, NoteListItem, SearchResult, UpdateNoteInput } from '../types';
 import { ftsMatchFromUserQuery, likeWordsFromUserQuery, snippetForSearchResult } from '../lib/searchQuery';
 
@@ -172,7 +172,7 @@ export async function updateLinks(client: Client, sourceId: string, targetIds: s
 
 export async function createNote(client: Client, input: CreateNoteInput): Promise<Note> {
   const now = new Date().toISOString();
-  const id = uuidv4();
+  const id = input.id?.trim() || randomUUID();
   const tenantId = input.tenantId ?? 'default';
   const tags = input.tags ?? [];
   const hideHeader = input.hideHeader ? 1 : 0;
@@ -234,4 +234,22 @@ export async function deleteNote(client: Client, id: string): Promise<boolean> {
     args: [id],
   });
   return (result.rowsAffected ?? 0) > 0;
+}
+
+/** Mirrors desktop TursoNoteStore — same key as `ui-preferences` cloud sync (`ui_preferences`). */
+export async function getAppKv(client: Client, key: string): Promise<string | null> {
+  const r = await client.execute({
+    sql: 'SELECT value FROM app_kv WHERE key = ?',
+    args: [key],
+  });
+  return (r.rows[0]?.['value'] as string) ?? null;
+}
+
+export async function setAppKv(client: Client, key: string, value: string): Promise<void> {
+  const now = new Date().toISOString();
+  await client.execute({
+    sql: `INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    args: [key, value, now],
+  });
 }

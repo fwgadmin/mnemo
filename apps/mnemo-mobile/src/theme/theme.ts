@@ -1,69 +1,133 @@
+import { useContext } from 'react';
 import { useColorScheme } from 'react-native';
+import { ThemePreferenceContext } from '../context/ThemePreferenceContext';
+
+/**
+ * Aligned with desktop [src/renderer/theme/themes.ts] — dark-default + light presets.
+ * Radius matches --mnemo-radius (6px).
+ */
+
+export const UI_RADIUS = 6;
+
+/** Body line height ≈ desktop CodeMirror markdown (1.7 × font size). */
+export const BODY_FONT_SIZE = 16;
+export const BODY_LINE_HEIGHT = Math.round(BODY_FONT_SIZE * 1.7);
 
 export type Theme = {
+  /** --mnemo-bg-app */
   background: string;
+  /** --mnemo-bg-panel */
   surface: string;
+  /** --mnemo-bg-panel-elevated */
+  surfaceElevated: string;
+  /** --mnemo-bg-active (selection, chip selected) */
+  surfaceActive: string;
+  /** --mnemo-category-bar (tab strip, subtle chrome) */
+  categoryBar: string;
+  /** --mnemo-text */
   text: string;
+  /** --mnemo-text-muted */
   textMuted: string;
+  /** --mnemo-text-dim */
+  textDim: string;
+  /** --mnemo-border */
   border: string;
+  /** --mnemo-border-strong */
+  borderStrong: string;
+  /** --mnemo-accent */
   primary: string;
+  /** --mnemo-on-accent */
   primaryText: string;
   danger: string;
+  /** Note list rows: panel or elevated */
   card: string;
   chipBg: string;
   chipSelected: string;
   markdown: Record<string, unknown>;
 };
 
+/** Desktop `dark-default` / `ide-dark`. */
+const dark: Theme = {
+  background: '#0f0f0f',
+  surface: '#111111',
+  surfaceElevated: '#1a1a1a',
+  surfaceActive: '#1a1a2e',
+  categoryBar: '#141418',
+  text: '#e4e4e7',
+  textMuted: '#888888',
+  textDim: '#555555',
+  border: '#1e1e1e',
+  borderStrong: '#333333',
+  primary: '#7c7cff',
+  primaryText: '#0a0a0a',
+  danger: '#f87171',
+  card: '#1a1a1a',
+  chipBg: '#1a1a1a',
+  chipSelected: '#1a1a2e',
+  markdown: {
+    body: { color: '#e4e4e7', fontSize: BODY_FONT_SIZE, lineHeight: BODY_LINE_HEIGHT },
+    heading1: { color: '#7c7cff', fontSize: 26, fontWeight: '600' as const, marginBottom: 8 },
+    heading2: { color: '#7c7cff', fontSize: 22, fontWeight: '600' as const, marginBottom: 6 },
+    heading3: { color: '#7c7cff', fontSize: 18, fontWeight: '600' as const, marginBottom: 4 },
+    link: { color: '#7c7cff', textDecorationLine: 'underline' as const },
+    blockquote: {
+      borderLeftColor: '#333333',
+      borderLeftWidth: 4,
+      paddingLeft: 12,
+      color: '#888888',
+    },
+    code_inline: { backgroundColor: '#1a1a1a', color: '#e4e4e7', fontFamily: 'monospace', fontSize: 15 },
+    fence: { backgroundColor: '#111111', color: '#e4e4e7', fontFamily: 'monospace', fontSize: 14 },
+  },
+};
+
+/** Desktop `light`. */
 const light: Theme = {
-  background: '#f6f7f9',
+  background: '#f4f4f5',
   surface: '#ffffff',
-  text: '#1a1a1e',
-  textMuted: '#5c5c66',
-  border: '#e2e4e8',
-  primary: '#2563eb',
+  surfaceElevated: '#f4f4f5',
+  surfaceActive: '#e0e7ff',
+  categoryBar: '#e8e8ed',
+  text: '#0a0a0b',
+  textMuted: '#52525c',
+  textDim: '#71717a',
+  border: '#d4d4d8',
+  borderStrong: '#a1a1aa',
+  primary: '#4338ca',
   primaryText: '#ffffff',
   danger: '#dc2626',
   card: '#ffffff',
-  chipBg: '#e8eaef',
-  chipSelected: '#dbeafe',
+  chipBg: '#ececf2',
+  chipSelected: '#e0e7ff',
   markdown: {
-    body: { color: '#1a1a1e', fontSize: 16, lineHeight: 24 },
-    heading1: { fontSize: 26, fontWeight: '700', marginBottom: 8 },
-    heading2: { fontSize: 22, fontWeight: '600', marginBottom: 6 },
-    heading3: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
-    link: { color: '#2563eb', textDecorationLine: 'underline' },
-    blockquote: { borderLeftColor: '#cbd5e1', borderLeftWidth: 4, paddingLeft: 12, opacity: 0.9 },
-    code_inline: { backgroundColor: '#f1f5f9', fontFamily: 'monospace', fontSize: 15 },
-    fence: { backgroundColor: '#f1f5f9', fontFamily: 'monospace', fontSize: 14 },
+    body: { color: '#0a0a0b', fontSize: BODY_FONT_SIZE, lineHeight: BODY_LINE_HEIGHT },
+    heading1: { color: '#4338ca', fontSize: 26, fontWeight: '600' as const, marginBottom: 8 },
+    heading2: { color: '#4338ca', fontSize: 22, fontWeight: '600' as const, marginBottom: 6 },
+    heading3: { color: '#4338ca', fontSize: 18, fontWeight: '600' as const, marginBottom: 4 },
+    link: { color: '#4338ca', textDecorationLine: 'underline' as const },
+    blockquote: {
+      borderLeftColor: '#a1a1aa',
+      borderLeftWidth: 4,
+      paddingLeft: 12,
+      color: '#52525c',
+    },
+    code_inline: {
+      backgroundColor: '#f4f4f5',
+      color: '#0a0a0b',
+      fontFamily: 'monospace',
+      fontSize: 15,
+    },
+    fence: { backgroundColor: '#f4f4f5', color: '#0a0a0b', fontFamily: 'monospace', fontSize: 14 },
   },
 };
 
-const dark: Theme = {
-  background: '#0f1117',
-  surface: '#181b26',
-  text: '#e8e9ed',
-  textMuted: '#9ca3af',
-  border: '#2d3344',
-  primary: '#3b82f6',
-  primaryText: '#ffffff',
-  danger: '#f87171',
-  card: '#181b26',
-  chipBg: '#272c3d',
-  chipSelected: '#1e3a5f',
-  markdown: {
-    body: { color: '#e8e9ed', fontSize: 16, lineHeight: 24 },
-    heading1: { fontSize: 26, fontWeight: '700', marginBottom: 8 },
-    heading2: { fontSize: 22, fontWeight: '600', marginBottom: 6 },
-    heading3: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
-    link: { color: '#60a5fa', textDecorationLine: 'underline' },
-    blockquote: { borderLeftColor: '#475569', borderLeftWidth: 4, paddingLeft: 12, opacity: 0.95 },
-    code_inline: { backgroundColor: '#272c3d', fontFamily: 'monospace', fontSize: 15 },
-    fence: { backgroundColor: '#272c3d', fontFamily: 'monospace', fontSize: 14 },
-  },
-};
+export function getThemeForScheme(scheme: 'light' | 'dark' | null | undefined): Theme {
+  return scheme === 'dark' ? dark : light;
+}
 
 export function useAppTheme(): Theme {
-  const scheme = useColorScheme();
-  return scheme === 'dark' ? dark : light;
+  const ctx = useContext(ThemePreferenceContext);
+  const system = useColorScheme();
+  const resolved = ctx?.resolvedScheme ?? (system === 'dark' ? 'dark' : 'light');
+  return getThemeForScheme(resolved);
 }

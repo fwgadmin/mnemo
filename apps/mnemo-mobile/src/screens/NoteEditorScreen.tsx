@@ -13,12 +13,12 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { createNote, deleteNote, getNote, updateNote } from '../data/turso';
-import { refreshOutgoingLinksForNote } from '../data/noteLinks';
 import { useConnection } from '../context/ConnectionContext';
 import { useMobileNav } from '../navigation/MobileNavContext';
 import { GENERAL_PATH, normalizePath } from '../lib/categoryPath';
-import { useAppTheme } from '../theme/theme';
+import { loadNoteWithFallback, persistNoteDelete, persistNoteUpdate } from '../sync/persist';
+import type { Note } from '../types';
+import { UI_RADIUS, useAppTheme } from '../theme/theme';
 
 function tagsFromCategoryInput(category: string, previousTags: string[]): string[] {
   const c = normalizePath(category);
@@ -32,36 +32,34 @@ function categoryInputFromTags(tags: string[]): string {
   return normalizePath(tags[0]);
 }
 
+/** Category, display options, delete — not title/body (edit on the note screen). */
 export function NoteEditorScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { top, replace, goBack, popToTop } = useMobileNav();
-  const { client, tenantId } = useConnection();
-  const params = top.name === 'NoteEditor' ? top.params : undefined;
-  const noteId = params?.noteId;
-  const initialTitle = params?.initialTitle;
+  const { top, goBack, popToTop } = useMobileNav();
+  const { client, tenantId, isOnline } = useConnection();
+  const noteId = top.name === 'NoteEditor' ? top.params.noteId : '';
 
-  const [loading, setLoading] = useState(!!noteId);
-  const [title, setTitle] = useState(initialTitle ?? '');
-  const [body, setBody] = useState('');
+  const [note, setNote] = useState<Note | null>(null);
+  const [metaTitle, setMetaTitle] = useState('');
   const [category, setCategory] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
   const [hideHeader, setHideHeader] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!noteId || !client) {
-      setLoading(false);
-      return;
-    }
+    if (!noteId) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
+      setLoading(true);
       try {
-        const n = await getNote(client, noteId);
-        if (cancelled || !n) return;
-        setTitle(n.title);
-        setBody(n.body);
-        setTags(n.tags);
+        const n = await loadNoteWithFallback(client, tenantId, isOnline, noteId);
+        if (cancelled || !n) {
+          if (!cancelled) setNote(null);
+          return;
+        }
+        setNote(n);
+        setMetaTitle(n.title);
         setCategory(categoryInputFromTags(n.tags));
         setHideHeader(n.hideHeader);
       } finally {
@@ -71,68 +69,74 @@ export function NoteEditorScreen() {
     return () => {
       cancelled = true;
     };
-  }, [noteId, client]);
+  }, [client, tenantId, isOnline, noteId]);
 
-  const onSave = useCallback(async () => {
-    if (!client) {
-      Alert.alert('Not connected', 'Configure Turso in Settings.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const nextTags = tagsFromCategoryInput(category, tags);
-
-      if (!noteId) {
-        const created = await createNote(client, {
-          title: title.trim() || 'Untitled',
-          body,
+  const pushMetadata = useCallback(
+    async (next: { title: string; category: string; hideHeader: boolean }) => {
+      if (!note) return;
+      const nextTags = tagsFromCategoryInput(next.category, note.tags);
+      setSaving(true);
+      try {
+        const updated = await persistNoteUpdate(client, tenantId, isOnline, note, {
+          title: next.title.trim() || 'Untitled',
           tags: nextTags,
-          tenantId,
-          hideHeader,
+          hideHeader: next.hideHeader,
         });
-        await refreshOutgoingLinksForNote(client, created.id, tenantId);
-        replace('NoteDetail', { noteId: created.id });
-        return;
+        setNote(updated);
+        setMetaTitle(updated.title);
+      } catch (e) {
+        Alert.alert('Could not save', e instanceof Error ? e.message : String(e));
+      } finally {
+        setSaving(false);
       }
+    },
+    [note, client, tenantId, isOnline],
+  );
 
-      const updated = await updateNote(client, {
-        id: noteId,
-        title: title.trim() || 'Untitled',
-        body,
-        tags: nextTags,
-        hideHeader,
-      });
-      if (updated) {
-        await refreshOutgoingLinksForNote(client, updated.id, tenantId);
-      }
-      goBack();
-    } catch (e) {
-      Alert.alert('Save failed', e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  }, [client, tenantId, noteId, title, body, category, tags, hideHeader, replace, goBack]);
+  const onCategoryBlur = useCallback(() => {
+    if (!note) return;
+    void pushMetadata({ title: metaTitle, category, hideHeader });
+  }, [note, metaTitle, category, hideHeader, pushMetadata]);
+
+  const onTitleBlur = useCallback(() => {
+    if (!note) return;
+    void pushMetadata({ title: metaTitle, category, hideHeader });
+  }, [note, metaTitle, category, hideHeader, pushMetadata]);
+
+  const onHideToggle = useCallback(
+    (v: boolean) => {
+      setHideHeader(v);
+      if (note) void pushMetadata({ title: metaTitle, category, hideHeader: v });
+    },
+    [note, metaTitle, category, pushMetadata],
+  );
 
   const onDelete = useCallback(() => {
-    if (!noteId || !client) return;
+    if (!noteId || !note) return;
     Alert.alert('Delete note?', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteNote(client, noteId);
-            popToTop();
-          } catch (e) {
-            Alert.alert('Error', e instanceof Error ? e.message : String(e));
-          }
+        onPress: () => {
+          void (async () => {
+            try {
+              await persistNoteDelete(client, tenantId, isOnline, noteId);
+              popToTop();
+            } catch (e) {
+              Alert.alert('Error', e instanceof Error ? e.message : String(e));
+            }
+          })();
         },
       },
     ]);
-  }, [noteId, client, popToTop]);
+  }, [noteId, note, client, isOnline, tenantId, popToTop]);
 
   if (top.name !== 'NoteEditor') {
+    return null;
+  }
+
+  if (!noteId) {
     return null;
   }
 
@@ -140,6 +144,17 @@ export function NoteEditorScreen() {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
         <ActivityIndicator color={theme.primary} />
+      </View>
+    );
+  }
+
+  if (!note) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.background, padding: 24 }]}>
+        <Text style={{ color: theme.danger }}>Note not found</Text>
+        <Pressable onPress={() => goBack()} style={{ marginTop: 16 }}>
+          <Text style={{ color: theme.primary }}>Go back</Text>
+        </Pressable>
       </View>
     );
   }
@@ -152,6 +167,7 @@ export function NoteEditorScreen() {
         <Pressable onPress={() => goBack()} hitSlop={12}>
           <Text style={{ color: theme.primary, fontSize: 17 }}>‹ Back</Text>
         </Pressable>
+        {saving ? <ActivityIndicator size="small" color={theme.primary} style={{ marginLeft: 12 }} /> : null}
       </View>
       <ScrollView
         contentContainerStyle={{
@@ -159,11 +175,14 @@ export function NoteEditorScreen() {
           paddingBottom: insets.bottom + 24,
         }}
         keyboardShouldPersistTaps="handled">
+        <Text style={[styles.screenTitle, { color: theme.text }]}>Note info</Text>
         <Text style={[styles.label, { color: theme.textMuted }]}>Title</Text>
         <TextInput
           style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
-          value={title}
-          onChangeText={setTitle}
+          value={metaTitle}
+          onChangeText={setMetaTitle}
+          onEndEditing={() => onTitleBlur()}
+          onSubmitEditing={() => onTitleBlur()}
           placeholder="Untitled"
           placeholderTextColor={theme.textMuted}
         />
@@ -173,46 +192,21 @@ export function NoteEditorScreen() {
           style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
           value={category}
           onChangeText={setCategory}
+          onEndEditing={() => onCategoryBlur()}
+          onSubmitEditing={() => onCategoryBlur()}
           placeholder="e.g. work/projects (empty = General)"
           placeholderTextColor={theme.textMuted}
           autoCapitalize="none"
         />
 
         <View style={styles.row}>
-          <Text style={{ color: theme.text }}>Hide title in reader</Text>
-          <Switch value={hideHeader} onValueChange={setHideHeader} />
+          <Text style={{ color: theme.text }}>Hide title when reading</Text>
+          <Switch value={hideHeader} onValueChange={onHideToggle} />
         </View>
 
-        <Text style={[styles.label, { color: theme.textMuted }]}>Body</Text>
-        <TextInput
-          style={[
-            styles.body,
-            { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
-          ]}
-          value={body}
-          onChangeText={setBody}
-          multiline
-          textAlignVertical="top"
-          placeholder="Markdown supported…"
-          placeholderTextColor={theme.textMuted}
-        />
-
-        <Pressable
-          style={[styles.saveBtn, { backgroundColor: theme.primary }]}
-          onPress={onSave}
-          disabled={saving}>
-          {saving ? (
-            <ActivityIndicator color={theme.primaryText} />
-          ) : (
-            <Text style={[styles.saveText, { color: theme.primaryText }]}>Save</Text>
-          )}
+        <Pressable onPress={onDelete} style={styles.del}>
+          <Text style={{ color: theme.danger, fontSize: 16 }}>Delete note</Text>
         </Pressable>
-
-        {noteId ? (
-          <Pressable onPress={onDelete} style={styles.del}>
-            <Text style={{ color: theme.danger, fontSize: 16 }}>Delete note</Text>
-          </Pressable>
-        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -226,34 +220,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  screenTitle: { fontSize: 22, fontWeight: '700', marginBottom: 12 },
   label: { fontSize: 12, marginBottom: 4, marginTop: 12 },
   input: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: UI_RADIUS,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-  },
-  body: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    minHeight: 220,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  saveBtn: {
     marginTop: 20,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
   },
-  saveText: { fontSize: 16, fontWeight: '600' },
-  del: { marginTop: 24, alignItems: 'center' },
+  del: { marginTop: 32, alignItems: 'center' },
 });

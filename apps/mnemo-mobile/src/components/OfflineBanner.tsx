@@ -55,7 +55,7 @@ export function OfflineBanner() {
   return (
     <View style={[styles.bar, { backgroundColor: '#92400e' }]}>
       <Text style={[styles.text, { color: '#fffbeb' }]}>
-        You appear offline. Notes load from Turso when the network is available.
+        Offline — showing cached notes. Edits are saved on this device and sync when you are back online.
       </Text>
     </View>
   );

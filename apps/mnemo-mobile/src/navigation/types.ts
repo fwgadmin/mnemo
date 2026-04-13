@@ -2,6 +2,7 @@
 export type RootStackParamList = {
   Main: undefined;
   NoteDetail: { noteId: string };
-  NoteEditor: { noteId?: string; initialTitle?: string };
+  /** Category, hide title, delete — not for body/title editing. */
+  NoteEditor: { noteId: string };
   Search: undefined;
 };

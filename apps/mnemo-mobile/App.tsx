@@ -1,10 +1,12 @@
 import React from 'react';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import { StyleSheet, useColorScheme, useWindowDimensions } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppShell } from './src/AppShell';
 import { FallbackSafeAreaProvider } from './src/components/FallbackSafeAreaProvider';
+import { ThemePreferenceProvider } from './src/context/ThemePreferenceContext';
 import { hasRNCSafeAreaProvider } from './src/lib/hasRNCSafeAreaProvider';
+import { getThemeForScheme } from './src/theme/theme';
 
 const SafeAreaRoot = hasRNCSafeAreaProvider() ? SafeAreaProvider : FallbackSafeAreaProvider;
 
@@ -12,11 +14,15 @@ const SafeAreaRoot = hasRNCSafeAreaProvider() ? SafeAreaProvider : FallbackSafeA
  * Sync imports only — lazy + Suspense was leaving a frame where iOS showed white before the stack painted.
  */
 export default function App() {
+  const scheme = useColorScheme();
   const { height } = useWindowDimensions();
+  const bg = getThemeForScheme(scheme).background;
   return (
-    <GestureHandlerRootView style={[styles.root, { minHeight: height }]}>
+    <GestureHandlerRootView style={[styles.root, { minHeight: height, backgroundColor: bg }]}>
       <SafeAreaRoot>
-        <AppShell />
+        <ThemePreferenceProvider>
+          <AppShell />
+        </ThemePreferenceProvider>
       </SafeAreaRoot>
     </GestureHandlerRootView>
   );
@@ -25,6 +31,5 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#f6f7f9',
   },
 });

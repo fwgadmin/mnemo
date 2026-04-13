@@ -1,6 +1,8 @@
 import type { Client } from '@libsql/client/web';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { createTursoClient } from '../data/turso';
+import { useNetworkOnline } from '../hooks/useNetworkOnline';
+import { runFlushOutbox } from '../sync/persist';
 import { clearConnection, loadConnection, saveConnection, type StoredConnection } from '../storage/connectionCredentials';
 
 type ConnectionState = {
@@ -9,12 +11,14 @@ type ConnectionState = {
   configured: boolean;
   bootstrapping: boolean;
   lastError: string | null;
+  isOnline: boolean;
 };
 
 type ConnectionContextValue = ConnectionState & {
   refreshClient: () => Promise<void>;
   applyCredentials: (c: StoredConnection) => Promise<void>;
   clearCredentials: () => Promise<void>;
+  flushSync: () => Promise<{ ok: number; failed: number } | null>;
 };
 
 const ConnectionContext = createContext<ConnectionContextValue | null>(null);
@@ -24,6 +28,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const [tenantId, setTenantId] = useState('default');
   const [bootstrapping, setBootstrapping] = useState(true);
   const [lastError, setLastError] = useState<string | null>(null);
+  const isOnline = useNetworkOnline();
 
   const refreshClient = useCallback(async () => {
     setLastError(null);
@@ -77,6 +82,16 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     };
   }, [refreshClient]);
 
+  const flushSync = useCallback(async () => {
+    if (!client) return null;
+    return runFlushOutbox(client, tenantId);
+  }, [client, tenantId]);
+
+  useEffect(() => {
+    if (!client || !isOnline) return;
+    void runFlushOutbox(client, tenantId).catch(() => {});
+  }, [client, tenantId, isOnline]);
+
   const value = useMemo<ConnectionContextValue>(
     () => ({
       client,
@@ -84,11 +99,13 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       configured: !!client,
       bootstrapping,
       lastError,
+      isOnline,
       refreshClient,
       applyCredentials,
       clearCredentials,
+      flushSync,
     }),
-    [client, tenantId, bootstrapping, lastError, refreshClient, applyCredentials, clearCredentials],
+    [client, tenantId, bootstrapping, lastError, isOnline, refreshClient, applyCredentials, clearCredentials, flushSync],
   );
 
   return <ConnectionContext.Provider value={value}>{children}</ConnectionContext.Provider>;

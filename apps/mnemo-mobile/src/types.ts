@@ -33,6 +33,8 @@ export interface SearchResult {
 }
 
 export interface CreateNoteInput {
+  /** When set (e.g. offline create), INSERT uses this id so sync matches local cache. */
+  id?: string;
   title: string;
   body: string;
   tags?: string[];

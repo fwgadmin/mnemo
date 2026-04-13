@@ -1,9 +1,10 @@
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
-import { useColorScheme, View } from 'react-native';
+import { View } from 'react-native';
 import { NoteDetailScreen } from '../screens/NoteDetailScreen';
 import { NoteEditorScreen } from '../screens/NoteEditorScreen';
 import { SearchScreen } from '../screens/SearchScreen';
+import { useAppTheme } from '../theme/theme';
 import { MainTabsScreen } from './MainTabsScreen';
 import { MobileNavProvider, useMobileNav } from './MobileNavContext';
 
@@ -12,8 +13,7 @@ import { MobileNavProvider, useMobileNav } from './MobileNavContext';
  * Plain Views + a tiny stack state in MobileNavProvider.
  */
 function RootNavigatorBody() {
-  const scheme = useColorScheme();
-  const bg = scheme === 'dark' ? '#0f1117' : '#f6f7f9';
+  const theme = useAppTheme();
   const { top } = useMobileNav();
 
   useEffect(() => {
@@ -21,7 +21,7 @@ function RootNavigatorBody() {
   }, []);
 
   return (
-    <View style={{ flex: 1, backgroundColor: bg }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
       {top.name === 'Main' ? <MainTabsScreen /> : null}
       {top.name === 'NoteDetail' ? <NoteDetailScreen /> : null}
       {top.name === 'NoteEditor' ? <NoteEditorScreen /> : null}
