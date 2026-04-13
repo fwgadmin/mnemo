@@ -12,6 +12,24 @@ npm run start
 
 Then press `i` / `a` for iOS simulator or Android emulator, or scan the QR code with [Expo Go](https://expo.dev/go).
 
+### Native modules (`ExpoSecureStore`, etc.)
+
+If you see **`Cannot find native module 'ExpoSecureStore'`** (or similar), the **installed app binary** was built **before** `expo-secure-store` was added to the project. **JavaScript updates alone are not enough** — create and install a **new development or simulator build** after pulling changes:
+
+```bash
+cd apps/mnemo-mobile
+eas build --profile development --platform ios   # or android, or development-simulator for iOS sim
+```
+
+Or build locally:
+
+```bash
+npx expo prebuild --clean
+npx expo run:ios    # or run:android
+```
+
+Until you install that build, the app falls back to **AsyncStorage** or **in-memory** storage (credentials may not persist across restarts; check the Metro warning).
+
 ### Dev client on a **physical phone** (EAS internal build)
 
 - **iOS:** Your device **UDID must be registered** before the build, or install will fail or refuse to run. Run `npx eas device:create` in this folder, then **rebuild** with `npx eas build --platform ios --profile development`. See **[docs/TROUBLESHOOTING_DEV_INSTALL.md](./docs/TROUBLESHOOTING_DEV_INSTALL.md)**.
@@ -47,7 +65,7 @@ from `apps/mnemo-mobile` after `chmod +x scripts/ios-eas-production-build.sh`.
 - **Expo** — dev client, EAS Build / Submit / Update
 - **React Navigation** — bottom tabs (Notes / Settings) + native stack for list, detail, editor, search
 - **Data** — Turso remote libSQL via `@libsql/client/web` (HTTP/WebSocket only; avoids the Node `sqlite3` build that Metro cannot bundle). Same model as desktop `TursoNoteStore`. No local `better-sqlite3` on device.
-- **Secrets** — Turso URL, token, and tenant id in **Expo Secure Store** (tenant defaults to `default`).
+- **Secrets** — Turso URL, token, and tenant id in **Expo Secure Store** when the native module is present; otherwise AsyncStorage or session memory (see **Native modules** above).
 
 ### Turso connection
 

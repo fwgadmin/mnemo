@@ -1,9 +1,82 @@
-import * as SecureStore from 'expo-secure-store';
-
+/**
+ * Credential persistence: prefer Expo Secure Store, then AsyncStorage, then in-memory (session only).
+ * If you see the in-memory warning, rebuild the dev client so native modules are linked
+ * (`eas build --profile development` or `npx expo prebuild && npx expo run:ios|android`).
+ */
 const KEY_URL = 'mnemo_turso_url';
 const KEY_TOKEN = 'mnemo_turso_token';
-/** Kept in SecureStore (not AsyncStorage) so we avoid an extra native module that can be null in some dev builds. */
 const KEY_TENANT = 'mnemo_tenant_id';
+
+type StorageImpl =
+  | { kind: 'secure'; secure: typeof import('expo-secure-store') }
+  | { kind: 'async'; AsyncStorage: typeof import('@react-native-async-storage/async-storage').default }
+  | { kind: 'memory'; map: Map<string, string> };
+
+let implPromise: Promise<StorageImpl> | null = null;
+
+function warnMemoryFallback(): void {
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    console.warn(
+      '[mnemo-mobile] No native secure storage module. Using session-only memory for credentials. ' +
+        'Rebuild your development client after native changes (expo-secure-store in app.json plugins).',
+    );
+  }
+}
+
+async function getImpl(): Promise<StorageImpl> {
+  if (!implPromise) {
+    implPromise = (async (): Promise<StorageImpl> => {
+      try {
+        const secure = await import('expo-secure-store');
+        return { kind: 'secure', secure };
+      } catch {
+        // Native ExpoSecureStore missing — try AsyncStorage
+      }
+      try {
+        const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
+        return { kind: 'async', AsyncStorage };
+      } catch {
+        // e.g. tests or very old binary
+      }
+      warnMemoryFallback();
+      return { kind: 'memory', map: new Map() };
+    })();
+  }
+  return implPromise;
+}
+
+async function getItem(key: string): Promise<string | null> {
+  const impl = await getImpl();
+  if (impl.kind === 'memory') return impl.map.get(key) ?? null;
+  if (impl.kind === 'secure') return impl.secure.getItemAsync(key);
+  return impl.AsyncStorage.getItem(key);
+}
+
+async function setItem(key: string, value: string): Promise<void> {
+  const impl = await getImpl();
+  if (impl.kind === 'memory') {
+    impl.map.set(key, value);
+    return;
+  }
+  if (impl.kind === 'secure') {
+    await impl.secure.setItemAsync(key, value);
+    return;
+  }
+  await impl.AsyncStorage.setItem(key, value);
+}
+
+async function removeItem(key: string): Promise<void> {
+  const impl = await getImpl();
+  if (impl.kind === 'memory') {
+    impl.map.delete(key);
+    return;
+  }
+  if (impl.kind === 'secure') {
+    await impl.secure.deleteItemAsync(key);
+    return;
+  }
+  await impl.AsyncStorage.removeItem(key);
+}
 
 export type StoredConnection = {
   url: string;
@@ -13,30 +86,26 @@ export type StoredConnection = {
 
 export async function loadConnection(): Promise<StoredConnection | null> {
   const [url, token, tenantRaw] = await Promise.all([
-    SecureStore.getItemAsync(KEY_URL),
-    SecureStore.getItemAsync(KEY_TOKEN),
-    SecureStore.getItemAsync(KEY_TENANT),
+    getItem(KEY_URL),
+    getItem(KEY_TOKEN),
+    getItem(KEY_TENANT),
   ]);
   if (!url?.trim() || !token?.trim()) return null;
   return {
     url: url.trim(),
     token: token.trim(),
-    tenantId: (tenantRaw?.trim() || 'default') || 'default',
+    tenantId: tenantRaw?.trim() || 'default',
   };
 }
 
 export async function saveConnection(input: StoredConnection): Promise<void> {
   await Promise.all([
-    SecureStore.setItemAsync(KEY_URL, input.url.trim()),
-    SecureStore.setItemAsync(KEY_TOKEN, input.token.trim()),
-    SecureStore.setItemAsync(KEY_TENANT, input.tenantId.trim() || 'default'),
+    setItem(KEY_URL, input.url.trim()),
+    setItem(KEY_TOKEN, input.token.trim()),
+    setItem(KEY_TENANT, input.tenantId.trim() || 'default'),
   ]);
 }
 
 export async function clearConnection(): Promise<void> {
-  await Promise.all([
-    SecureStore.deleteItemAsync(KEY_URL),
-    SecureStore.deleteItemAsync(KEY_TOKEN),
-    SecureStore.deleteItemAsync(KEY_TENANT),
-  ]);
+  await Promise.all([removeItem(KEY_URL), removeItem(KEY_TOKEN), removeItem(KEY_TENANT)]);
 }
