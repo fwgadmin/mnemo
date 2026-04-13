@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.4 — 2026-04-09
+
+- **Desktop (GUI):** Markdown / Preview is a single compact icon toggle in the note header (eye to preview, pencil to edit source) instead of text buttons.
+
 ## 2.1.3 — 2026-04-13
 
 - **Security / repo hygiene:** Added `SECURITY.md` (secrets policy, EAS identifiers, reporting). Confirmed no committed `.env` or high-entropy API keys in tree.
