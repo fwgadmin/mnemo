@@ -14,6 +14,8 @@ Then press `i` / `a` for iOS simulator or Android emulator, or scan the QR code 
 
 If Metro shows **`Requiring unknown module "<number>"`**, stop the bundler and run **`npx expo start --clear`** (stale cache). The app avoids dynamic `import()` for native-heavy packages to keep a single module graph.
 
+If you see **`RNGestureHandlerModule` could not be found** (TurboModuleRegistry), your **dev client binary** does not include **`react-native-gesture-handler`** native code. In **development**, Metro can resolve that package to a **JS shim** (`src/shims/react-native-gesture-handler.js`) so the app runs (swipe gestures are inert). **Production** bundles use the real library. Use **`EXPO_USE_RNGH_SHIM=0`** with `expo start` if your dev client already has RNGH linked. Prefer a **rebuilt dev client**: `npx expo prebuild && npx expo run:ios|android` or an EAS development build.
+
 ### Native modules (`ExpoSecureStore`, `ExpoNetwork`, etc.)
 
 If you see **`Cannot find native module 'ExpoSecureStore'`**, **`RNCNetInfo is null`**, or similar, the **installed app binary** was built **before** those Expo / native packages were added. **JavaScript updates alone are not enough** — create and install a **new development or simulator build** after pulling changes:
