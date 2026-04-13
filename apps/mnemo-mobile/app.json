@@ -2,7 +2,7 @@
   "expo": {
     "name": "mnemo-mobile",
     "slug": "mnemo-mobile",
-    "version": "1.0.0",
+    "version": "2.1.4",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

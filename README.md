@@ -80,18 +80,6 @@ Mnemo is built and maintained by [Ferrowood Group, LLC](https://www.ferrowoodgro
 
 This project is open source under the [MIT License](LICENSE). The same terms apply to the npm package `**mnemo-note`**.
 
-### Publishing to npm (maintainers)
-
-The registry name is `**mnemo-note`**; the binary remains `**mnemo`**.
-
-1. `npm login`
-2. Bump `**version**` in `package.json` for a new release
-3. `**npm publish**` — `prepublishOnly` runs typecheck and builds CLI/MCP bundles into `dist/`
-4. With npm **2FA**: `npm publish --otp=…`
-5. Optional: `npm pack --dry-run` to inspect the tarball
-
-**Desktop zips** on GitHub Releases come from the **Release** workflow when you push a `**v*`** tag, not from `npm publish`. The npm package ships `**bin/`**, `**dist/`**, `**LICENSE**`, `**README.md**`, and `**examples/**` (see `package.json` → `files`).
-
 ---
 
 MIT © [Ferrowood Group, LLC](https://www.ferrowoodgroup.com)
