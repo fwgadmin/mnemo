@@ -12,6 +12,8 @@ npm run start
 
 Then press `i` / `a` for iOS simulator or Android emulator, or scan the QR code with [Expo Go](https://expo.dev/go).
 
+If Metro shows **`Requiring unknown module "<number>"`**, stop the bundler and run **`npx expo start --clear`** (stale cache). The app avoids dynamic `import()` for native-heavy packages to keep a single module graph.
+
 ### Native modules (`ExpoSecureStore`, `ExpoNetwork`, etc.)
 
 If you see **`Cannot find native module 'ExpoSecureStore'`**, **`RNCNetInfo is null`**, or similar, the **installed app binary** was built **before** those Expo / native packages were added. **JavaScript updates alone are not enough** — create and install a **new development or simulator build** after pulling changes:

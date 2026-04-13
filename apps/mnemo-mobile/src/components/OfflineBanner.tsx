@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { NativeModules, StyleSheet, Text, View } from 'react-native';
 
 function isOfflineState(state: {
   isConnected?: boolean | null;
@@ -10,29 +10,39 @@ function isOfflineState(state: {
   return false;
 }
 
+function hasExpoNetworkNative(): boolean {
+  try {
+    return NativeModules.ExpoNetwork != null;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Uses `expo-network` (Expo native module), loaded only at runtime.
- * If the native module is missing (stale dev client), we show nothing — no crash.
+ * Uses `expo-network` with synchronous `require()` after a native check so Metro does not split
+ * async chunks (can trigger "requiring unknown module <id>"). If the module is missing, no UI.
  */
 export function OfflineBanner() {
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
+    if (!hasExpoNetworkNative()) return;
+
     let cancelled = false;
     let subscription: { remove: () => void } | undefined;
 
-    void (async () => {
-      try {
-        const Network = await import('expo-network');
-        subscription = Network.addNetworkStateListener(state => {
-          if (!cancelled) setOffline(isOfflineState(state));
-        });
-        const initial = await Network.getNetworkStateAsync();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Network = require('expo-network');
+      subscription = Network.addNetworkStateListener((state: { isConnected?: boolean | null; isInternetReachable?: boolean | null }) => {
+        if (!cancelled) setOffline(isOfflineState(state));
+      });
+      void Network.getNetworkStateAsync().then((initial: { isConnected?: boolean | null; isInternetReachable?: boolean | null }) => {
         if (!cancelled) setOffline(isOfflineState(initial));
-      } catch {
-        // ExpoNetwork not in binary — skip offline UI (rebuild dev client to enable).
-      }
-    })();
+      });
+    } catch {
+      // Native or JS unavailable
+    }
 
     return () => {
       cancelled = true;

@@ -1,7 +1,7 @@
 /**
  * Credential persistence: prefer Expo Secure Store, then AsyncStorage, then in-memory (session only).
- * If you see the in-memory warning, rebuild the dev client so native modules are linked
- * (`eas build --profile development` or `npx expo prebuild && npx expo run:ios|android`).
+ * Uses synchronous `require()` after native checks so Metro keeps a stable module graph (avoids
+ * "requiring unknown module <id>" from async chunks). Rebuild dev client for Keychain storage.
  */
 import { NativeModules } from 'react-native';
 
@@ -15,19 +15,43 @@ type SecureStoreModule = {
   deleteItemAsync: (key: string, options?: object) => Promise<void>;
 };
 
+type AsyncStorageModule = {
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
+};
+
 type StorageImpl =
   | { kind: 'secure'; secure: SecureStoreModule }
-  | { kind: 'async'; AsyncStorage: typeof import('@react-native-async-storage/async-storage').default }
+  | { kind: 'async'; AsyncStorage: AsyncStorageModule }
   | { kind: 'memory'; map: Map<string, string> };
 
-let implPromise: Promise<StorageImpl> | null = null;
+let cachedImpl: StorageImpl | null = null;
 
-/** Do not `import('expo-secure-store')` unless native is present — loading that JS calls `requireNativeModule` and can surface as an uncaught error. */
 function hasExpoSecureStoreNative(): boolean {
   try {
     return NativeModules.ExpoSecureStore != null;
   } catch {
     return false;
+  }
+}
+
+function tryRequireSecureStore(): SecureStoreModule | null {
+  if (!hasExpoSecureStoreNative()) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-secure-store') as SecureStoreModule;
+  } catch {
+    return null;
+  }
+}
+
+function tryRequireAsyncStorage(): AsyncStorageModule | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('@react-native-async-storage/async-storage').default;
+  } catch {
+    return null;
   }
 }
 
@@ -40,39 +64,33 @@ function warnMemoryFallback(): void {
   }
 }
 
-async function getImpl(): Promise<StorageImpl> {
-  if (!implPromise) {
-    implPromise = (async (): Promise<StorageImpl> => {
-      if (hasExpoSecureStoreNative()) {
-        try {
-          const secure = (await import('expo-secure-store')) as SecureStoreModule;
-          return { kind: 'secure', secure };
-        } catch {
-          // Rare: native present but JS load failed
-        }
+function getImpl(): StorageImpl {
+  if (!cachedImpl) {
+    const secure = tryRequireSecureStore();
+    if (secure) {
+      cachedImpl = { kind: 'secure', secure };
+    } else {
+      const asyncSt = tryRequireAsyncStorage();
+      if (asyncSt) {
+        cachedImpl = { kind: 'async', AsyncStorage: asyncSt };
+      } else {
+        warnMemoryFallback();
+        cachedImpl = { kind: 'memory', map: new Map() };
       }
-      try {
-        const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
-        return { kind: 'async', AsyncStorage };
-      } catch {
-        // e.g. tests or very old binary
-      }
-      warnMemoryFallback();
-      return { kind: 'memory', map: new Map() };
-    })();
+    }
   }
-  return implPromise;
+  return cachedImpl;
 }
 
 async function getItem(key: string): Promise<string | null> {
-  const impl = await getImpl();
+  const impl = getImpl();
   if (impl.kind === 'memory') return impl.map.get(key) ?? null;
   if (impl.kind === 'secure') return impl.secure.getItemAsync(key);
   return impl.AsyncStorage.getItem(key);
 }
 
 async function setItem(key: string, value: string): Promise<void> {
-  const impl = await getImpl();
+  const impl = getImpl();
   if (impl.kind === 'memory') {
     impl.map.set(key, value);
     return;
@@ -85,7 +103,7 @@ async function setItem(key: string, value: string): Promise<void> {
 }
 
 async function removeItem(key: string): Promise<void> {
-  const impl = await getImpl();
+  const impl = getImpl();
   if (impl.kind === 'memory') {
     impl.map.delete(key);
     return;
