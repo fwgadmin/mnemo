@@ -12,9 +12,11 @@ npm run start
 
 Then press `i` / `a` for iOS simulator or Android emulator, or scan the QR code with [Expo Go](https://expo.dev/go).
 
-### Native modules (`ExpoSecureStore`, etc.)
+### Native modules (`ExpoSecureStore`, `ExpoNetwork`, etc.)
 
-If you see **`Cannot find native module 'ExpoSecureStore'`** (or similar), the **installed app binary** was built **before** `expo-secure-store` was added to the project. **JavaScript updates alone are not enough** — create and install a **new development or simulator build** after pulling changes:
+If you see **`Cannot find native module 'ExpoSecureStore'`**, **`RNCNetInfo is null`**, or similar, the **installed app binary** was built **before** those Expo / native packages were added. **JavaScript updates alone are not enough** — create and install a **new development or simulator build** after pulling changes:
+
+The offline banner uses **`expo-network`** (not `@react-native-community/netinfo`). If `ExpoNetwork` is missing in the binary, the banner is skipped so the app still runs.
 
 ```bash
 cd apps/mnemo-mobile
@@ -77,7 +79,7 @@ The app does not commit credentials. For EAS builds, inject tokens at build time
 
 ### Offline behavior
 
-Notes are read from the network (Turso). When the device is offline, an **offline banner** appears and operations fail with an error until connectivity returns. Full offline sync is not implemented.
+Notes are read from the network (Turso). When `expo-network` is available, an **offline banner** may appear when disconnected; Turso calls still fail without connectivity. Full offline sync is not implemented.
 
 ## Distribution
 
