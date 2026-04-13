@@ -3,16 +3,33 @@
  * If you see the in-memory warning, rebuild the dev client so native modules are linked
  * (`eas build --profile development` or `npx expo prebuild && npx expo run:ios|android`).
  */
+import { NativeModules } from 'react-native';
+
 const KEY_URL = 'mnemo_turso_url';
 const KEY_TOKEN = 'mnemo_turso_token';
 const KEY_TENANT = 'mnemo_tenant_id';
 
+type SecureStoreModule = {
+  getItemAsync: (key: string, options?: object) => Promise<string | null>;
+  setItemAsync: (key: string, value: string, options?: object) => Promise<void>;
+  deleteItemAsync: (key: string, options?: object) => Promise<void>;
+};
+
 type StorageImpl =
-  | { kind: 'secure'; secure: typeof import('expo-secure-store') }
+  | { kind: 'secure'; secure: SecureStoreModule }
   | { kind: 'async'; AsyncStorage: typeof import('@react-native-async-storage/async-storage').default }
   | { kind: 'memory'; map: Map<string, string> };
 
 let implPromise: Promise<StorageImpl> | null = null;
+
+/** Do not `import('expo-secure-store')` unless native is present — loading that JS calls `requireNativeModule` and can surface as an uncaught error. */
+function hasExpoSecureStoreNative(): boolean {
+  try {
+    return NativeModules.ExpoSecureStore != null;
+  } catch {
+    return false;
+  }
+}
 
 function warnMemoryFallback(): void {
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
@@ -26,11 +43,13 @@ function warnMemoryFallback(): void {
 async function getImpl(): Promise<StorageImpl> {
   if (!implPromise) {
     implPromise = (async (): Promise<StorageImpl> => {
-      try {
-        const secure = await import('expo-secure-store');
-        return { kind: 'secure', secure };
-      } catch {
-        // Native ExpoSecureStore missing — try AsyncStorage
+      if (hasExpoSecureStoreNative()) {
+        try {
+          const secure = (await import('expo-secure-store')) as SecureStoreModule;
+          return { kind: 'secure', secure };
+        } catch {
+          // Rare: native present but JS load failed
+        }
       }
       try {
         const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
