@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { INoteStore, MnemoUiPreferences, NoteListItem } from '../../shared/types';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from '../uiPreferences';
 import { recomputeAutolinks } from '../autolinkRecompute';
+import { refreshOutgoingLinksForNote, relocateWikilinksAfterTitleChange } from '../noteOutgoingLinks';
 import {
   categoryPathFromTags,
   filterNotesByCategory,
@@ -214,6 +215,10 @@ export function createMcpServer(
       if (!resolved.ok) {
         return { content: [{ type: 'text', text: resolved.text }], isError: true };
       }
+      const before = await store.read(resolved.id);
+      if (!before) {
+        return { content: [{ type: 'text', text: `Note ${resolved.id} not found` }], isError: true };
+      }
       const note = await store.update({
         id: resolved.id,
         title: args.title,
@@ -223,6 +228,13 @@ export function createMcpServer(
       });
       if (!note) {
         return { content: [{ type: 'text', text: `Note ${resolved.id} not found` }], isError: true };
+      }
+      const titleChanged =
+        args.title !== undefined && before.title.trim() !== note.title.trim();
+      if (titleChanged) {
+        await relocateWikilinksAfterTitleChange(store, before.title, note.title, tenantId);
+      } else if (args.body !== undefined) {
+        await refreshOutgoingLinksForNote(store, note.id, tenantId);
       }
       return { content: [{ type: 'text', text: JSON.stringify(note, null, 2) }] };
     },

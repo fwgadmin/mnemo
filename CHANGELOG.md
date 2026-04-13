@@ -2,9 +2,9 @@
 
 ## 2.1.3 — 2026-04-13
 
-- **Security / repo hygiene:** `SECURITY.md` (secrets policy, EAS identifiers, reporting).
-- **Desktop (GUI):** Markdown / Preview toggle in the note header (top-right); smaller controls; “Body” label removed.
-- **Mobile (Expo):** Navigation and storage hardening, legal screens, EAS submit config; broader error boundary; resilient native storage.
+- **Security / repo hygiene:** Added `SECURITY.md` (secrets policy, EAS identifiers, reporting). Confirmed no committed `.env` or high-entropy API keys in tree.
+- **Desktop (GUI):** Markdown / Preview toggle moved to the top-right of the note header; smaller controls; “Body” label removed.
+- **Mobile (Expo):** Broader `AppErrorBoundary` around category colors + navigator; validated stack params in `MobileNavContext`; safer Legal route; resilient SecureStore / AsyncStorage with in-memory fallback; legal screens and store checklist doc; misc. storage and navigation fixes.
 
 ## 2.1.0 — 2026-04-12
 

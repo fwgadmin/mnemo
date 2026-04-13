@@ -43,6 +43,25 @@ import { formatMarkdown } from '../editor/formatMarkdown';
 import { wikilinkDecorations } from './wikilinkPlugin';
 import { clampFixedContextMenu } from '../fixedMenuPosition';
 import type { Note } from '../../shared/types';
+import MarkdownNoteBody from './MarkdownNoteBody';
+
+function readNoteBodyMode(): 'edit' | 'preview' {
+  try {
+    const v = localStorage.getItem('mnemo.noteBodyMode');
+    if (v === 'preview' || v === 'edit') return v;
+  } catch {
+    /* ignore */
+  }
+  return 'edit';
+}
+
+function saveNoteBodyMode(m: 'edit' | 'preview'): void {
+  try {
+    localStorage.setItem('mnemo.noteBodyMode', m);
+  } catch {
+    /* ignore */
+  }
+}
 
 /** Sync parsers first (instant highlight); language-data fills in the long tail via async load. */
 const syncCodeLanguages: LanguageDescription[] = [
@@ -252,6 +271,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const setCtxMenuRef = useRef(setCtxMenu);
   setCtxMenuRef.current = setCtxMenu;
+  const [bodyMode, setBodyMode] = useState<'edit' | 'preview'>(() => readNoteBodyMode());
+  const [previewLiveBody, setPreviewLiveBody] = useState(() => normalizeLineSeparators(note.body));
 
   useEffect(() => {
     onUpdateRef.current = onUpdate;
@@ -259,6 +280,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   useEffect(() => {
     onEditorLiveBodyRef.current = onEditorLiveBody;
   }, [onEditorLiveBody]);
+
+  useEffect(() => {
+    setPreviewLiveBody(normalizeLineSeparators(note.body));
+  }, [note.id, note.body]);
 
   const saveNow = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -366,7 +391,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
           if (previewThrottleRef.current) clearTimeout(previewThrottleRef.current);
           previewThrottleRef.current = setTimeout(() => {
             previewThrottleRef.current = null;
-            cb(update.state.doc.toString());
+            const doc = update.state.doc.toString();
+            cb(doc);
+            setPreviewLiveBody(doc);
           }, 120);
         }
       }
@@ -481,6 +508,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       t.value = note.title;
     }
     onEditorLiveBodyRef.current?.(server);
+    setPreviewLiveBody(server);
     reloadNonceSeenRef.current = reloadNonce;
   }, [reloadNonce, note.id, note.body, note.title]);
 
@@ -518,7 +546,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     debouncedSave(newTitle, viewRef.current?.state.doc.toString() ?? note.body);
   };
 
-  const wordCount = note.body.trim() ? note.body.trim().split(/\s+/).length : 0;
+  const wordCount = previewLiveBody.trim() ? previewLiveBody.trim().split(/\s+/).length : 0;
   const editorPx = showHeader ? 'pl-4 pr-2' : 'pl-3 pr-1';
 
   const ctxPos = ctxMenu
@@ -541,24 +569,61 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       {showHeader && (
         <>
           <div className="px-4 pt-3 pb-1">
-            <input
-              ref={titleRef}
-              type="text"
-              defaultValue={note.title}
-              key={note.id}
-              readOnly={!!note.filePath}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              className={`w-full text-2xl font-semibold bg-transparent border-none outline-none text-mnemo-text placeholder-mnemo-dim ${
-                note.filePath ? 'cursor-default opacity-90' : ''
-              }`}
-              placeholder="Untitled"
-              title={note.filePath ?? undefined}
-            />
-            {note.filePath && (
-              <div className="mt-1 text-[11px] text-mnemo-dim truncate font-normal" title={note.filePath}>
-                {note.filePath}
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <input
+                  ref={titleRef}
+                  type="text"
+                  defaultValue={note.title}
+                  key={note.id}
+                  readOnly={!!note.filePath}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  className={`w-full text-2xl font-semibold bg-transparent border-none outline-none text-mnemo-text placeholder-mnemo-dim ${
+                    note.filePath ? 'cursor-default opacity-90' : ''
+                  }`}
+                  placeholder="Untitled"
+                  title={note.filePath ?? undefined}
+                />
+                {note.filePath && (
+                  <div className="mt-1 text-[11px] text-mnemo-dim truncate font-normal" title={note.filePath}>
+                    {note.filePath}
+                  </div>
+                )}
               </div>
-            )}
+              <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
+                <button
+                  type="button"
+                  aria-label="Edit markdown source"
+                  onClick={() => {
+                    setBodyMode('edit');
+                    saveNoteBodyMode('edit');
+                    requestAnimationFrame(() => viewRef.current?.focus());
+                  }}
+                  className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
+                    bodyMode === 'edit'
+                      ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
+                      : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
+                  }`}
+                >
+                  Markdown
+                </button>
+                <button
+                  type="button"
+                  aria-label="Preview rendered markdown"
+                  onClick={() => {
+                    setBodyMode('preview');
+                    saveNoteBodyMode('preview');
+                  }}
+                  className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
+                    bodyMode === 'preview'
+                      ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
+                      : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
+                  }`}
+                >
+                  Preview
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-3 mt-2 text-[10px] text-mnemo-dim">
               <span>{new Date(note.modified).toLocaleDateString()}</span>
               <span>·</span>
@@ -584,10 +649,54 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
           <div className="mx-4 border-t border-mnemo-border my-1" />
         </>
       )}
+      {!showHeader && (
+        <div className={`flex items-center justify-end gap-0.5 px-3 pt-2 pb-1 ${editorPx}`}>
+          <button
+            type="button"
+            aria-label="Edit markdown source"
+            onClick={() => {
+              setBodyMode('edit');
+              saveNoteBodyMode('edit');
+              requestAnimationFrame(() => viewRef.current?.focus());
+            }}
+            className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
+              bodyMode === 'edit'
+                ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
+                : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
+            }`}
+          >
+            Markdown
+          </button>
+          <button
+            type="button"
+            aria-label="Preview rendered markdown"
+            onClick={() => {
+              setBodyMode('preview');
+              saveNoteBodyMode('preview');
+            }}
+            className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
+              bodyMode === 'preview'
+                ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
+                : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
+            }`}
+          >
+            Preview
+          </button>
+        </div>
+      )}
       <div
-        ref={containerRef}
-        className={`flex-1 min-h-0 min-w-0 overflow-hidden ${editorPx} ${showHeader ? 'pb-3' : 'py-3'}`}
-      />
+        className={`flex-1 flex flex-col min-h-0 min-w-0 relative overflow-hidden ${editorPx} ${showHeader ? 'pb-3' : 'py-3'}`}
+      >
+        {bodyMode === 'preview' && (
+          <div className="absolute inset-0 z-10 flex flex-col min-h-0 bg-mnemo-app overflow-hidden">
+            <MarkdownNoteBody body={previewLiveBody} />
+          </div>
+        )}
+        <div
+          ref={containerRef}
+          className={`flex-1 min-h-0 min-w-0 overflow-hidden ${bodyMode === 'preview' ? 'hidden' : ''}`}
+        />
+      </div>
       {ctxMenu && (
         <>
           <div className="fixed inset-0 z-[199]" aria-hidden onMouseDown={closeCtx} />
