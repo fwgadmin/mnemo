@@ -1,6 +1,4 @@
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -20,16 +18,14 @@ import {
   filterNotesByCategory,
   uniqueCategoryPaths,
 } from '../lib/categoryPath';
-import type { NotesStackParamList } from '../navigation/types';
+import { useMobileNav } from '../navigation/MobileNavContext';
 import type { NoteListItem } from '../types';
 import { useAppTheme } from '../theme/theme';
 
-type Nav = StackNavigationProp<NotesStackParamList>;
-
-export function NotesListScreen() {
+export function NotesListScreen({ refreshToken = 0 }: { refreshToken?: number }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<Nav>();
+  const { navigate } = useMobileNav();
   const { client, tenantId, configured, bootstrapping } = useConnection();
 
   const [notes, setNotes] = useState<NoteListItem[]>([]);
@@ -58,14 +54,12 @@ export function NotesListScreen() {
     }
   }, [client, tenantId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!bootstrapping) {
-        setLoading(true);
-        void load();
-      }
-    }, [bootstrapping, load]),
-  );
+  useEffect(() => {
+    if (!bootstrapping) {
+      setLoading(true);
+      void load();
+    }
+  }, [bootstrapping, load, refreshToken]);
 
   const paths = useMemo(() => uniqueCategoryPaths(notes), [notes]);
   const filtered = useMemo(
@@ -135,6 +129,7 @@ export function NotesListScreen() {
         </View>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={filtered}
           keyExtractor={item => item.id}
           refreshControl={
@@ -152,7 +147,7 @@ export function NotesListScreen() {
           renderItem={({ item }) => (
             <Pressable
               style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}
-              onPress={() => navigation.navigate('NoteDetail', { noteId: item.id })}>
+              onPress={() => navigate('NoteDetail', { noteId: item.id })}>
               <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={2}>
                 {item.title || 'Untitled'}
               </Text>
@@ -168,7 +163,7 @@ export function NotesListScreen() {
       {configured ? (
         <Pressable
           style={[styles.fab, { backgroundColor: theme.primary }]}
-          onPress={() => navigation.navigate('NoteEditor', {})}>
+          onPress={() => navigate('NoteEditor', {})}>
           <Text style={[styles.fabText, { color: theme.primaryText }]}>＋</Text>
         </Pressable>
       ) : null}
@@ -176,7 +171,7 @@ export function NotesListScreen() {
       {configured ? (
         <Pressable
           style={[styles.searchBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          onPress={() => navigation.navigate('Search')}>
+          onPress={() => navigate('Search')}>
           <Text style={{ color: theme.primary, fontWeight: '600' }}>Search</Text>
         </Pressable>
       ) : null}

@@ -1,5 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,16 +11,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchNotes } from '../data/turso';
 import { useConnection } from '../context/ConnectionContext';
-import type { NotesStackParamList } from '../navigation/types';
+import { useMobileNav } from '../navigation/MobileNavContext';
 import type { SearchResult } from '../types';
 import { useAppTheme } from '../theme/theme';
-
-type Nav = StackNavigationProp<NotesStackParamList>;
 
 export function SearchScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<Nav>();
+  const { navigate, goBack } = useMobileNav();
   const { client, tenantId } = useConnection();
 
   const [q, setQ] = useState('');
@@ -46,7 +42,12 @@ export function SearchScreen() {
   }, [client, q, tenantId]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background, paddingTop: insets.top }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 4 }]}>
+        <Pressable onPress={() => goBack()} hitSlop={12}>
+          <Text style={{ color: theme.primary, fontSize: 17 }}>‹ Back</Text>
+        </Pressable>
+      </View>
       <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
         <TextInput
           style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
@@ -80,7 +81,7 @@ export function SearchScreen() {
           renderItem={({ item }) => (
             <Pressable
               style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}
-              onPress={() => navigation.navigate('NoteDetail', { noteId: item.id })}>
+              onPress={() => navigate('NoteDetail', { noteId: item.id })}>
               <Text style={[styles.t, { color: theme.text }]} numberOfLines={2}>
                 {item.title || 'Untitled'}
               </Text>
@@ -96,6 +97,12 @@ export function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
+  topBar: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   input: {
     borderWidth: 1,
     borderRadius: 10,

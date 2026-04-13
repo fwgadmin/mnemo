@@ -57,9 +57,20 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     let cancelled = false;
+    const bootstrapTimeoutMs = 15000;
     (async () => {
-      await refreshClient();
-      if (!cancelled) setBootstrapping(false);
+      try {
+        await Promise.race([
+          refreshClient(),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error('Connection bootstrap timeout')), bootstrapTimeoutMs),
+          ),
+        ]);
+      } catch {
+        // Stale storage / SecureStore hang — still show UI
+      } finally {
+        if (!cancelled) setBootstrapping(false);
+      }
     })();
     return () => {
       cancelled = true;

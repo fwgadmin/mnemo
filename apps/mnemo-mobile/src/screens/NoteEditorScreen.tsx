@@ -1,5 +1,3 @@
-import { useNavigation, useRoute } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,11 +16,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createNote, deleteNote, getNote, updateNote } from '../data/turso';
 import { refreshOutgoingLinksForNote } from '../data/noteLinks';
 import { useConnection } from '../context/ConnectionContext';
+import { useMobileNav } from '../navigation/MobileNavContext';
 import { GENERAL_PATH, normalizePath } from '../lib/categoryPath';
-import type { NotesStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/theme';
-
-type Nav = StackNavigationProp<NotesStackParamList>;
 
 function tagsFromCategoryInput(category: string, previousTags: string[]): string[] {
   const c = normalizePath(category);
@@ -39,13 +35,11 @@ function categoryInputFromTags(tags: string[]): string {
 export function NoteEditorScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<Nav>();
-  const route = useRoute();
-  const params = route.params as { noteId?: string; initialTitle?: string } | undefined;
+  const { top, replace, goBack, popToTop } = useMobileNav();
+  const { client, tenantId } = useConnection();
+  const params = top.name === 'NoteEditor' ? top.params : undefined;
   const noteId = params?.noteId;
   const initialTitle = params?.initialTitle;
-
-  const { client, tenantId } = useConnection();
 
   const [loading, setLoading] = useState(!!noteId);
   const [title, setTitle] = useState(initialTitle ?? '');
@@ -97,7 +91,7 @@ export function NoteEditorScreen() {
           hideHeader,
         });
         await refreshOutgoingLinksForNote(client, created.id, tenantId);
-        navigation.replace('NoteDetail', { noteId: created.id });
+        replace('NoteDetail', { noteId: created.id });
         return;
       }
 
@@ -111,13 +105,13 @@ export function NoteEditorScreen() {
       if (updated) {
         await refreshOutgoingLinksForNote(client, updated.id, tenantId);
       }
-      navigation.goBack();
+      goBack();
     } catch (e) {
       Alert.alert('Save failed', e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
-  }, [client, tenantId, noteId, title, body, category, tags, hideHeader, navigation]);
+  }, [client, tenantId, noteId, title, body, category, tags, hideHeader, replace, goBack]);
 
   const onDelete = useCallback(() => {
     if (!noteId || !client) return;
@@ -129,14 +123,18 @@ export function NoteEditorScreen() {
         onPress: async () => {
           try {
             await deleteNote(client, noteId);
-            navigation.popToTop();
+            popToTop();
           } catch (e) {
             Alert.alert('Error', e instanceof Error ? e.message : String(e));
           }
         },
       },
     ]);
-  }, [noteId, client, navigation]);
+  }, [noteId, client, popToTop]);
+
+  if (top.name !== 'NoteEditor') {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -150,6 +148,11 @@ export function NoteEditorScreen() {
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: theme.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 4 }]}>
+        <Pressable onPress={() => goBack()} hitSlop={12}>
+          <Text style={{ color: theme.primary, fontSize: 17 }}>‹ Back</Text>
+        </Pressable>
+      </View>
       <ScrollView
         contentContainerStyle={{
           padding: 16,
@@ -216,6 +219,12 @@ export function NoteEditorScreen() {
 }
 
 const styles = StyleSheet.create({
+  topBar: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   label: { fontSize: 12, marginBottom: 4, marginTop: 12 },
   input: {

@@ -1,6 +1,6 @@
 /**
  * JS-only stand-in when the dev client has no native RNGestureHandlerModule.
- * Metro resolves `react-native-gesture-handler` here so @react-navigation/stack
+ * Metro resolves `react-native-gesture-handler` here so React Navigation
  * can run without TurboModuleRegistry errors. Swipe-back gestures are inert.
  * Rebuild the app with react-native-gesture-handler linked for real gestures.
  */

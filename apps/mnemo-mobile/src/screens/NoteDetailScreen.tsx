@@ -1,5 +1,3 @@
-import { useNavigation, useRoute } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,12 +12,10 @@ import Markdown from 'react-native-markdown-display';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getBacklinks, getNote, resolveTitle } from '../data/turso';
 import { useConnection } from '../context/ConnectionContext';
+import { useMobileNav } from '../navigation/MobileNavContext';
 import { WIKILINK_PATTERN, parseWikilinkInner } from '../lib/wikilinks';
-import type { NotesStackParamList } from '../navigation/types';
 import type { Note, NoteListItem } from '../types';
 import { useAppTheme } from '../theme/theme';
-
-type Nav = StackNavigationProp<NotesStackParamList>;
 
 function bodyForMarkdown(body: string): string {
   return body.replace(WIKILINK_PATTERN, (_, inner: string) => {
@@ -32,10 +28,9 @@ function bodyForMarkdown(body: string): string {
 export function NoteDetailScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<Nav>();
-  const route = useRoute();
-  const { noteId } = route.params as { noteId: string };
+  const { top, push, navigate, goBack } = useMobileNav();
   const { client, tenantId } = useConnection();
+  const noteId = top.name === 'NoteDetail' ? top.params.noteId : '';
 
   const [note, setNote] = useState<Note | null>(null);
   const [backlinks, setBacklinks] = useState<NoteListItem[]>([]);
@@ -43,6 +38,7 @@ export function NoteDetailScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!noteId) return;
     if (!client) {
       setError('Not connected');
       setLoading(false);
@@ -61,14 +57,9 @@ export function NoteDetailScreen() {
   }, [client, noteId]);
 
   useEffect(() => {
+    if (!noteId) return;
     void load();
-  }, [load]);
-
-  useEffect(() => {
-    if (note?.title) {
-      navigation.setOptions({ title: note.title || 'Note' });
-    }
-  }, [navigation, note?.title]);
+  }, [load, noteId]);
 
   const onLinkPress = useCallback(
     (url: string) => {
@@ -79,7 +70,7 @@ export function NoteDetailScreen() {
         try {
           const id = await resolveTitle(client, title, tenantId);
           if (id) {
-            navigation.push('NoteDetail', { noteId: id });
+            push('NoteDetail', { noteId: id });
           } else {
             Alert.alert(
               'No note',
@@ -88,7 +79,7 @@ export function NoteDetailScreen() {
                 { text: 'Cancel', style: 'cancel' },
                 {
                   text: 'Create',
-                  onPress: () => navigation.navigate('NoteEditor', { initialTitle: title }),
+                  onPress: () => navigate('NoteEditor', { initialTitle: title }),
                 },
               ],
             );
@@ -99,8 +90,12 @@ export function NoteDetailScreen() {
       })();
       return false;
     },
-    [client, tenantId, navigation],
+    [client, tenantId, push, navigate],
   );
+
+  if (!noteId) {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -114,7 +109,7 @@ export function NoteDetailScreen() {
     return (
       <View style={[styles.center, { backgroundColor: theme.background, padding: 24 }]}>
         <Text style={{ color: theme.danger, textAlign: 'center' }}>{error || 'Note not found'}</Text>
-        <Pressable onPress={() => navigation.goBack()} style={{ marginTop: 16 }}>
+        <Pressable onPress={() => goBack()} style={{ marginTop: 16 }}>
           <Text style={{ color: theme.primary }}>Go back</Text>
         </Pressable>
       </View>
@@ -122,41 +117,54 @@ export function NoteDetailScreen() {
   }
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: theme.background }}
-      contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
-      {!note.hideHeader ? (
-        <Text style={[styles.title, { color: theme.text }]}>{note.title || 'Untitled'}</Text>
-      ) : null}
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 4 }]}>
+        <Pressable onPress={() => goBack()} hitSlop={12}>
+          <Text style={{ color: theme.primary, fontSize: 17 }}>‹ Back</Text>
+        </Pressable>
+      </View>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.background }}
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
+        {!note.hideHeader ? (
+          <Text style={[styles.title, { color: theme.text }]}>{note.title || 'Untitled'}</Text>
+        ) : null}
 
-      <Markdown style={theme.markdown as never} onLinkPress={onLinkPress}>
-        {bodyForMarkdown(note.body)}
-      </Markdown>
+        <Markdown style={theme.markdown as never} onLinkPress={onLinkPress}>
+          {bodyForMarkdown(note.body)}
+        </Markdown>
 
-      {backlinks.length > 0 ? (
-        <View style={[styles.backSection, { borderColor: theme.border }]}>
-          <Text style={[styles.backHeading, { color: theme.textMuted }]}>Backlinks</Text>
-          {backlinks.map(b => (
-            <Pressable
-              key={b.id}
-              onPress={() => navigation.push('NoteDetail', { noteId: b.id })}
-              style={styles.backRow}>
-              <Text style={{ color: theme.primary, fontSize: 16 }}>{b.title || 'Untitled'}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
+        {backlinks.length > 0 ? (
+          <View style={[styles.backSection, { borderColor: theme.border }]}>
+            <Text style={[styles.backHeading, { color: theme.textMuted }]}>Backlinks</Text>
+            {backlinks.map(b => (
+              <Pressable
+                key={b.id}
+                onPress={() => push('NoteDetail', { noteId: b.id })}
+                style={styles.backRow}>
+                <Text style={{ color: theme.primary, fontSize: 16 }}>{b.title || 'Untitled'}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
-      <Pressable
-        style={[styles.editBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
-        onPress={() => navigation.navigate('NoteEditor', { noteId: note.id })}>
-        <Text style={{ color: theme.primary, fontWeight: '600' }}>Edit</Text>
-      </Pressable>
-    </ScrollView>
+        <Pressable
+          style={[styles.editBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+          onPress={() => navigate('NoteEditor', { noteId: note.id })}>
+          <Text style={{ color: theme.primary, fontWeight: '600' }}>Edit</Text>
+        </Pressable>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  topBar: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 24, fontWeight: '700', marginBottom: 12 },
   backSection: {

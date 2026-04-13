@@ -1,4 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,13 +13,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useConnection } from '../context/ConnectionContext';
+import { useMainTab } from '../navigation/MainTabContext';
 import { loadConnection } from '../storage/connectionCredentials';
 import { useAppTheme } from '../theme/theme';
 
 export function SettingsScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const { setMainTab } = useMainTab();
   const { applyCredentials, clearCredentials, refreshClient, configured, lastError } = useConnection();
 
   const [url, setUrl] = useState('');
@@ -152,7 +152,7 @@ export function SettingsScreen() {
           style={[styles.secondaryBtn, { borderColor: theme.border }]}
           onPress={() => {
             void refreshClient();
-            navigation.getParent()?.navigate('Notes');
+            setMainTab('notes');
           }}>
           <Text style={[styles.secondaryBtnText, { color: theme.primary }]}>Go to notes</Text>
         </Pressable>
