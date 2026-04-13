@@ -1319,7 +1319,9 @@ export default function App() {
     if (next === null) return;
     const trimmed = next.trim() || 'Untitled';
     if (trimmed === item.title) return;
+    const prevTitle = item.title;
     await window.mnemo.notes.update({ id, title: trimmed });
+    await window.mnemo.notes.relocateWikilinksOnRename(prevTitle, trimmed);
     await loadNotes();
     if (activeNote?.id === id) {
       const n = await window.mnemo.notes.read(id);

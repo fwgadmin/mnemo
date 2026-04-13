@@ -43,6 +43,7 @@ import {
 } from './cliCategory';
 import { ensureDefaultCliConfig, loadCliConfig } from './cliConfig';
 import { printCompletionScript } from './cliCompletion';
+import { refreshOutgoingLinksForNote } from './noteOutgoingLinks';
 import { formatGraphOutput, parseGraphArgs } from './graphCli';
 import { recomputeAutolinks } from './autolinkRecompute';
 import { CLI_HELP_TOPICS, formatCliHelpOverview, formatCliHelpTopic } from '../shared/userGuide';
@@ -558,6 +559,7 @@ async function cmdEditWithStore(
       process.exit(1);
     }
     await store.update({ id: note.id, title: title.trim(), body });
+    await refreshOutgoingLinksForNote(store, note.id, tenantId);
     if (categoryAfterSave !== undefined) {
       const vaultList = await store.list(tenantId);
       try {
@@ -1124,8 +1126,8 @@ async function cmdNote(argv: string[]): Promise<void> {
             })),
           });
         } else {
-          for (const h of hits) {
-            const snip = h.snippet.replace(/\s+/g, ' ').trim();
+        for (const h of hits) {
+          const snip = h.snippet.replace(/\s+/g, ' ').trim();
             console.log(formatListLine(h.ref, h.title));
             if (snip) {
               console.log(`  ${snip}`);

@@ -1,0 +1,45 @@
+{
+  "name": "mnemo-mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "postinstall": "patch-package",
+    "start": "expo start",
+    "start:dev": "expo start --dev-client",
+    "typecheck": "tsc --noEmit",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "eas:build:android": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas build --platform android --profile production",
+    "eas:build:ios": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas build --platform ios --profile production",
+    "eas:build:ios:simulator": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas build --platform ios --profile development-simulator",
+    "eas:submit:android": "eas submit --platform android --latest",
+    "eas:submit:ios": "eas submit --platform ios --latest"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.0.3",
+    "@libsql/client": "^0.17.2",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-navigation/native": "^7.2.2",
+    "@react-navigation/stack": "^7.8.10",
+    "expo": "~54.0.33",
+    "expo-dev-client": "~6.0.20",
+    "expo-network": "~8.0.8",
+    "expo-secure-store": "~15.0.8",
+    "expo-splash-screen": "~31.0.13",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-gesture-handler": "~2.28.0",
+    "react-native-markdown-display": "^7.0.2",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.0",
+    "eas-cli": "~18.6.0",
+    "patch-package": "^8.0.1",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}

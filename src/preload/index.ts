@@ -28,6 +28,8 @@ export interface MnemoAPI {
     getGraph(tenantId?: string): Promise<GraphData>;
     updateLinks(sourceId: string, targetIds: string[]): Promise<void>;
     resolveTitle(title: string, tenantId?: string): Promise<string | null>;
+    /** Call after updating a note title so wikilinks and inferred links stay consistent. */
+    relocateWikilinksOnRename(oldTitle: string, newTitle: string): Promise<void>;
   };
   file: {
     saveAs(data: { title: string; body: string }): Promise<{ saved: boolean; filePath?: string }>;
@@ -107,6 +109,8 @@ const api: MnemoAPI = {
     getGraph: (tenantId) => ipcRenderer.invoke(IPC.NOTE_GRAPH, tenantId),
     updateLinks: (sourceId, targetIds) => ipcRenderer.invoke(IPC.NOTE_UPDATE_LINKS, sourceId, targetIds),
     resolveTitle: (title, tenantId) => ipcRenderer.invoke(IPC.NOTE_RESOLVE_TITLE, title, tenantId),
+    relocateWikilinksOnRename: (oldTitle, newTitle) =>
+      ipcRenderer.invoke(IPC.NOTE_RELOCATE_WIKILINKS_ON_RENAME, oldTitle, newTitle),
   },
   file: {
     saveAs: (data) => ipcRenderer.invoke(IPC.FILE_SAVE_AS, data),

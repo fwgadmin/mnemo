@@ -26,6 +26,7 @@ import { createMcpServer } from './mcp/server';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from './uiPreferences';
 import { defaultLocalDataDir, getRemoteLibsqlCredentials, legacyElectronUserDataDir } from './userConfig';
 import { syncWorkspaceFolder } from './workspaceImport';
+import { relocateWikilinksAfterTitleChange } from './noteOutgoingLinks';
 import {
   applyBootstrapRootOnly,
   archiveWorkspaceProfile,
@@ -455,6 +456,14 @@ function registerIpcHandlers(): void {
     const ctx = await ensureActiveContext();
     return ctx.store.resolveTitle(title, ctx.tenantId);
   });
+
+  ipcMain.handle(
+    IPC.NOTE_RELOCATE_WIKILINKS_ON_RENAME,
+    async (_event, oldTitle: string, newTitle: string) => {
+      const ctx = await ensureActiveContext();
+      await relocateWikilinksAfterTitleChange(ctx.store, oldTitle, newTitle, ctx.tenantId);
+    },
+  );
 
   ipcMain.handle(IPC.FILE_SAVE_AS, async (_event, { title, body }: { title: string; body: string }) => {
     const result = await dialog.showSaveDialog({
