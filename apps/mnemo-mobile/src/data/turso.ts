@@ -1,7 +1,8 @@
 /**
  * Turso / libSQL access — mirrors desktop [TursoNoteStore] query shapes.
  */
-import { createClient, type Client } from '@libsql/client';
+/** Use `/web` so Metro never bundles `node.js` → `sqlite3.js` (native `libsql` + `node:buffer`). */
+import { createClient, type Client } from '@libsql/client/web';
 import { v4 as uuidv4 } from 'uuid';
 import type { CreateNoteInput, Note, NoteListItem, SearchResult, UpdateNoteInput } from '../types';
 import { ftsMatchFromUserQuery, likeWordsFromUserQuery, snippetForSearchResult } from '../lib/searchQuery';

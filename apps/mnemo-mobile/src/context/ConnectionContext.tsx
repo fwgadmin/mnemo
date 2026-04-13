@@ -1,4 +1,4 @@
-import type { Client } from '@libsql/client';
+import type { Client } from '@libsql/client/web';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { createTursoClient } from '../data/turso';
 import { clearConnection, loadConnection, saveConnection, type StoredConnection } from '../storage/connectionCredentials';

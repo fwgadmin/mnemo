@@ -1,4 +1,4 @@
-import type { Client } from '@libsql/client';
+import type { Client } from '@libsql/client/web';
 import { extractWikilinks } from '../lib/wikilinks';
 import { inferLinkTargetIds, mergeOutgoingLinkTargets } from '../lib/linkInference';
 import { getNote, listNotes, resolveTitle, updateLinks } from './turso';
