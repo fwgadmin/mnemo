@@ -1,6 +1,6 @@
 {
   "name": "mnemo-note",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "AI-native memory layer — notes, embeddings, and MCP for intelligence systems",
   "main": ".webpack/main",
   "license": "MIT",

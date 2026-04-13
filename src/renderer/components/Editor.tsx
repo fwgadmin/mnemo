@@ -63,6 +63,44 @@ function saveNoteBodyMode(m: 'edit' | 'preview'): void {
   }
 }
 
+/** Inline note body: preview (eye) vs source (pencil) — small outline icons, currentColor. */
+function IconMarkdownPreview() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5"
+      aria-hidden
+    >
+      <path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+      <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
+function IconMarkdownSource() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5"
+      aria-hidden
+    >
+      <path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+    </svg>
+  );
+}
+
 /** Sync parsers first (instant highlight); language-data fills in the long tail via async load. */
 const syncCodeLanguages: LanguageDescription[] = [
   LanguageDescription.of({
@@ -564,6 +602,29 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     closeCtx();
   };
 
+  const toggleBodyMode = useCallback(() => {
+    setBodyMode(prev => {
+      const next = prev === 'edit' ? 'preview' : 'edit';
+      saveNoteBodyMode(next);
+      if (next === 'edit') {
+        requestAnimationFrame(() => viewRef.current?.focus());
+      }
+      return next;
+    });
+  }, []);
+
+  const noteBodyModeToggleBtn = (
+    <button
+      type="button"
+      onClick={toggleBodyMode}
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-mnemo-muted/70 hover:bg-mnemo-hover/60 hover:text-mnemo-text transition-colors"
+      aria-label={bodyMode === 'edit' ? 'Show rendered preview' : 'Edit markdown source'}
+      title={bodyMode === 'edit' ? 'Preview' : 'Edit source'}
+    >
+      {bodyMode === 'edit' ? <IconMarkdownPreview /> : <IconMarkdownSource />}
+    </button>
+  );
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0 relative">
       {showHeader && (
@@ -590,39 +651,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                   </div>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
-                <button
-                  type="button"
-                  aria-label="Edit markdown source"
-                  onClick={() => {
-                    setBodyMode('edit');
-                    saveNoteBodyMode('edit');
-                    requestAnimationFrame(() => viewRef.current?.focus());
-                  }}
-                  className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
-                    bodyMode === 'edit'
-                      ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
-                      : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
-                  }`}
-                >
-                  Markdown
-                </button>
-                <button
-                  type="button"
-                  aria-label="Preview rendered markdown"
-                  onClick={() => {
-                    setBodyMode('preview');
-                    saveNoteBodyMode('preview');
-                  }}
-                  className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
-                    bodyMode === 'preview'
-                      ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
-                      : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
-                  }`}
-                >
-                  Preview
-                </button>
-              </div>
+              <div className="flex shrink-0 items-center pt-0.5">{noteBodyModeToggleBtn}</div>
             </div>
             <div className="flex items-center gap-3 mt-2 text-[10px] text-mnemo-dim">
               <span>{new Date(note.modified).toLocaleDateString()}</span>
@@ -650,39 +679,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         </>
       )}
       {!showHeader && (
-        <div className={`flex items-center justify-end gap-0.5 px-3 pt-2 pb-1 ${editorPx}`}>
-          <button
-            type="button"
-            aria-label="Edit markdown source"
-            onClick={() => {
-              setBodyMode('edit');
-              saveNoteBodyMode('edit');
-              requestAnimationFrame(() => viewRef.current?.focus());
-            }}
-            className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
-              bodyMode === 'edit'
-                ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
-                : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
-            }`}
-          >
-            Markdown
-          </button>
-          <button
-            type="button"
-            aria-label="Preview rendered markdown"
-            onClick={() => {
-              setBodyMode('preview');
-              saveNoteBodyMode('preview');
-            }}
-            className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
-              bodyMode === 'preview'
-                ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
-                : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
-            }`}
-          >
-            Preview
-          </button>
-        </div>
+        <div className={`flex items-center justify-end px-3 pt-2 pb-1 ${editorPx}`}>{noteBodyModeToggleBtn}</div>
       )}
       <div
         className={`flex-1 flex flex-col min-h-0 min-w-0 relative overflow-hidden ${editorPx} ${showHeader ? 'pb-3' : 'py-3'}`}

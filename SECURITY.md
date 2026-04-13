@@ -8,7 +8,7 @@ Please report security vulnerabilities via [GitHub Security Advisories](https://
 
 - **Do not commit** `.env` files, API keys, Turso/libSQL tokens, or signing certificates. The repository `.gitignore` excludes `.env`, `.env.*`, `certificate.pfx`, and common log paths.
 - **User credentials** (database URL, token) are entered in the app or CLI and stored locally; they are not embedded in this source tree.
-- **`eas.json`** may contain **Apple Team ID** and **App Store Connect app id** (`ascAppId`) for EAS Submit automation. These identify your Apple developer account and app listing; they are **not** authentication secrets, but treat the repository access model like any other CI config.
+- **`eas.json`** (mobile) may contain **Apple Team ID** and **App Store Connect app id** (`ascAppId`) for EAS Submit automation. These identify your Apple developer account and app listing; they are **not** authentication secrets, but treat repository access like any other CI config.
 
 ## CI / GitHub Actions
 
