@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.3 — 2026-04-13
+
+- **Security / repo hygiene:** `SECURITY.md` (secrets policy, EAS identifiers, reporting).
+- **Desktop (GUI):** Markdown / Preview toggle in the note header (top-right); smaller controls; “Body” label removed.
+- **Mobile (Expo):** Navigation and storage hardening, legal screens, EAS submit config; broader error boundary; resilient native storage.
+
 ## 2.1.0 — 2026-04-12
 
 - **Vault workspaces:** Multi-tenant profiles with shared or dedicated DB storage, workspace migration, `workspaceProfiles` IPC, and vault/workspace switcher in the shell. Per-workspace `ui-preferences.<id>.json` (IDE tabs and UI state no longer leak across vaults when the workspace file is new).
