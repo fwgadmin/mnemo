@@ -42,11 +42,24 @@ The **first** App Store–style build must be run **interactively** on your Mac 
 
 from `apps/mnemo-mobile` after `chmod +x scripts/ios-eas-production-build.sh`.
 
-## Stack (planned)
+## Stack
 
 - **Expo** — dev client, EAS Build / Submit / Update
-- **React Navigation** — add when you introduce multiple screens
-- **Data** — Turso (`@libsql/client`) or Expo SQLite for offline; see repo root docs
+- **React Navigation** — bottom tabs (Notes / Settings) + native stack for list, detail, editor, search
+- **Data** — Turso remote libSQL via `@libsql/client` (same model as desktop `TursoNoteStore`). No local `better-sqlite3` on device.
+- **Secrets** — Turso URL and token in **Expo Secure Store**; tenant id defaults to `default` and is stored in AsyncStorage.
+
+### Turso connection
+
+1. Open **Settings** and paste your **libsql URL** and **auth token** (same values as the desktop app for that vault).
+2. Optionally set **Tenant ID** (defaults to `default`).
+3. Use **Save & connect**, then open the **Notes** tab and pull to refresh.
+
+The app does not commit credentials. For EAS builds, inject tokens at build time only if you add a deliberate CI flow; prefer on-device entry via Settings for development.
+
+### Offline behavior
+
+Notes are read from the network (Turso). When the device is offline, an **offline banner** appears and operations fail with an error until connectivity returns. Full offline sync is not implemented.
 
 ## Distribution
 

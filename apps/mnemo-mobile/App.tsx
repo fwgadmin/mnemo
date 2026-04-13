@@ -1,35 +1,44 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { ActivityIndicator, StyleSheet, useColorScheme, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ConnectionProvider, useConnection } from './src/context/ConnectionContext';
+import { RootNavigator } from './src/navigation/RootNavigator';
 
-/**
- * Mnemo mobile shell — native RN/Expo only (no Electron renderer).
- * Add navigation, Turso, and screens here; keep UX distinct from desktop.
- */
+function AppInner() {
+  const scheme = useColorScheme();
+  const { bootstrapping } = useConnection();
+
+  if (bootstrapping) {
+    return (
+      <View style={[styles.boot, { backgroundColor: scheme === 'dark' ? '#0f1117' : '#f6f7f9' }]}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <RootNavigator />
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+    </>
+  );
+}
+
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Mnemo</Text>
-      <Text style={styles.subtitle}>Mobile prototype</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider>
+      <ConnectionProvider>
+        <AppInner />
+      </ConnectionProvider>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  boot: {
     flex: 1,
-    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
   },
 });
