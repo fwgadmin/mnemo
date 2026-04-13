@@ -5,7 +5,54 @@ export type MobileStackEntry =
   | { name: 'Main' }
   | { name: 'NoteDetail'; params: { noteId: string } }
   | { name: 'NoteEditor'; params: { noteId: string } }
-  | { name: 'Search' };
+  | { name: 'Search' }
+  | { name: 'Legal'; params: { doc: 'privacy' | 'terms' } };
+
+/**
+ * Build a validated stack entry. Returns null if required params are missing — navigation is ignored.
+ */
+function stackEntryFromRoute<K extends keyof RootStackParamList>(
+  name: K,
+  params?: RootStackParamList[K],
+): MobileStackEntry | null {
+  switch (name) {
+    case 'Main':
+      return { name: 'Main' };
+    case 'Search':
+      return { name: 'Search' };
+    case 'NoteDetail': {
+      const p = params as RootStackParamList['NoteDetail'] | undefined;
+      const noteId = p?.noteId?.trim() ?? '';
+      if (!noteId) {
+        if (__DEV__) console.error('[MobileNav] NoteDetail requires a non-empty params.noteId');
+        return null;
+      }
+      return { name: 'NoteDetail', params: { noteId } };
+    }
+    case 'NoteEditor': {
+      const p = params as RootStackParamList['NoteEditor'] | undefined;
+      const noteId = p?.noteId?.trim() ?? '';
+      if (!noteId) {
+        if (__DEV__) console.error('[MobileNav] NoteEditor requires a non-empty params.noteId');
+        return null;
+      }
+      return { name: 'NoteEditor', params: { noteId } };
+    }
+    case 'Legal': {
+      const p = params as RootStackParamList['Legal'] | undefined;
+      const doc = p?.doc;
+      if (doc !== 'privacy' && doc !== 'terms') {
+        if (__DEV__) console.error('[MobileNav] Legal requires params.doc: "privacy" | "terms"');
+        return null;
+      }
+      return { name: 'Legal', params: { doc } };
+    }
+    default: {
+      const _exhaustive: never = name;
+      return _exhaustive;
+    }
+  }
+}
 
 export type MobileNavApi = {
   /** Push a screen onto the stack (or reset to Main if name is Main). */
@@ -33,7 +80,9 @@ export function MobileNavProvider({ children }: { children: React.ReactNode }) {
       setStack([{ name: 'Main' }]);
       return;
     }
-    setStack(s => [...s, { name, params } as MobileStackEntry]);
+    const entry = stackEntryFromRoute(name, params);
+    if (!entry) return;
+    setStack(s => [...s, entry]);
   }, []);
 
   const push = navigate;
@@ -43,10 +92,13 @@ export function MobileNavProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const replace = useCallback(<K extends keyof RootStackParamList>(name: K, params?: RootStackParamList[K]) => {
-    setStack(s => {
-      if (s.length === 0) return [{ name, params } as MobileStackEntry];
-      return [...s.slice(0, -1), { name, params } as MobileStackEntry];
-    });
+    if (name === 'Main') {
+      setStack([{ name: 'Main' }]);
+      return;
+    }
+    const entry = stackEntryFromRoute(name, params);
+    if (!entry) return;
+    setStack(s => (s.length === 0 ? [entry] : [...s.slice(0, -1), entry]));
   }, []);
 
   const popToTop = useCallback(() => {

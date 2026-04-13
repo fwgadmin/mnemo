@@ -1,5 +1,6 @@
 import type { Client } from '@libsql/client/web';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { InteractionManager } from 'react-native';
 import { createTursoClient } from '../data/turso';
 import { useNetworkOnline } from '../hooks/useNetworkOnline';
 import { runFlushOutbox } from '../sync/persist';
@@ -62,23 +63,34 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const bootstrapTimeoutMs = 15000;
-    (async () => {
-      try {
-        await Promise.race([
-          refreshClient(),
-          new Promise<void>((_, reject) =>
-            setTimeout(() => reject(new Error('Connection bootstrap timeout')), bootstrapTimeoutMs),
-          ),
-        ]);
-      } catch {
-        // Stale storage / SecureStore hang — still show UI
-      } finally {
-        if (!cancelled) setBootstrapping(false);
-      }
-    })();
+    const task = InteractionManager.runAfterInteractions(() => {
+      void (async () => {
+        try {
+          await Promise.race([
+            refreshClient(),
+            new Promise<void>((_, reject) =>
+              setTimeout(() => reject(new Error('Connection bootstrap timeout')), bootstrapTimeoutMs),
+            ),
+          ]);
+        } catch {
+          // Stale storage / SecureStore hang — still show UI
+        } finally {
+          if (!cancelled) setBootstrapping(false);
+        }
+        // Second pass: native SecureStore/AsyncStorage can be ready shortly after first read
+        if (!cancelled) {
+          retryTimer = setTimeout(() => {
+            if (!cancelled) void refreshClient();
+          }, 250);
+        }
+      })();
+    });
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      task.cancel();
     };
   }, [refreshClient]);
 

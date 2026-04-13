@@ -1,9 +1,8 @@
 /**
  * Lazy AsyncStorage access — never import @react-native-async-storage at module load.
  * If RCTAsyncStorage is null (bridge not ready), defer and retry; fall back to in-memory map.
- * @see connectionCredentials.ts (same native checks).
+ * @see connectionCredentials.ts (same lazy require + retry pattern).
  */
-import { NativeModules, TurboModuleRegistry } from 'react-native';
 
 type AsyncStorageModule = {
   getItem: (key: string) => Promise<string | null>;
@@ -11,30 +10,7 @@ type AsyncStorageModule = {
   removeItem: (key: string) => Promise<void>;
 };
 
-function hasAsyncStorageNative(): boolean {
-  try {
-    if (NativeModules.RNCAsyncStorage != null) return true;
-    if (NativeModules.AsyncSQLiteDBStorage != null) return true;
-    if (NativeModules.PlatformLocalStorage != null) return true;
-    if (NativeModules.AsyncLocalStorage != null) return true;
-    const tryTurbo = (name: string) => {
-      try {
-        return TurboModuleRegistry?.get?.(name) != null;
-      } catch {
-        return false;
-      }
-    };
-    if (tryTurbo('RNCAsyncStorage') || tryTurbo('AsyncSQLiteDBStorage') || tryTurbo('PlatformLocalStorage')) {
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 function tryRequireAsyncStorage(): AsyncStorageModule | null {
-  if (!hasAsyncStorageNative()) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require('@react-native-async-storage/async-storage').default;
@@ -56,17 +32,18 @@ const memoryKv: AsyncStorageModule = {
 };
 
 let warnedMemory = false;
-/** After a native call throws (e.g. bridge not ready), stay on memory for this session. */
-let preferMemory = false;
+
+/** After a native error (e.g. RCTAsyncStorage is null), stop calling the broken module. */
+let preferNativeAsyncStorage = true;
 
 function getBacking(): AsyncStorageModule {
-  if (preferMemory) return memoryKv;
+  if (!preferNativeAsyncStorage) return memoryKv;
   const native = tryRequireAsyncStorage();
   if (native) return native;
   if (typeof __DEV__ !== 'undefined' && __DEV__ && !warnedMemory) {
     warnedMemory = true;
     console.warn(
-      '[mnemo-mobile] AsyncStorage native module not available yet — using in-memory note cache until it is.',
+      '[mnemo-mobile] AsyncStorage not available yet — using in-memory KV until native storage is ready.',
     );
   }
   return memoryKv;
@@ -76,7 +53,13 @@ export async function kvGetItem(key: string): Promise<string | null> {
   try {
     return await getBacking().getItem(key);
   } catch {
-    preferMemory = true;
+    preferNativeAsyncStorage = false;
+    if (typeof __DEV__ !== 'undefined' && __DEV__ && !warnedMemory) {
+      warnedMemory = true;
+      console.warn(
+        '[mnemo-mobile] AsyncStorage native calls failed — using in-memory KV. Rebuild dev client if this persists.',
+      );
+    }
     return memoryKv.getItem(key);
   }
 }
@@ -85,7 +68,7 @@ export async function kvSetItem(key: string, value: string): Promise<void> {
   try {
     return await getBacking().setItem(key, value);
   } catch {
-    preferMemory = true;
+    preferNativeAsyncStorage = false;
     return memoryKv.setItem(key, value);
   }
 }
@@ -94,7 +77,7 @@ export async function kvRemoveItem(key: string): Promise<void> {
   try {
     return await getBacking().removeItem(key);
   } catch {
-    preferMemory = true;
+    preferNativeAsyncStorage = false;
     return memoryKv.removeItem(key);
   }
 }

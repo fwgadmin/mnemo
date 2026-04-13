@@ -3,6 +3,7 @@ import React, { useEffect } from 'react';
 import { View } from 'react-native';
 import { NoteDetailScreen } from '../screens/NoteDetailScreen';
 import { NoteEditorScreen } from '../screens/NoteEditorScreen';
+import { LegalScreen } from '../screens/LegalScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { useAppTheme } from '../theme/theme';
 import { MainTabsScreen } from './MainTabsScreen';
@@ -26,6 +27,9 @@ function RootNavigatorBody() {
       {top.name === 'NoteDetail' ? <NoteDetailScreen /> : null}
       {top.name === 'NoteEditor' ? <NoteEditorScreen /> : null}
       {top.name === 'Search' ? <SearchScreen /> : null}
+      {top.name === 'Legal' ? (
+        <LegalScreen doc={top.params?.doc === 'terms' ? 'terms' : 'privacy'} />
+      ) : null}
     </View>
   );
 }

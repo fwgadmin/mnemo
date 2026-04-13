@@ -1,7 +1,7 @@
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { CategoryColorsProvider } from './context/CategoryColorsContext';
 import { ConnectionProvider, useConnection } from './context/ConnectionContext';
@@ -29,14 +29,14 @@ function AppInner() {
   }
 
   return (
-    <CategoryColorsProvider>
-      <View style={[styles.appRoot, { minHeight: height, backgroundColor: theme.background }]}>
-        <AppErrorBoundary>
+    <AppErrorBoundary>
+      <CategoryColorsProvider>
+        <View style={[styles.appRoot, { minHeight: height, backgroundColor: theme.background }]}>
           <RootNavigator />
-        </AppErrorBoundary>
-        <StatusBar style={resolvedScheme === 'dark' ? 'light' : 'dark'} />
-      </View>
-    </CategoryColorsProvider>
+          <StatusBar style={resolvedScheme === 'dark' ? 'light' : 'dark'} />
+        </View>
+      </CategoryColorsProvider>
+    </AppErrorBoundary>
   );
 }
 

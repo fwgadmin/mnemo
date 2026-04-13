@@ -569,24 +569,61 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       {showHeader && (
         <>
           <div className="px-4 pt-3 pb-1">
-            <input
-              ref={titleRef}
-              type="text"
-              defaultValue={note.title}
-              key={note.id}
-              readOnly={!!note.filePath}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              className={`w-full text-2xl font-semibold bg-transparent border-none outline-none text-mnemo-text placeholder-mnemo-dim ${
-                note.filePath ? 'cursor-default opacity-90' : ''
-              }`}
-              placeholder="Untitled"
-              title={note.filePath ?? undefined}
-            />
-            {note.filePath && (
-              <div className="mt-1 text-[11px] text-mnemo-dim truncate font-normal" title={note.filePath}>
-                {note.filePath}
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <input
+                  ref={titleRef}
+                  type="text"
+                  defaultValue={note.title}
+                  key={note.id}
+                  readOnly={!!note.filePath}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  className={`w-full text-2xl font-semibold bg-transparent border-none outline-none text-mnemo-text placeholder-mnemo-dim ${
+                    note.filePath ? 'cursor-default opacity-90' : ''
+                  }`}
+                  placeholder="Untitled"
+                  title={note.filePath ?? undefined}
+                />
+                {note.filePath && (
+                  <div className="mt-1 text-[11px] text-mnemo-dim truncate font-normal" title={note.filePath}>
+                    {note.filePath}
+                  </div>
+                )}
               </div>
-            )}
+              <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
+                <button
+                  type="button"
+                  aria-label="Edit markdown source"
+                  onClick={() => {
+                    setBodyMode('edit');
+                    saveNoteBodyMode('edit');
+                    requestAnimationFrame(() => viewRef.current?.focus());
+                  }}
+                  className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
+                    bodyMode === 'edit'
+                      ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
+                      : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
+                  }`}
+                >
+                  Markdown
+                </button>
+                <button
+                  type="button"
+                  aria-label="Preview rendered markdown"
+                  onClick={() => {
+                    setBodyMode('preview');
+                    saveNoteBodyMode('preview');
+                  }}
+                  className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
+                    bodyMode === 'preview'
+                      ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
+                      : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
+                  }`}
+                >
+                  Preview
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-3 mt-2 text-[10px] text-mnemo-dim">
               <span>{new Date(note.modified).toLocaleDateString()}</span>
               <span>·</span>
@@ -608,70 +645,39 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <span className="text-[10px] text-mnemo-dim uppercase tracking-wide">Body</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setBodyMode('edit');
-                  saveNoteBodyMode('edit');
-                  requestAnimationFrame(() => viewRef.current?.focus());
-                }}
-                className={`text-[10px] px-2 py-0.5 rounded border cursor-pointer transition-colors ${
-                  bodyMode === 'edit'
-                    ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
-                    : 'border-mnemo-border text-mnemo-muted hover:bg-mnemo-hover'
-                }`}
-              >
-                Markdown
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setBodyMode('preview');
-                  saveNoteBodyMode('preview');
-                }}
-                className={`text-[10px] px-2 py-0.5 rounded border cursor-pointer transition-colors ${
-                  bodyMode === 'preview'
-                    ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
-                    : 'border-mnemo-border text-mnemo-muted hover:bg-mnemo-hover'
-                }`}
-              >
-                Preview
-              </button>
-            </div>
           </div>
           <div className="mx-4 border-t border-mnemo-border my-1" />
         </>
       )}
       {!showHeader && (
-        <div className={`flex items-center justify-end gap-1 px-3 pt-2 pb-1 ${editorPx}`}>
-          <span className="text-[10px] text-mnemo-dim uppercase tracking-wide mr-1">Body</span>
+        <div className={`flex items-center justify-end gap-0.5 px-3 pt-2 pb-1 ${editorPx}`}>
           <button
             type="button"
+            aria-label="Edit markdown source"
             onClick={() => {
               setBodyMode('edit');
               saveNoteBodyMode('edit');
               requestAnimationFrame(() => viewRef.current?.focus());
             }}
-            className={`text-[10px] px-2 py-0.5 rounded border cursor-pointer transition-colors ${
+            className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
               bodyMode === 'edit'
                 ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
-                : 'border-mnemo-border text-mnemo-muted hover:bg-mnemo-hover'
+                : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
             }`}
           >
             Markdown
           </button>
           <button
             type="button"
+            aria-label="Preview rendered markdown"
             onClick={() => {
               setBodyMode('preview');
               saveNoteBodyMode('preview');
             }}
-            className={`text-[10px] px-2 py-0.5 rounded border cursor-pointer transition-colors ${
+            className={`text-[9px] leading-tight px-1.5 py-px rounded border cursor-pointer transition-colors whitespace-nowrap ${
               bodyMode === 'preview'
                 ? 'border-mnemo-accent text-mnemo-text bg-mnemo-active'
-                : 'border-mnemo-border text-mnemo-muted hover:bg-mnemo-hover'
+                : 'border-mnemo-border/70 text-mnemo-muted hover:bg-mnemo-hover'
             }`}
           >
             Preview

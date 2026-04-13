@@ -38,6 +38,9 @@ import type { NoteListItem } from '../types';
 import { UI_RADIUS, useAppTheme } from '../theme/theme';
 import { loadNotesWithFallback } from '../sync/persist';
 
+/** Whole card shifts right per tree level; card width shrinks to fit (see outer wrapper `marginLeft`). */
+const TREE_LEVEL_INDENT = 20;
+
 function labelForPath(path: string): string {
   if (path === UNASSIGNED_PATH) return 'Unassigned';
   return path;
@@ -234,13 +237,14 @@ export function CategoriesScreen({ refreshToken = 0 }: { refreshToken?: number }
       const hasKids = withChildren.has(node.path);
       const isOpen = expanded.has(node.path);
       const stripe = stripeColor(node.path);
-      const indent = 12 + Math.max(0, node.depth) * 18;
+      const treeIndent = Math.max(0, node.depth) * TREE_LEVEL_INDENT;
 
       return (
-        <View style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={[styles.stripe, { backgroundColor: stripe }]} />
-          <View style={[styles.rowInner, { paddingLeft: indent }]}>
-            <View style={styles.treeRowMain}>
+        <View style={[styles.treeRowOuter, { marginLeft: treeIndent }]}>
+          <View style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={[styles.stripe, { backgroundColor: stripe }]} />
+            <View style={styles.rowInner}>
+              <View style={styles.treeRowMain}>
               {hasKids ? (
                 <Pressable
                   hitSlop={10}
@@ -273,6 +277,7 @@ export function CategoriesScreen({ refreshToken = 0 }: { refreshToken?: number }
                   {isGeneral ? ' · includes notes without a folder' : ''}
                 </Text>
               </Pressable>
+              </View>
             </View>
           </View>
         </View>
@@ -473,6 +478,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
+  },
+  treeRowOuter: {
+    alignSelf: 'stretch',
+    marginRight: 0,
   },
   row: {
     borderWidth: 1,

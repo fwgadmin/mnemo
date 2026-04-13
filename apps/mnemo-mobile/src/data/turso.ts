@@ -3,7 +3,7 @@
  */
 /** Use `/web` so Metro never bundles `node.js` → `sqlite3.js` (native `libsql` + `node:buffer`). */
 import { createClient, type Client } from '@libsql/client/web';
-import { randomUUID } from 'expo-crypto';
+import { randomUUID } from '../lib/randomUUID';
 import type { CreateNoteInput, Note, NoteListItem, SearchResult, UpdateNoteInput } from '../types';
 import { ftsMatchFromUserQuery, likeWordsFromUserQuery, snippetForSearchResult } from '../lib/searchQuery';
 

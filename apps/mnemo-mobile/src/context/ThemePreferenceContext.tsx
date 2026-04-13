@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import { InteractionManager, useColorScheme } from 'react-native';
 import { loadThemeMode, saveThemeMode, type ThemeMode } from '../storage/mobileSettings';
 
 type ThemePreferenceValue = {
@@ -18,10 +18,13 @@ export function ThemePreferenceProvider({ children }: { children: React.ReactNod
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    void loadThemeMode().then(m => {
-      setModeState(m);
-      setReady(true);
+    const task = InteractionManager.runAfterInteractions(() => {
+      void loadThemeMode().then(m => {
+        setModeState(m);
+        setReady(true);
+      });
     });
+    return () => task.cancel();
   }, []);
 
   const setMode = useCallback(async (m: ThemeMode) => {

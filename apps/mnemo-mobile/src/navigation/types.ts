@@ -5,4 +5,5 @@ export type RootStackParamList = {
   /** Category, hide title, delete — not for body/title editing. */
   NoteEditor: { noteId: string };
   Search: undefined;
+  Legal: { doc: 'privacy' | 'terms' };
 };

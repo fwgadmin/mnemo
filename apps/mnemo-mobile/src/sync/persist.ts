@@ -1,5 +1,5 @@
 import type { Client } from '@libsql/client/web';
-import { randomUUID } from 'expo-crypto';
+import { randomUUID } from '../lib/randomUUID';
 import { createNote, deleteNote, getNote, listNotes, updateNote } from '../data/turso';
 import { refreshOutgoingLinksForNote } from '../data/noteLinks';
 import type { CreateNoteInput, Note, NoteListItem, UpdateNoteInput } from '../types';

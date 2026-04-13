@@ -14,16 +14,23 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useConnection } from '../context/ConnectionContext';
 import { useThemePreference } from '../context/ThemePreferenceContext';
-import { useMainTab } from '../navigation/MainTabContext';
 import { loadConnection } from '../storage/connectionCredentials';
+import { useMobileNav } from '../navigation/MobileNavContext';
 import { UI_RADIUS, useAppTheme } from '../theme/theme';
+
+/** Green / red badge — works on dark and light app backgrounds */
+const STATUS_CONNECTED_TEXT = '#22c55e';
+const STATUS_CONNECTED_BORDER = 'rgba(34, 197, 94, 0.45)';
+const STATUS_CONNECTED_BG = 'rgba(34, 197, 94, 0.12)';
+const STATUS_DISCONNECTED_BORDER = 'rgba(248, 113, 113, 0.5)';
+const STATUS_DISCONNECTED_BG = 'rgba(248, 113, 113, 0.1)';
 
 export function SettingsScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
+  const { navigate } = useMobileNav();
   const { mode, setMode } = useThemePreference();
-  const { setMainTab } = useMainTab();
-  const { applyCredentials, clearCredentials, refreshClient, configured, lastError } = useConnection();
+  const { applyCredentials, clearCredentials, configured, lastError } = useConnection();
 
   const [url, setUrl] = useState('');
   const [token, setToken] = useState('');
@@ -81,7 +88,7 @@ export function SettingsScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.background }]}>
+      <View style={[styles.center, { backgroundColor: theme.background, paddingTop: insets.top }]}>
         <ActivityIndicator color={theme.primary} />
       </View>
     );
@@ -93,7 +100,8 @@ export function SettingsScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
-          padding: 16,
+          paddingHorizontal: 16,
+          paddingTop: insets.top + 16,
           paddingBottom: insets.bottom + 24,
         }}
         keyboardShouldPersistTaps="handled">
@@ -135,6 +143,25 @@ export function SettingsScreen() {
         {lastError ? (
           <Text style={[styles.err, { color: theme.danger }]}>{lastError}</Text>
         ) : null}
+
+        <View
+          style={[
+            styles.statusBadge,
+            {
+              borderColor: configured ? STATUS_CONNECTED_BORDER : STATUS_DISCONNECTED_BORDER,
+              backgroundColor: configured ? STATUS_CONNECTED_BG : STATUS_DISCONNECTED_BG,
+            },
+          ]}>
+          <Text style={[styles.statusBadgeInner, { color: theme.textMuted }]}>Status: </Text>
+          <Text
+            style={[
+              styles.statusBadgeInner,
+              styles.statusBadgeValue,
+              { color: configured ? STATUS_CONNECTED_TEXT : theme.danger },
+            ]}>
+            {configured ? 'Connected' : 'Not Connected'}
+          </Text>
+        </View>
 
         <Text style={[styles.label, { color: theme.textMuted }]}>Database URL</Text>
         <TextInput
@@ -180,23 +207,25 @@ export function SettingsScreen() {
           )}
         </Pressable>
 
-        <Pressable
-          style={[styles.secondaryBtn, { borderColor: theme.border }]}
-          onPress={() => {
-            void refreshClient();
-            setMainTab('notes');
-          }}>
-          <Text style={[styles.secondaryBtnText, { color: theme.primary }]}>Go to notes</Text>
-        </Pressable>
-
-        {configured ? (
-          <Text style={[styles.ok, { color: theme.textMuted }]}>Status: connected</Text>
-        ) : (
-          <Text style={[styles.ok, { color: theme.textMuted }]}>Status: not connected</Text>
-        )}
-
         <Pressable onPress={onClear} style={styles.clearWrap}>
           <Text style={{ color: theme.danger, fontSize: 15 }}>Clear stored credentials</Text>
+        </Pressable>
+
+        <Text style={[styles.h1, { color: theme.text, marginTop: 32 }]}>Legal</Text>
+        <Text style={[styles.help, { color: theme.textMuted }]}>
+          Policies for Mnemo Mobile. Review before distributing the app on app stores.
+        </Text>
+        <Pressable
+          style={[styles.legalRow, { borderColor: theme.border, backgroundColor: theme.surface }]}
+          onPress={() => navigate('Legal', { doc: 'privacy' })}>
+          <Text style={[styles.legalRowText, { color: theme.primary }]}>Privacy Policy</Text>
+          <Text style={{ color: theme.textMuted, fontSize: 18 }}>›</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.legalRow, { borderColor: theme.border, backgroundColor: theme.surface }]}
+          onPress={() => navigate('Legal', { doc: 'terms' })}>
+          <Text style={[styles.legalRowText, { color: theme.primary }]}>Terms of Use</Text>
+          <Text style={{ color: theme.textMuted, fontSize: 18 }}>›</Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -222,16 +251,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryBtnText: { fontSize: 16, fontWeight: '600' },
-  secondaryBtn: {
-    marginTop: 12,
-    borderRadius: UI_RADIUS,
-    paddingVertical: 12,
+  err: { marginBottom: 8, fontSize: 14 },
+  statusBadge: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: UI_RADIUS,
     borderWidth: 1,
   },
-  secondaryBtnText: { fontSize: 16, fontWeight: '600' },
-  err: { marginBottom: 8, fontSize: 14 },
-  ok: { marginTop: 16, fontSize: 14 },
+  statusBadgeInner: { fontSize: 14, lineHeight: 20 },
+  statusBadgeValue: { fontWeight: '700' },
   clearWrap: { marginTop: 28, alignItems: 'center' },
   segmentRow: {
     flexDirection: 'row',
@@ -245,4 +279,15 @@ const styles = StyleSheet.create({
     borderRadius: UI_RADIUS,
     borderWidth: 1,
   },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: UI_RADIUS,
+    borderWidth: 1,
+  },
+  legalRowText: { fontSize: 16, fontWeight: '600' },
 });
