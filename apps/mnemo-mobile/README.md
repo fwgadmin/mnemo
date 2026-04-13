@@ -47,7 +47,7 @@ from `apps/mnemo-mobile` after `chmod +x scripts/ios-eas-production-build.sh`.
 - **Expo** — dev client, EAS Build / Submit / Update
 - **React Navigation** — bottom tabs (Notes / Settings) + native stack for list, detail, editor, search
 - **Data** — Turso remote libSQL via `@libsql/client/web` (HTTP/WebSocket only; avoids the Node `sqlite3` build that Metro cannot bundle). Same model as desktop `TursoNoteStore`. No local `better-sqlite3` on device.
-- **Secrets** — Turso URL and token in **Expo Secure Store**; tenant id defaults to `default` and is stored in AsyncStorage.
+- **Secrets** — Turso URL, token, and tenant id in **Expo Secure Store** (tenant defaults to `default`).
 
 ### Turso connection
 
