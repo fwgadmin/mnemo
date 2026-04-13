@@ -3,7 +3,7 @@
  * Uses synchronous `require()` after native checks so Metro keeps a stable module graph (avoids
  * "requiring unknown module <id>" from async chunks). Rebuild dev client for Keychain storage.
  */
-import { NativeModules } from 'react-native';
+import { NativeModules, TurboModuleRegistry } from 'react-native';
 
 const KEY_URL = 'mnemo_turso_url';
 const KEY_TOKEN = 'mnemo_turso_token';
@@ -46,7 +46,34 @@ function tryRequireSecureStore(): SecureStoreModule | null {
   }
 }
 
+/**
+ * AsyncStorage.native.js throws synchronously if RCTAsyncStorage is null — do not require() until native exists.
+ * @see https://github.com/react-native-async-storage/async-storage/blob/main/packages/default-storage/lib/module/AsyncStorage.native.js
+ */
+function hasAsyncStorageNative(): boolean {
+  try {
+    if (NativeModules.RNCAsyncStorage != null) return true;
+    if (NativeModules.AsyncSQLiteDBStorage != null) return true;
+    if (NativeModules.PlatformLocalStorage != null) return true;
+    if (NativeModules.AsyncLocalStorage != null) return true;
+    const tryTurbo = (name: string) => {
+      try {
+        return TurboModuleRegistry?.get?.(name) != null;
+      } catch {
+        return false;
+      }
+    };
+    if (tryTurbo('RNCAsyncStorage') || tryTurbo('AsyncSQLiteDBStorage') || tryTurbo('PlatformLocalStorage')) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function tryRequireAsyncStorage(): AsyncStorageModule | null {
+  if (!hasAsyncStorageNative()) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require('@react-native-async-storage/async-storage').default;
@@ -58,8 +85,8 @@ function tryRequireAsyncStorage(): AsyncStorageModule | null {
 function warnMemoryFallback(): void {
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
     console.warn(
-      '[mnemo-mobile] No native secure storage module. Using session-only memory for credentials. ' +
-        'Rebuild your development client after native changes (expo-secure-store in app.json plugins).',
+      '[mnemo-mobile] No SecureStore / AsyncStorage native modules. Using session-only memory for credentials. ' +
+        'Rebuild your development client (expo-secure-store, async-storage autolinking).',
     );
   }
 }
