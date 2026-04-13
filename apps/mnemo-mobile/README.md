@@ -18,6 +18,8 @@ If you see **`Cannot find native module 'ExpoSecureStore'`**, **`RNCNetInfo is n
 
 The offline banner uses **`expo-network`** (not `@react-native-community/netinfo`). If `ExpoNetwork` is missing in the binary, the banner is skipped so the app still runs.
 
+If you see **`Unimplemented component: RNCSafeAreaProvider`**, the binary is missing **`react-native-safe-area-context`** native code. The app falls back to approximate safe-area padding, but you should **rebuild the dev client** so the real provider is linked.
+
 ```bash
 cd apps/mnemo-mobile
 eas build --profile development --platform ios   # or android, or development-simulator for iOS sim
