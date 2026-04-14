@@ -2,9 +2,10 @@
 
 ## 2.1.5 — 2026-04-14
 
-- **Desktop (GUI):** Markdown / Preview is a single compact icon toggle in the note header (eye to preview, pencil to edit source) instead of text buttons — included in **GitHub Release** desktop zips/installers for this version.
-- **CI / releases:** macOS zip (`mnemo-v*-macos.zip`) built and attached to tagged releases alongside Windows and Linux.
-- **Docs & mobile:** `docs/privacy-mobile.md` (public privacy policy URL); mobile Expo `version` / `eas.json` aligned with desktop releases where applicable.
+- **Desktop (GUI):** Markdown / Preview icon toggle (eye / pencil) in shipped **GitHub Release** desktop zips/installers.
+- **CI / releases:** macOS zip (`mnemo-v*-macos.zip`) on tagged releases alongside Windows and Linux.
+- **npm:** `mnemo-note` package at this version.
+- **Docs & mobile:** `docs/privacy-mobile.md`; Expo app version / `eas.json` aligned for App Store and TestFlight.
 
 ## 2.1.4 — 2026-04-09
 
