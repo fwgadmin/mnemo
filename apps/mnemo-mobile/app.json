@@ -17,7 +17,8 @@
       "bundleIdentifier": "com.ferrowood.mnemo.mobile",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "buildNumber": "2"
     },
     "android": {
       "package": "com.ferrowood.mnemo.mobile",
