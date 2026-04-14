@@ -81,11 +81,6 @@ export interface SyncResult {
 }
 
 /**
- * Remote database credentials (userData/config.json).
- * Mnemo uses @libsql/client — same protocol for Turso Cloud, self-hosted libSQL/sqld on a VPS, etc.
- * `tursoUrl` / `tursoToken` are the canonical keys; `libsql*` are optional aliases for clarity.
- */
-/**
  * Where a workspace’s notes live.
  * - `inherit`: global connection from config/env; isolate rows with `tenant_id === workspace id`.
  * - `sqlite`: dedicated local `mnemo.db` + vault (typically `tenant_id` is `default` inside that file).
@@ -163,10 +158,45 @@ export interface MnemoUiPreferences {
   /** Open note tab IDs in IDE layout (order preserved) */
   ideTabIds?: string[];
   /**
+   * When true (default), browser/CodeMirror spell checking is enabled for the note body editor.
+   */
+  editorSpellcheck?: boolean;
+  /**
+   * When true (default), show autocomplete for fenced code block languages and `[[` wikilinks.
+   */
+  editorAutocomplete?: boolean;
+  /**
    * Optional absolute path to a project folder. Markdown files are imported into the vault (category `Workspace/…`)
    * and kept in sync via **File → Open Workspace Folder…** / **Sync workspace**.
    */
   workspaceFolder?: string;
+}
+
+/** Local-only LLM profile — stored in userData `llm-config.json`, never synced to Turso `app_kv`. */
+export type LlmProviderKind = 'openai_compatible' | 'ollama' | 'anthropic' | 'google_gemini';
+
+export interface LlmProfile {
+  id: string;
+  providerKind: LlmProviderKind;
+  /** Service base URL (OpenAI-compatible `/v1/...`, Ollama host, Anthropic override, etc.) */
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  /** Display label in Settings */
+  name?: string;
+}
+
+/** Stored in userData `llm-config.json` (API keys local only). */
+export interface LlmSettingsFile {
+  profiles: LlmProfile[];
+  defaultLlmProfileId?: string;
+  /** When false, editor context menu omits Copy/Paste as summary entirely. */
+  enableCopyPasteSummary?: boolean;
+  /**
+   * User-editable style guardrails. Empty string = use bundled default in main process.
+   * Summarization mandate is always merged in code.
+   */
+  guardrailsPrompt?: string;
 }
 
 /**
@@ -265,4 +295,9 @@ export const IPC = {
   WORKSPACE_PROFILES_DELETE: 'workspaceProfiles:delete',
   WORKSPACE_PROFILES_SET_STORAGE: 'workspaceProfiles:setStorage',
   WORKSPACE_PROFILES_RENAME: 'workspaceProfiles:rename',
+  /** Local LLM profiles + guardrails — `llm-config.json` in userData only. */
+  LLM_READ: 'llm:read',
+  LLM_SAVE: 'llm:save',
+  /** Summarize text using default profile; keys never leave main process. */
+  LLM_SUMMARIZE: 'llm:summarize',
 } as const;

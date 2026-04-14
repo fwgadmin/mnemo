@@ -17,29 +17,28 @@ import {
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { json } from '@codemirror/lang-json';
-import { html } from '@codemirror/lang-html';
-import { css } from '@codemirror/lang-css';
-import { sql } from '@codemirror/lang-sql';
-import { rust } from '@codemirror/lang-rust';
-import { cpp } from '@codemirror/lang-cpp';
-import { java } from '@codemirror/lang-java';
-import { xml } from '@codemirror/lang-xml';
 import {
   syntaxHighlighting,
   defaultHighlightStyle,
   bracketMatching,
-  LanguageDescription,
   foldGutter,
   foldKeymap,
 } from '@codemirror/language';
-import { languages as languageDataLanguages } from '@codemirror/language-data';
+import {
+  acceptCompletion,
+  completionStatus,
+  hasNextSnippetField,
+  nextSnippetField,
+} from '@codemirror/autocomplete';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { mnemoEditorTheme, mnemoSyntaxHighlighting } from '../editor/mnemoCodeMirror';
 import { normalizeLineSeparators } from '../editor/lineSeparators';
 import { formatMarkdown } from '../editor/formatMarkdown';
+import {
+  createFenceWikiCompletionSource,
+  mnemoBaseAutocompletionExtensions,
+  mnemoMarkdownCodeLanguages,
+} from '../editor/mnemoAutocomplete';
 import { wikilinkDecorations } from './wikilinkPlugin';
 import { clampFixedContextMenu } from '../fixedMenuPosition';
 import type { Note } from '../../shared/types';
@@ -100,84 +99,6 @@ function IconMarkdownSource() {
     </svg>
   );
 }
-
-/** Sync parsers first (instant highlight); language-data fills in the long tail via async load. */
-const syncCodeLanguages: LanguageDescription[] = [
-  LanguageDescription.of({
-    name: 'XAML',
-    alias: ['xaml', 'axaml'],
-    extensions: ['xaml', 'axaml'],
-    support: xml(),
-  }),
-  LanguageDescription.of({
-    name: 'JavaScript',
-    alias: ['js', 'javascript'],
-    extensions: ['js', 'mjs', 'jsx'],
-    support: javascript(),
-  }),
-  LanguageDescription.of({
-    name: 'TypeScript',
-    alias: ['ts', 'typescript'],
-    extensions: ['ts', 'tsx'],
-    support: javascript({ typescript: true }),
-  }),
-  LanguageDescription.of({
-    name: 'Python',
-    alias: ['py', 'python'],
-    extensions: ['py'],
-    support: python(),
-  }),
-  LanguageDescription.of({
-    name: 'JSON',
-    alias: ['json'],
-    extensions: ['json'],
-    support: json(),
-  }),
-  LanguageDescription.of({
-    name: 'HTML',
-    alias: ['html'],
-    extensions: ['html', 'htm'],
-    support: html(),
-  }),
-  LanguageDescription.of({
-    name: 'CSS',
-    alias: ['css'],
-    extensions: ['css'],
-    support: css(),
-  }),
-  LanguageDescription.of({
-    name: 'SQL',
-    alias: ['sql'],
-    extensions: ['sql'],
-    support: sql(),
-  }),
-  LanguageDescription.of({
-    name: 'Rust',
-    alias: ['rust', 'rs'],
-    extensions: ['rs'],
-    support: rust(),
-  }),
-  LanguageDescription.of({
-    name: 'C++',
-    alias: ['cpp', 'c', 'cc'],
-    extensions: ['cpp', 'c', 'h'],
-    support: cpp(),
-  }),
-  LanguageDescription.of({
-    name: 'Java',
-    alias: ['java'],
-    extensions: ['java'],
-    support: java(),
-  }),
-  LanguageDescription.of({
-    name: 'XML',
-    alias: ['xml', 'svg'],
-    extensions: ['xml', 'svg'],
-    support: xml(),
-  }),
-];
-
-const codeLanguages = [...syncCodeLanguages, ...languageDataLanguages];
 
 function insertMarkdownLink(view: EditorView): boolean {
   const sel = view.state.selection.main;
@@ -261,6 +182,10 @@ export interface EditorHandle {
   focus: () => void;
   /** When the title header is shown, move focus to the title field (e.g. after New Note). */
   focusTitle: () => void;
+  /** Summarize selection to clipboard (plain or Markdown-formatted). */
+  copyAsSummary: (formattedMarkdown?: boolean) => Promise<void>;
+  /** Summarize clipboard and insert at selection. */
+  pasteAsSummary: (formattedMarkdown?: boolean) => Promise<void>;
 }
 
 interface EditorProps {
@@ -276,6 +201,11 @@ interface EditorProps {
   onEditorLiveBody?: (body: string) => void;
   /** Increment after explicit "reload from DB" so the buffer is replaced even when the note id is unchanged. */
   reloadNonce?: number;
+  editorSpellcheck?: boolean;
+  editorAutocomplete?: boolean;
+  /** When false, context menu omits Copy/Paste as summary. */
+  showSummaryMenuItems?: boolean;
+  tenantId?: string;
 }
 
 const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
@@ -289,6 +219,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     markdownPaintKey,
     onEditorLiveBody,
     reloadNonce = 0,
+    editorSpellcheck = true,
+    editorAutocomplete = true,
+    showSummaryMenuItems = false,
+    tenantId = 'default',
   },
   ref,
 ) {
@@ -306,7 +240,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const onUpdateRef = useRef(onUpdate);
   const onEditorLiveBodyRef = useRef(onEditorLiveBody);
   const lineNumbersCompartment = useRef(new Compartment());
+  const spellcheckCompartment = useRef(new Compartment());
+  const autocompleteCompartment = useRef(new Compartment());
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const summarizingRef = useRef(false);
+  summarizingRef.current = summarizing;
   const setCtxMenuRef = useRef(setCtxMenu);
   setCtxMenuRef.current = setCtxMenu;
   const [bodyMode, setBodyMode] = useState<'edit' | 'preview'>(() => readNoteBodyMode());
@@ -318,6 +257,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   useEffect(() => {
     onEditorLiveBodyRef.current = onEditorLiveBody;
   }, [onEditorLiveBody]);
+
+  const getWikiTitles = useCallback(async () => {
+    const list = await window.mnemo.notes.list(tenantId);
+    return list.map(n => n.title).filter(Boolean);
+  }, [tenantId]);
+  const getWikiTitlesRef = useRef(getWikiTitles);
+  getWikiTitlesRef.current = getWikiTitles;
 
   useEffect(() => {
     setPreviewLiveBody(normalizeLineSeparators(note.body));
@@ -410,6 +356,42 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         t.focus();
         t.select();
       },
+      copyAsSummary: async (formattedMarkdown = false) => {
+        const v = viewRef.current;
+        if (!v || summarizingRef.current) return;
+        const sel = v.state.selection.main;
+        const text = v.state.sliceDoc(sel.from, sel.to);
+        if (!text.trim()) return;
+        setSummarizing(true);
+        v.focus();
+        try {
+          const r = await window.mnemo.llm.summarize(text, { formattedMarkdown });
+          if (r.ok) await clipboardWriteText(r.summary);
+          else window.alert(r.error);
+        } finally {
+          setSummarizing(false);
+        }
+      },
+      pasteAsSummary: async (formattedMarkdown = false) => {
+        const v = viewRef.current;
+        if (!v || summarizingRef.current) return;
+        const clip = normalizeLineSeparators(await clipboardReadText());
+        if (!clip.trim()) return;
+        setSummarizing(true);
+        v.focus();
+        try {
+          const r = await window.mnemo.llm.summarize(clip, { formattedMarkdown });
+          if (r.ok) {
+            const sel = v.state.selection.main;
+            v.dispatch({ changes: { from: sel.from, to: sel.to, insert: r.summary } });
+            saveNow();
+          } else {
+            window.alert(r.error);
+          }
+        } finally {
+          setSummarizing(false);
+        }
+      },
     }),
     [saveNow],
   );
@@ -446,6 +428,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       },
     });
 
+    const markdownSupport = markdown({ base: markdownLanguage, codeLanguages: mnemoMarkdownCodeLanguages });
+
     /** Fold gutter left of line numbers so folding sits outside the number column. */
     const gutterExtensions = showLineNumbers
       ? [foldGutter(), lineNumbers(), highlightActiveLineGutter()]
@@ -455,17 +439,54 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       doc: normalizeLineSeparators(note.body),
       extensions: [
         lineNumbersCompartment.current.of(gutterExtensions),
+        spellcheckCompartment.current.of(
+          EditorView.contentAttributes.of({ spellcheck: editorSpellcheck !== false ? 'true' : 'false' }),
+        ),
+        autocompleteCompartment.current.of(
+          editorAutocomplete !== false ? [...mnemoBaseAutocompletionExtensions()] : [],
+        ),
         history(),
         drawSelection(),
         bracketMatching(),
         highlightActiveLine(),
         highlightSelectionMatches(),
-        markdown({ base: markdownLanguage, codeLanguages }),
+        markdownSupport.language.data.of({
+          autocomplete: createFenceWikiCompletionSource(() => getWikiTitlesRef.current()),
+        }),
+        markdownSupport,
         mnemoSyntaxHighlighting,
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         mnemoEditorTheme,
         Prec.highest(
           keymap.of([
+            {
+              key: 'Tab',
+              run: (view) => {
+                if (hasNextSnippetField(view.state)) return nextSnippetField(view);
+                if (completionStatus(view.state) === 'active') return acceptCompletion(view);
+                return false;
+              },
+            },
+            {
+              key: 'Enter',
+              run: (view) => {
+                const { state } = view;
+                const pos = state.selection.main.head;
+                if (pos !== state.selection.main.to) return false;
+                const line = state.doc.lineAt(pos);
+                if (pos !== line.to) return false;
+                const m = /^(\s*)(```+)([\w+#.\-]+)\s*$/.exec(line.text);
+                if (!m || m[2]!.length < 3) return false;
+                const indent = m[1] ?? '';
+                const lb = state.lineBreak;
+                const insert = lb + lb + indent + '```';
+                view.dispatch({
+                  changes: { from: pos, insert },
+                  selection: { anchor: pos + lb.length },
+                });
+                return true;
+              },
+            },
             { key: 'Mod-k', run: insertMarkdownLink },
             { key: 'Mod-Shift-t', run: insertMarkdownTable },
             { key: 'Mod-Shift-i', run: insertMarkdownImage },
@@ -504,6 +525,26 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
+
+  useEffect(() => {
+    const v = viewRef.current;
+    if (!v) return;
+    v.dispatch({
+      effects: spellcheckCompartment.current.reconfigure(
+        EditorView.contentAttributes.of({ spellcheck: editorSpellcheck !== false ? 'true' : 'false' }),
+      ),
+    });
+  }, [editorSpellcheck]);
+
+  useEffect(() => {
+    const v = viewRef.current;
+    if (!v) return;
+    v.dispatch({
+      effects: autocompleteCompartment.current.reconfigure(
+        editorAutocomplete !== false ? [...mnemoBaseAutocompletionExtensions()] : [],
+      ),
+    });
+  }, [editorAutocomplete]);
 
   /** Same note id: apply remote title/body when the buffer still matches the last server snapshot (no local edits). */
   useEffect(() => {
@@ -587,11 +628,58 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const wordCount = previewLiveBody.trim() ? previewLiveBody.trim().split(/\s+/).length : 0;
   const editorPx = showHeader ? 'pl-4 pr-2' : 'pl-3 pr-1';
 
+  const ctxMenuHeight = showSummaryMenuItems ? 420 : 220;
   const ctxPos = ctxMenu
-    ? clampFixedContextMenu(ctxMenu.x, ctxMenu.y, 200, 220)
+    ? clampFixedContextMenu(ctxMenu.x, ctxMenu.y, 200, ctxMenuHeight)
     : { left: 0, top: 0 };
 
   const closeCtx = () => setCtxMenu(null);
+
+  const runCopyAsSummary = async (formattedMarkdown: boolean) => {
+    const v = viewRef.current;
+    if (!v || summarizing) return;
+    const sel = v.state.selection.main;
+    const text = v.state.sliceDoc(sel.from, sel.to);
+    if (!text.trim()) {
+      closeCtx();
+      return;
+    }
+    setSummarizing(true);
+    closeCtx();
+    v.focus();
+    try {
+      const r = await window.mnemo.llm.summarize(text, { formattedMarkdown });
+      if (r.ok) await clipboardWriteText(r.summary);
+      else window.alert(r.error);
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  const runPasteAsSummary = async (formattedMarkdown: boolean) => {
+    const v = viewRef.current;
+    if (!v || summarizing) return;
+    const clip = normalizeLineSeparators(await clipboardReadText());
+    if (!clip.trim()) {
+      closeCtx();
+      return;
+    }
+    setSummarizing(true);
+    closeCtx();
+    v.focus();
+    try {
+      const r = await window.mnemo.llm.summarize(clip, { formattedMarkdown });
+      if (r.ok) {
+        const sel = v.state.selection.main;
+        v.dispatch({ changes: { from: sel.from, to: sel.to, insert: r.summary } });
+        saveNow();
+      } else {
+        window.alert(r.error);
+      }
+    } finally {
+      setSummarizing(false);
+    }
+  };
 
   const runWithView = (fn: (v: EditorView) => void) => {
     const v = viewRef.current;
@@ -693,13 +781,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
           ref={containerRef}
           className={`flex-1 min-h-0 min-w-0 overflow-hidden ${bodyMode === 'preview' ? 'hidden' : ''}`}
         />
+        {summarizing && (
+          <div className="absolute inset-0 z-[80] flex items-center justify-center bg-mnemo-app/60 pointer-events-none">
+            <span className="rounded-md border border-mnemo-border bg-mnemo-panel-elevated px-4 py-2 text-xs text-mnemo-muted shadow">
+              Summarizing…
+            </span>
+          </div>
+        )}
       </div>
       {ctxMenu && (
         <>
           <div className="fixed inset-0 z-[199]" aria-hidden onMouseDown={closeCtx} />
           <div
             role="menu"
-            className="fixed z-[200] min-w-[180px] rounded border border-mnemo-border bg-mnemo-panel-elevated shadow-lg py-1 text-xs text-mnemo-muted"
+            className="fixed z-[200] min-w-[240px] rounded border border-mnemo-border bg-mnemo-panel-elevated shadow-lg py-1 text-xs text-mnemo-muted"
             style={{ left: ctxPos.left, top: ctxPos.top }}
             onMouseDown={e => e.preventDefault()}
           >
@@ -735,6 +830,51 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             >
               Paste
             </button>
+            {showSummaryMenuItems && (
+              <>
+                <div className="border-t border-mnemo-border my-1" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={summarizing}
+                  title="Shortcut: Ctrl+Shift+C (Linux/Windows) or ⌘⇧C (macOS)"
+                  className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover disabled:opacity-50"
+                  onClick={() => void runCopyAsSummary(false)}
+                >
+                  Copy as summary
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={summarizing}
+                  title="Shortcut: Ctrl+Shift+V when editor focused — overrides Markdown preview for this chord"
+                  className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover disabled:opacity-50"
+                  onClick={() => void runPasteAsSummary(false)}
+                >
+                  Paste as summary
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={summarizing}
+                  title="Shortcut: Ctrl+Alt+C / ⌥⌘C"
+                  className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover disabled:opacity-50"
+                  onClick={() => void runCopyAsSummary(true)}
+                >
+                  Copy as formatted summary (Markdown)
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={summarizing}
+                  title="Shortcut: Ctrl+Alt+V / ⌥⌘V"
+                  className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover disabled:opacity-50"
+                  onClick={() => void runPasteAsSummary(true)}
+                >
+                  Paste as formatted summary (Markdown)
+                </button>
+              </>
+            )}
             <div className="border-t border-mnemo-border my-1" />
             <button
               type="button"

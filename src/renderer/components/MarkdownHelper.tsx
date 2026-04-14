@@ -93,7 +93,18 @@ export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
           <ShortcutRow keys="Ctrl+P"         action="Command palette" />
           <ShortcutRow keys="Ctrl+G"         action="Toggle graph" />
           <ShortcutRow keys="Ctrl+M"         action="Toggle Markdown reference" />
-          <ShortcutRow keys="Ctrl+Shift+V"   action="Toggle preview (GFM, Mermaid)" />
+          <ShortcutRow
+            keys="Ctrl+Shift+V"
+            action="Toggle preview (GFM, Mermaid) — in editor, paste as summary instead when Summary & LLM is enabled"
+          />
+          <ShortcutRow
+            keys="Ctrl+Shift+C"
+            action="Copy as summary (editor; requires Summary & LLM + valid profile)"
+          />
+          <ShortcutRow
+            keys="Ctrl+Alt+C / Ctrl+Alt+V"
+            action="Copy / paste formatted Markdown summary (same requirements)"
+          />
           <ShortcutRow keys="Ctrl+B"         action="Toggle sidebar" />
           <ShortcutRow keys="Ctrl+K"         action="Insert markdown link" />
           <ShortcutRow keys="Ctrl+Shift+T"    action="Insert table" />

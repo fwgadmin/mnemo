@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import type { AppConfig, SyncResult, WorkspaceProfilesState, WorkspaceStorage } from '../../shared/types';
 import { THEMES, type LayoutPreset } from '../theme/themes';
 import MarkdownEditorSettings from './MarkdownEditorSettings';
+import LlmSummarySettings from './LlmSummarySettings';
 
 type LayoutOverride = 'inherit' | LayoutPreset;
 
 const SETTINGS_TABS = [
   { id: 'general' as const, label: 'General' },
   { id: 'markdown' as const, label: 'Markdown' },
+  { id: 'summary' as const, label: 'Summary & LLM' },
   { id: 'workspace' as const, label: 'Workspace' },
   { id: 'database' as const, label: 'Database' },
 ];
@@ -24,6 +26,10 @@ interface Props {
   onLayoutOverrideChange: (v: LayoutOverride) => void;
   showNoteRefs: boolean;
   onShowNoteRefsChange: (v: boolean) => void;
+  editorSpellcheck: boolean;
+  editorAutocomplete: boolean;
+  onEditorSpellcheckChange: (v: boolean) => void;
+  onEditorAutocompleteChange: (v: boolean) => void;
   markdownGlobal: Record<string, string>;
   markdownByTheme: Record<string, Record<string, string>>;
   onMarkdownGlobalChange: (v: Record<string, string>) => void;
@@ -40,6 +46,10 @@ export default function SettingsView({
   onLayoutOverrideChange,
   showNoteRefs,
   onShowNoteRefsChange,
+  editorSpellcheck,
+  editorAutocomplete,
+  onEditorSpellcheckChange,
+  onEditorAutocompleteChange,
   markdownGlobal,
   markdownByTheme,
   onMarkdownGlobalChange,
@@ -255,7 +265,37 @@ export default function SettingsView({
       )}
 
       {settingsTab === 'markdown' && (
-      <section className="mb-2 max-w-2xl">
+      <section className="mb-2 max-w-2xl space-y-8">
+        <div>
+          <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Editor behavior</h2>
+          <div className="space-y-3 text-sm text-mnemo-text">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editorSpellcheck}
+                onChange={e => onEditorSpellcheckChange(e.target.checked)}
+                className="rounded border-mnemo-border"
+              />
+              Spell check (note body)
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editorAutocomplete}
+                onChange={e => onEditorAutocompleteChange(e.target.checked)}
+                className="rounded border-mnemo-border"
+              />
+              Autocomplete (code fence languages after ``` and{' '}
+              <code className="font-mono bg-mnemo-panel-elevated px-0.5 rounded">[[</code> wikilinks)
+            </label>
+          </div>
+          <p className="text-xs text-mnemo-dim mt-3 leading-relaxed">
+            Autocomplete lists optional language ids for fenced blocks and note titles after{' '}
+            <code className="font-mono bg-mnemo-panel-elevated px-0.5 rounded">[[</code>. Summarization
+            settings are under the <strong className="text-mnemo-muted">Summary &amp; LLM</strong> tab.
+          </p>
+        </div>
+        <div>
         <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Markdown appearance</h2>
         <MarkdownEditorSettings
           scope={markdownScope}
@@ -271,8 +311,11 @@ export default function SettingsView({
             else onMarkdownThemeChange(themeId, {});
           }}
         />
+        </div>
       </section>
       )}
+
+      {settingsTab === 'summary' && <LlmSummarySettings />}
 
       {settingsTab === 'workspace' && (
       <>

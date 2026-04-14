@@ -130,6 +130,8 @@ export function sanitizePrefs(raw: unknown): MnemoUiPreferences {
   if (typeof o.showNoteHeader === 'boolean') out.showNoteHeader = o.showNoteHeader;
   if (typeof o.showLineNumbers === 'boolean') out.showLineNumbers = o.showLineNumbers;
   if (typeof o.showNoteRefs === 'boolean') out.showNoteRefs = o.showNoteRefs;
+  if (typeof o.editorSpellcheck === 'boolean') out.editorSpellcheck = o.editorSpellcheck;
+  if (typeof o.editorAutocomplete === 'boolean') out.editorAutocomplete = o.editorAutocomplete;
   if (typeof o.grouped === 'boolean') out.grouped = o.grouped;
   if (typeof o.categoryScopeSubtree === 'boolean') out.categoryScopeSubtree = o.categoryScopeSubtree;
 
