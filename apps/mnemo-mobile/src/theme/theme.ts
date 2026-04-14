@@ -1,5 +1,5 @@
 import { useContext } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, type ColorSchemeName } from 'react-native';
 import { ThemePreferenceContext } from '../context/ThemePreferenceContext';
 
 /**
@@ -121,7 +121,7 @@ const light: Theme = {
   },
 };
 
-export function getThemeForScheme(scheme: 'light' | 'dark' | null | undefined): Theme {
+export function getThemeForScheme(scheme: ColorSchemeName): Theme {
   return scheme === 'dark' ? dark : light;
 }
 
