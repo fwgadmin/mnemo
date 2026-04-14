@@ -50,7 +50,7 @@ index 33e26db..7770217 100644
  #else
  - (UIView *)viewWithModuleName:(NSString *)moduleName
 diff --git a/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.swift b/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.swift
-index 925e0f9..e2676aa 100644
+index 925e0f9..54a8630 100644
 --- a/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.swift
 +++ b/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.swift
 @@ -118,7 +118,7 @@ public class ExpoReactNativeFactory: ExpoReactNativeFactoryObjC, ExpoReactNative
@@ -58,7 +58,7 @@ index 925e0f9..e2676aa 100644
          initialProperties: initialProps,
          launchOptions: launchOptions ?? [:],
 -        devMenuConfiguration: self.devMenuConfiguration
-+        devMenuConfiguration: self.devMenuConfiguration ?? RCTDevMenuConfiguration.defaultConfiguration()
++        devMenuConfiguration: self.devMenuConfiguration ?? RCTDevMenuConfiguration.default()
        )
  #else
        rootView = factory.superView(
@@ -68,7 +68,7 @@ index 925e0f9..e2676aa 100644
          launchOptions: launchOptions,
 -        devMenuConfiguration: self.devMenuConfiguration
 +        bundleConfiguration: self.bundleConfiguration,
-+        devMenuConfiguration: self.devMenuConfiguration ?? RCTDevMenuConfiguration.defaultConfiguration()
++        devMenuConfiguration: self.devMenuConfiguration ?? RCTDevMenuConfiguration.default()
        )
  #else
        rootView = rootViewFactory.view(
