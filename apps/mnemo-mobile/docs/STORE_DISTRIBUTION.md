@@ -7,6 +7,8 @@ Use this when preparing **Google Play**, **Apple App Store**, or **TestFlight** 
 - [ ] **EAS** (or `expo run:android` / `expo run:ios`) with release credentials
 
 If **`npx eas-cli build`** crashes with **`TypeError: (0 , minimatch_1.minimatch) is not a function`**, check **`package.json`**: a global **`overrides.minimatch`** forces one version for every dependency and breaks **eas-cli** (it expects the `minimatch` major version its own tree resolves). Remove that override, run **`npm install`** in `apps/mnemo-mobile`, and retry.
+
+To satisfy **`npm audit`** (high+) without breaking the CLI, use a **scoped** override only on **`eas-cli`** (e.g. `"eas-cli": { "minimatch": "5.1.8" }`), not a top-level **`minimatch`** override.
 - [ ] **Version** / **build number** bumped in `app.json` and store consoles
 - [ ] **Bundle ID** / **application ID** match store listings (`com.ferrowood.mnemo.mobile` in `app.json`)
 
