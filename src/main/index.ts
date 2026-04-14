@@ -40,6 +40,7 @@ import {
   deleteWorkspaceProfile,
   getElectronBootstrapRoot,
   importFolderIntoWorkspaceProfile,
+  renameWorkspaceProfile,
   setActiveWorkspace,
   setWorkspaceProfileStorage,
 } from './workspaceProfiles';
@@ -745,6 +746,18 @@ function registerIpcHandlers(): void {
       return { ok: true as const, profiles: next };
     },
   );
+
+  ipcMain.handle(IPC.WORKSPACE_PROFILES_RENAME, (_event, id: unknown, name: unknown) => {
+    const root = getElectronBootstrapRoot();
+    if (typeof id !== 'string' || !id.trim()) {
+      return { ok: false as const, error: 'Invalid workspace id.' };
+    }
+    const next = renameWorkspaceProfile(root, id.trim(), typeof name === 'string' ? name : '');
+    if (!next) {
+      return { ok: false as const, error: 'Unknown workspace or empty name.' };
+    }
+    return { ok: true as const, profiles: next };
+  });
 }
 
 app.whenReady().then(async () => {

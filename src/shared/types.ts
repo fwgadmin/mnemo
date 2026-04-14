@@ -112,6 +112,12 @@ export interface WorkspaceProfileEntry {
 export interface WorkspaceProfilesState {
   activeWorkspaceId: string;
   workspaces: WorkspaceProfileEntry[];
+  /**
+   * Tombstones for workspace ids removed on another device (Turso `app_kv`).
+   * Prevents stale local profiles from resurrecting deleted vaults when disk wins last-write-wins.
+   * `default` is never listed.
+   */
+  deletedWorkspaceIds?: string[];
 }
 
 export interface AppConfig {
@@ -258,4 +264,5 @@ export const IPC = {
   WORKSPACE_PROFILES_ARCHIVE: 'workspaceProfiles:archive',
   WORKSPACE_PROFILES_DELETE: 'workspaceProfiles:delete',
   WORKSPACE_PROFILES_SET_STORAGE: 'workspaceProfiles:setStorage',
+  WORKSPACE_PROFILES_RENAME: 'workspaceProfiles:rename',
 } as const;

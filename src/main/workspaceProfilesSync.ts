@@ -1,8 +1,9 @@
 /**
  * Merge workspace-profiles.json with Turso app_kv (same pattern as ui-preferences).
  * Last-write-wins: compare disk mtime vs app_kv.updated_at.
- * Remote payload is workspace list + storage only; activeWorkspaceId stays on disk per device (not synced).
- * Cloud workspace list is union-merged with disk so a minimal remote payload cannot wipe local vaults.
+ * Remote payload is workspace list + storage + optional deletion tombstones; activeWorkspaceId stays on disk per device (not synced).
+ * When cloud is newer, the remote workspace list wins for inherit/remote profiles; local-only `sqlite`
+ * workspaces are merged in. Deletion tombstones are union-merged so removed vaults stay removed across devices.
  * After merge, we add profile rows for any tenant_id present in the DB but missing from profiles (repair).
  * If the active inherit workspace has no notes but another inherit workspace does (e.g. after profile sync skew),
  * switch active to the tenant with the most notes so the vault is not empty on load.
@@ -15,8 +16,10 @@ import {
   combineLocalActiveWithWorkspaces,
   DEFAULT_WORKSPACE_ID,
   defaultWorkspaceProfilesState,
-  mergeWorkspaceListsUnion,
-  parseWorkspaceProfilesWorkspacesOnly,
+  filterWorkspacesByDeletedIds,
+  mergeDeletedWorkspaceIds,
+  mergeWorkspacesWhenCloudNewer,
+  parseWorkspaceProfilesKvPayload,
   readWorkspaceProfilesFile,
   workspaceProfilesFilePath,
   workspaceProfilesRemotePayload,
@@ -38,7 +41,9 @@ async function augmentProfilesWithNoteTenants(
     return state;
   }
   if (tenantIds.length === 0) return state;
-  const mergedW = augmentWorkspacesWithTenantIdsFromDb(state.workspaces, tenantIds);
+  const mergedW = augmentWorkspacesWithTenantIdsFromDb(state.workspaces, tenantIds, {
+    skipIds: new Set(state.deletedWorkspaceIds ?? []),
+  });
   const idsBefore = state.workspaces.map(w => w.id).sort().join('\0');
   const idsAfter = mergedW.map(w => w.id).sort().join('\0');
   if (idsBefore === idsAfter) return state;
@@ -110,10 +115,18 @@ export async function readWorkspaceProfilesMerged(
       const entry = await store.getKvEntry(WORKSPACE_PROFILES_KV_KEY);
       if (entry) {
         try {
-          const workspaces = parseWorkspaceProfilesWorkspacesOnly(JSON.parse(entry.value) as unknown);
-          const merged = combineLocalActiveWithWorkspaces(DEFAULT_WORKSPACE_ID, workspaces);
-          writeWorkspaceProfilesFileDiskOnly(root, merged);
-          return finalizeWithTenantRepair(store, root, merged);
+          const parsed = parseWorkspaceProfilesKvPayload(JSON.parse(entry.value) as unknown);
+          const filtered = filterWorkspacesByDeletedIds(
+            parsed.workspaces,
+            new Set(parsed.deletedWorkspaceIds),
+          );
+          const merged = combineLocalActiveWithWorkspaces(DEFAULT_WORKSPACE_ID, filtered);
+          const withDel: WorkspaceProfilesState = {
+            ...merged,
+            deletedWorkspaceIds: parsed.deletedWorkspaceIds,
+          };
+          writeWorkspaceProfilesFileDiskOnly(root, withDel);
+          return finalizeWithTenantRepair(store, root, withDel);
         } catch {
           /* fall through to create default */
         }
@@ -141,17 +154,23 @@ export async function readWorkspaceProfilesMerged(
   if (Number.isNaN(cloudUpdatedMs)) cloudUpdatedMs = 0;
 
   let cloudWorkspaces: WorkspaceProfilesState['workspaces'];
+  let cloudDeleted: string[];
   try {
-    cloudWorkspaces = parseWorkspaceProfilesWorkspacesOnly(JSON.parse(entry.value) as unknown);
+    const parsed = parseWorkspaceProfilesKvPayload(JSON.parse(entry.value) as unknown);
+    cloudWorkspaces = parsed.workspaces;
+    cloudDeleted = parsed.deletedWorkspaceIds;
   } catch {
     return finalizeWithTenantRepair(store, root, diskState);
   }
 
   if (cloudUpdatedMs > diskMtime) {
-    const mergedW = mergeWorkspaceListsUnion(diskState.workspaces, cloudWorkspaces);
-    const merged = combineLocalActiveWithWorkspaces(diskState.activeWorkspaceId, mergedW);
-    writeWorkspaceProfilesFileDiskOnly(root, merged);
-    return finalizeWithTenantRepair(store, root, merged);
+    const mergedDeleted = mergeDeletedWorkspaceIds(diskState.deletedWorkspaceIds, cloudDeleted);
+    const mergedW = mergeWorkspacesWhenCloudNewer(diskState.workspaces, cloudWorkspaces);
+    const filtered = filterWorkspacesByDeletedIds(mergedW, new Set(mergedDeleted));
+    const merged = combineLocalActiveWithWorkspaces(diskState.activeWorkspaceId, filtered);
+    const withDel: WorkspaceProfilesState = { ...merged, deletedWorkspaceIds: mergedDeleted };
+    writeWorkspaceProfilesFileDiskOnly(root, withDel);
+    return finalizeWithTenantRepair(store, root, withDel);
   }
 
   if (diskMtime > cloudUpdatedMs) {

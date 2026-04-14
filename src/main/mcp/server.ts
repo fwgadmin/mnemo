@@ -1,6 +1,13 @@
+import * as path from 'path';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { INoteStore, MnemoUiPreferences, NoteListItem } from '../../shared/types';
+import type {
+  INoteStore,
+  MnemoUiPreferences,
+  NoteListItem,
+  WorkspaceProfilesState,
+  WorkspaceStorage,
+} from '../../shared/types';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from '../uiPreferences';
 import { recomputeAutolinks } from '../autolinkRecompute';
 import { refreshOutgoingLinksForNote, relocateWikilinksAfterTitleChange } from '../noteOutgoingLinks';
@@ -17,6 +24,21 @@ import {
   promoteCategoryFolder,
   demoteCategoryFolder,
 } from '../cliCategory';
+import { readWorkspaceProfilesMerged } from '../workspaceProfilesSync';
+import { openBootstrapNoteStoreForImport } from '../workspaceBootstrapStore';
+import {
+  applyWorkspaceRemovalDataPurge,
+  archiveWorkspaceProfile,
+  createWorkspaceProfile,
+  deleteWorkspaceProfile,
+  importFolderIntoWorkspaceProfile,
+  renameWorkspaceProfile,
+  setActiveWorkspace,
+  setWorkspaceProfileStorage,
+} from '../workspaceProfiles';
+import { pickWorkspaceId, resolveWorkspaceSelector } from '../workspaceResolve';
+import { resolveWorkspaceBootstrapRoot } from '../userConfig';
+import { closeDedicatedStores, getGlobalStore, setActiveWorkspaceId } from '../storeResolver';
 
 /** Shape for tools: pass exactly one of `id` or `ref` (validated in handler; MCP SDK needs a raw Zod shape). */
 const idOrRefShape = {
@@ -29,6 +51,31 @@ function idOrRefError(args: { id?: string; ref?: number }): string | null {
   const hasRef = args.ref != null;
   if (hasId === hasRef) return 'Provide exactly one of id or ref';
   return null;
+}
+
+const workspaceStorageSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('inherit') }),
+  z.object({
+    mode: z.literal('sqlite'),
+    dbPath: z.string().min(1),
+    vaultPath: z.string().min(1),
+  }),
+  z.object({
+    mode: z.literal('remote'),
+    tursoUrl: z.string().optional(),
+    tursoToken: z.string().optional(),
+    libsqlUrl: z.string().optional(),
+    libsqlAuthToken: z.string().optional(),
+  }),
+]);
+
+function resolveWorkspaceTargetId(
+  profiles: WorkspaceProfilesState,
+  workspace_id: string,
+): { ok: true; id: string } | { ok: false; message: string } {
+  const sel = resolveWorkspaceSelector(profiles, workspace_id.trim());
+  if (sel.kind === 'error') return { ok: false, message: sel.message };
+  return { ok: true, id: pickWorkspaceId(profiles, sel) };
 }
 
 async function resolveToNoteId(
@@ -257,6 +304,223 @@ export function createMcpServer(
         content: [{ type: 'text', text: deleted ? `Deleted ${resolved.id}` : `Note ${resolved.id} not found` }],
         isError: !deleted,
       };
+    },
+  );
+
+  mcp.tool(
+    'list_workspace_profiles',
+    'List vault workspaces (merged disk + Turso app_kv when connected): activeWorkspaceId, names, storage, tombstones. Pair with switch_workspace, create_workspace, rename_workspace, set_workspace_storage, archive_workspace, delete_workspace for full management without the GUI.',
+    {},
+    async () => {
+      const root = resolveWorkspaceBootstrapRoot();
+      const store = getGlobalStore();
+      const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
+      return { content: [{ type: 'text', text: JSON.stringify(profiles, null, 2) }] };
+    },
+  );
+
+  mcp.tool(
+    'rename_workspace',
+    'Rename a vault’s display label (id unchanged; includes the default vault). Persists to workspace-profiles.json and mirrors to app_kv when using Turso.',
+    { workspace_id: z.string(), name: z.string() },
+    async (args) => {
+      const root = resolveWorkspaceBootstrapRoot();
+      const nm = args.name.trim();
+      if (!nm) {
+        return { content: [{ type: 'text', text: 'Empty name' }], isError: true };
+      }
+      const next = renameWorkspaceProfile(root, args.workspace_id.trim(), nm);
+      if (!next) {
+        return { content: [{ type: 'text', text: 'Unknown workspace or empty name.' }], isError: true };
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(next, null, 2) }] };
+    },
+  );
+
+  mcp.tool(
+    'switch_workspace',
+    'Set the active vault on this machine (workspace-profiles.json only; not synced). Same as `mnemo workspace switch`.',
+    { workspace_id: z.string() },
+    async (args) => {
+      const root = resolveWorkspaceBootstrapRoot();
+      const store = getGlobalStore();
+      const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
+      const res = resolveWorkspaceTargetId(profiles, args.workspace_id);
+      if (!res.ok) {
+        return { content: [{ type: 'text', text: res.message }], isError: true };
+      }
+      const next = setActiveWorkspace(root, res.id);
+      if (!next) {
+        return { content: [{ type: 'text', text: 'Unknown workspace.' }], isError: true };
+      }
+      setActiveWorkspaceId(next.activeWorkspaceId);
+      return { content: [{ type: 'text', text: JSON.stringify(next, null, 2) }] };
+    },
+  );
+
+  mcp.tool(
+    'create_workspace',
+    'Create a vault workspace. Optional import_folder imports markdown into the new tenant (same as GUI). Uses bootstrap Turso/local when the global store is unset.',
+    {
+      name: z.string(),
+      import_folder: z.string().optional(),
+    },
+    async (args) => {
+      const root = resolveWorkspaceBootstrapRoot();
+      const name = args.name.trim();
+      if (!name) {
+        return { content: [{ type: 'text', text: 'Empty name' }], isError: true };
+      }
+      const { state, newId } = createWorkspaceProfile(root, name);
+      const folder = args.import_folder?.trim();
+      if (!folder) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ profiles: state, newWorkspaceId: newId }, null, 2) }],
+        };
+      }
+      const gs = getGlobalStore();
+      let importStore: INoteStore;
+      let closeImportStore = false;
+      if (gs) {
+        importStore = gs;
+      } else {
+        importStore = await openBootstrapNoteStoreForImport(root, []);
+        closeImportStore = true;
+      }
+      try {
+        const stats = await importFolderIntoWorkspaceProfile(root, newId, path.resolve(folder), importStore);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  profiles: state,
+                  newWorkspaceId: newId,
+                  imported: stats.imported,
+                  updated: stats.updated,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { content: [{ type: 'text', text: msg }], isError: true };
+      } finally {
+        if (closeImportStore) {
+          try {
+            importStore.close();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    },
+  );
+
+  mcp.tool(
+    'set_workspace_storage',
+    'Edit where a workspace stores notes (inherit / sqlite / remote). Same as Settings → Storage; closes dedicated DB caches first.',
+    {
+      workspace_id: z.string(),
+      storage: workspaceStorageSchema,
+    },
+    async (args) => {
+      const root = resolveWorkspaceBootstrapRoot();
+      const store = getGlobalStore();
+      const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
+      const res = resolveWorkspaceTargetId(profiles, args.workspace_id);
+      if (!res.ok) {
+        return { content: [{ type: 'text', text: res.message }], isError: true };
+      }
+      const storage = args.storage as WorkspaceStorage;
+      if (storage.mode === 'remote') {
+        const url = (storage.tursoUrl || storage.libsqlUrl || '').trim();
+        const tok = (storage.tursoToken || storage.libsqlAuthToken || '').trim();
+        if (!url || !tok) {
+          return {
+            content: [{ type: 'text', text: 'remote storage requires a URL and token (turso/libsql fields).' }],
+            isError: true,
+          };
+        }
+      }
+      closeDedicatedStores();
+      const next = setWorkspaceProfileStorage(root, res.id, storage);
+      if (!next) {
+        return { content: [{ type: 'text', text: 'Unknown workspace.' }], isError: true };
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(next, null, 2) }] };
+    },
+  );
+
+  mcp.tool(
+    'archive_workspace',
+    'Archive a vault: remove profile, purge notes, delete dedicated sqlite files when applicable (non-default, non-active, ≥2 vaults).',
+    { workspace_id: z.string() },
+    async (args) => {
+      const root = resolveWorkspaceBootstrapRoot();
+      const store = getGlobalStore();
+      const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
+      const res = resolveWorkspaceTargetId(profiles, args.workspace_id);
+      if (!res.ok) {
+        return { content: [{ type: 'text', text: res.message }], isError: true };
+      }
+      const id = res.id;
+      const entry = profiles.workspaces.find(w => w.id === id);
+      const r = archiveWorkspaceProfile(root, id);
+      if (!r) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                'Cannot archive: switch to another workspace first, keep at least two vaults, and do not archive the default workspace.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      if (entry) {
+        await applyWorkspaceRemovalDataPurge(root, entry);
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(r.state, null, 2) }] };
+    },
+  );
+
+  mcp.tool(
+    'delete_workspace',
+    'Permanently delete a vault workspace (same constraints as archive).',
+    { workspace_id: z.string() },
+    async (args) => {
+      const root = resolveWorkspaceBootstrapRoot();
+      const store = getGlobalStore();
+      const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
+      const res = resolveWorkspaceTargetId(profiles, args.workspace_id);
+      if (!res.ok) {
+        return { content: [{ type: 'text', text: res.message }], isError: true };
+      }
+      const id = res.id;
+      const entry = profiles.workspaces.find(w => w.id === id);
+      const r = deleteWorkspaceProfile(root, id);
+      if (!r) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                'Cannot delete: switch to another workspace first, keep at least two vaults, and do not delete the default workspace.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      if (entry) {
+        await applyWorkspaceRemovalDataPurge(root, entry);
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(r.state, null, 2) }] };
     },
   );
 
