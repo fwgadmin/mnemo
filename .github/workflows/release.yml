@@ -98,9 +98,42 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  build-macos:
+    name: Build macOS (zip)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Zip output matches the runner CPU (macos-latest is typically arm64).
+      - name: Create macOS installers
+        run: npm run make
+
+      - name: Zip macOS out/make
+        run: |
+          (cd out/make && zip -r "${GITHUB_WORKSPACE}/mnemo-${GITHUB_REF_NAME}-macos.zip" .)
+
+      - name: Upload macOS zip (staging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-zip
+          path: mnemo-${{ github.ref_name }}-macos.zip
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
     name: Publish GitHub release assets
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
     steps:
       - name: Download build zips
@@ -114,6 +147,7 @@ jobs:
           files: |
             assets/windows-zip/*.zip
             assets/linux-zip/*.zip
+            assets/macos-zip/*.zip
           generate_release_notes: true
           make_latest: ${{ !contains(github.ref_name, '-') }}
           prerelease: ${{ contains(github.ref_name, '-') }}
