@@ -81,11 +81,6 @@ export interface SyncResult {
 }
 
 /**
- * Remote database credentials (userData/config.json).
- * Mnemo uses @libsql/client — same protocol for Turso Cloud, self-hosted libSQL/sqld on a VPS, etc.
- * `tursoUrl` / `tursoToken` are the canonical keys; `libsql*` are optional aliases for clarity.
- */
-/**
  * Where a workspace’s notes live.
  * - `inherit`: global connection from config/env; isolate rows with `tenant_id === workspace id`.
  * - `sqlite`: dedicated local `mnemo.db` + vault (typically `tenant_id` is `default` inside that file).
