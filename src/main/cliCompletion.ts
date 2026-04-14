@@ -4,9 +4,9 @@
 
 const NOTE_SUBS =
   'list show search new compose write edit import graph autolink categories set-category category';
-const HELP_TOPICS = 'topics vault workspace note mcp mcp-http config clients desktop full';
+const HELP_TOPICS = 'topics vault workspace sync note mcp mcp-http config clients desktop full';
 const TOP_CMDS =
-  'add a find f search list import graph categories autolink set-category category compose write edit note workspace mcp mcp-http gui completion help';
+  'add a find f search list import graph categories autolink set-category category compose write edit note workspace sync mcp mcp-http gui completion help';
 
 const BASH = `#!/usr/bin/env bash
 # mnemo bash completion — source with: eval "$(mnemo completion bash)"
@@ -73,6 +73,13 @@ _mnemo() {
     workspace)
       COMPREPLY=( $(compgen -W "list new switch archive delete --json --no-json" -- "\${cur}") )
       ;;
+    sync)
+      if [[ \${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=( $(compgen -W "pull push" -- "\${cur}") )
+      else
+        COMPREPLY=( $(compgen -W "--db --vault --turso-url --turso-token --workspace --json --no-json" -- "\${cur}") )
+      fi
+      ;;
     completion)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=( $(compgen -W "bash zsh fish" -- "\${cur}") )
@@ -93,7 +100,7 @@ const ZSH = `#compdef mnemo
 
 _mnemo() {
   local -a cmds
-  cmds=(add a find f search list import graph categories autolink set-category category compose write edit note workspace mcp mcp-http gui completion help)
+  cmds=(add a find f search list import graph categories autolink set-category category compose write edit note workspace sync mcp mcp-http gui completion help)
   # help <topic> completed in case help below
   if (( CURRENT == 2 )); then
     _describe -t commands command cmds
@@ -161,11 +168,18 @@ _mnemo() {
       _arguments '--json' '--no-json' \
         '1:subcommand:(list new switch archive delete)'
       ;;
+    sync)
+      if (( CURRENT == 3 )); then
+        _values 'sync subcommand' pull push
+        return
+      fi
+      _arguments '--db+:path:' '--vault+:path:' '--turso-url+:url:' '--turso-token+:token:' '--workspace+:workspace id or index:' '--json' '--no-json'
+      ;;
     completion)
       _values 'shell' bash zsh fish
       ;;
     help)
-      _values 'help topic' topics vault workspace note mcp mcp-http config clients desktop full
+      _values 'help topic' topics vault workspace sync note mcp mcp-http config clients desktop full
       ;;
   esac
 }
@@ -193,6 +207,8 @@ complete -c mnemo -f -n '__fish_use_subcommand' -a write -d 'Alias compose'
 complete -c mnemo -f -n '__fish_use_subcommand' -a edit -d 'Edit in editor'
 complete -c mnemo -f -n '__fish_use_subcommand' -a note -d 'Vault CLI (advanced)'
 complete -c mnemo -f -n '__fish_use_subcommand' -a workspace -d 'Vault workspaces'
+complete -c mnemo -f -n '__fish_use_subcommand' -a sync -d 'Remote/local sync'
+complete -c mnemo -f -n '__fish_seen_subcommand_from sync' -a 'pull push' -d 'pull=remote→local push=local→remote'
 complete -c mnemo -f -n '__fish_use_subcommand' -a mcp -d 'MCP stdio'
 complete -c mnemo -f -n '__fish_use_subcommand' -a mcp-http -d 'MCP HTTP'
 complete -c mnemo -f -n '__fish_use_subcommand' -a gui -d 'Desktop app'
@@ -201,6 +217,7 @@ complete -c mnemo -f -n '__fish_use_subcommand' -a help -d 'Progressive help'
 complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'topics' -d 'List sections'
 complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'vault' -d 'Vault commands'
 complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'workspace' -d 'Workspaces CLI'
+complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'sync' -d 'mnemo sync push/pull'
 complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'note' -d 'Legacy mnemo note'
 complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'mcp' -d 'MCP stdio'
 complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'mcp-http' -d 'MCP HTTP'

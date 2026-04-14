@@ -12,6 +12,8 @@ import {
   listWorkspaceProfiles,
   migrateLegacyFlatWorkspace,
 } from '../workspaceProfiles';
+import { pickWorkspaceId, resolveWorkspaceSelector } from '../workspaceResolve';
+import { readWorkspaceProfilesMerged } from '../workspaceProfilesSync';
 import { resolveWorkspaceBootstrapRoot } from '../userConfig';
 import {
   closeDedicatedStores,
@@ -66,11 +68,13 @@ export async function runMcpStdioServer(argv: string[]): Promise<void> {
   setStoreResolverBootstrapRoot(root);
 
   let store: INoteStore;
+  let mergedProfiles: Awaited<ReturnType<typeof readWorkspaceProfilesMerged>> | undefined;
   if (tursoUrl && tursoToken) {
     const vPath = argv.includes('--vault') ? vaultPath : path.join(root, 'vault');
     const turso = new TursoNoteStore(tursoUrl, tursoToken, vPath);
     await turso.initSchema();
     store = turso;
+    mergedProfiles = await readWorkspaceProfilesMerged(turso, root);
   } else if (usedExplicitDb) {
     store = new LocalNoteStore(dbPath, vaultPath);
   } else {
@@ -82,10 +86,13 @@ export async function runMcpStdioServer(argv: string[]): Promise<void> {
     ? createMcpServer(store)
     : (() => {
         setGlobalStore(store);
-        const profiles = listWorkspaceProfiles(root);
-        const w = wsArg?.trim();
-        const id =
-          w && profiles.workspaces.some(x => x.id === w) ? w : profiles.activeWorkspaceId;
+        const profiles = mergedProfiles ?? listWorkspaceProfiles(root);
+        const wsRes = resolveWorkspaceSelector(profiles, wsArg?.trim());
+        if (wsRes.kind === 'error') {
+          console.error(`mnemo: ${wsRes.message}`);
+          process.exit(1);
+        }
+        const id = pickWorkspaceId(profiles, wsRes);
         setActiveWorkspaceId(id);
         return createMcpServer(ensureActiveContext);
       })();

@@ -10,6 +10,7 @@ import type {
   SearchResult,
   INoteStore,
   VaultSnapshot,
+  SyncResult,
 } from '../../shared/types';
 import {
   ftsMatchFromUserQuery,
@@ -336,6 +337,94 @@ export class LocalNoteStore implements INoteStore {
       out[row.tenant_id] = Number(row.c);
     }
     return Promise.resolve(out);
+  }
+
+  /**
+   * Merge remote/libSQL rows into this SQLite file and mirror .md files for affected notes.
+   * Last-write-wins by updated_at (same rule as Turso importNotes). Links are INSERT OR IGNORE only.
+   * Does not delete local notes or links missing from the payload.
+   */
+  async importNotesAdditiveFromRemote(
+    notes: Array<{
+      id: string;
+      title: string;
+      body: string;
+      tags: string;
+      tenant_id: string;
+      created_at: string;
+      updated_at: string;
+      ref: number | null;
+      hide_header: number;
+    }>,
+    links: Array<{ source_id: string; target_id: string }>,
+  ): Promise<SyncResult> {
+    if (notes.length === 0 && links.length === 0) return { synced: 0, skipped: 0 };
+
+    const upsert = this.db.prepare(`
+      INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        title       = excluded.title,
+        body        = excluded.body,
+        tags        = excluded.tags,
+        updated_at  = excluded.updated_at,
+        ref         = COALESCE(excluded.ref, notes.ref),
+        hide_header = excluded.hide_header
+      WHERE excluded.updated_at > notes.updated_at
+    `);
+
+    let applied = 0;
+    let skipped = 0;
+    const CHUNK = 50;
+
+    const runNotes = this.db.transaction((chunk: typeof notes) => {
+      for (const n of chunk) {
+        const info = upsert.run(
+          n.id,
+          n.title,
+          n.body,
+          n.tags,
+          n.tenant_id,
+          n.created_at,
+          n.updated_at,
+          n.ref,
+          n.hide_header ?? 0,
+        );
+        if (info.changes > 0) applied += 1;
+        else skipped += 1;
+      }
+    });
+
+    for (let i = 0; i < notes.length; i += CHUNK) {
+      runNotes(notes.slice(i, i + CHUNK));
+    }
+
+    const existingIds = new Set(
+      (this.db.prepare('SELECT id FROM notes').all() as { id: string }[]).map(r => r.id),
+    );
+    const linkIns = this.db.prepare(
+      'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
+    );
+    const linkRows = links.filter(
+      l => existingIds.has(l.source_id) && existingIds.has(l.target_id),
+    );
+    const runLinks = this.db.transaction((chunk: typeof linkRows) => {
+      for (const l of chunk) {
+        linkIns.run(l.source_id, l.target_id);
+      }
+    });
+    for (let i = 0; i < linkRows.length; i += CHUNK) {
+      runLinks(linkRows.slice(i, i + CHUNK));
+    }
+
+    for (const n of notes) {
+      const row = this.db.prepare('SELECT * FROM notes WHERE id = ?').get(n.id) as any;
+      if (!row) continue;
+      const note = this.rowToNote(row);
+      this.writeMdFile(note);
+    }
+
+    return { synced: applied, skipped };
   }
 
   async purgeTenantNotes(tenantId: string): Promise<void> {

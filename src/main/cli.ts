@@ -8,13 +8,9 @@ import * as path from 'path';
 import { execSync, spawn } from 'child_process';
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
-import type { INoteStore, Note, NoteListItem } from '../shared/types';
+import type { INoteStore, Note, NoteListItem, WorkspaceProfilesState, WorkspaceStorage } from '../shared/types';
 import { runMcpStdioServer, parseMcpStdioArgs } from './mcp/stdio-bootstrap';
-import {
-  getRemoteLibsqlCredentials,
-  resolveTursoCredentials,
-  resolveWorkspaceBootstrapRoot,
-} from './userConfig';
+import { resolveTursoCredentials, resolveWorkspaceBootstrapRoot } from './userConfig';
 import {
   archiveWorkspaceProfile,
   createWorkspaceProfile,
@@ -25,6 +21,9 @@ import {
   purgeWorkspaceTenantData,
   setActiveWorkspace,
 } from './workspaceProfiles';
+import { readWorkspaceProfilesMerged } from './workspaceProfilesSync';
+import { pickWorkspaceId, resolveWorkspaceSelector } from './workspaceResolve';
+import { pullTursoIntoLocalStore, pushLocalToTursoStore } from './storePullRemote';
 import {
   GENERAL_PATH,
   categoryPathFromTags,
@@ -58,6 +57,81 @@ import {
   DEFAULT_LIST_PAGE_SIZE,
   runInteractiveListPager,
 } from './cliListPager';
+
+/** Plain / JSON list output when not using the interactive pager (default page size). */
+const DEFAULT_LIST_PLAIN_LIMIT = 20;
+
+async function loadWorkspaceProfilesForCli(
+  argvTail: string[],
+  root: string,
+): Promise<WorkspaceProfilesState> {
+  const creds = resolveTursoCredentials(parseMcpStdioArgs(argvTail));
+  if (creds.tursoUrl?.trim() && creds.tursoToken?.trim()) {
+    const vaultPath = path.join(root, 'vault');
+    const turso = new TursoNoteStore(creds.tursoUrl!, creds.tursoToken!, vaultPath);
+    await turso.initSchema();
+    try {
+      return await readWorkspaceProfilesMerged(turso, root);
+    } finally {
+      turso.close();
+    }
+  }
+  return listWorkspaceProfiles(root);
+}
+
+function mergeRemoteCredsForStorage(
+  parsed: ReturnType<typeof parseMcpStdioArgs>,
+  storage: WorkspaceStorage,
+): { tursoUrl?: string; tursoToken?: string } {
+  const base = resolveTursoCredentials(parsed);
+  if (storage.mode !== 'remote') {
+    return base;
+  }
+  return {
+    tursoUrl:
+      parsed.tursoUrl?.trim() ||
+      storage.tursoUrl?.trim() ||
+      storage.libsqlUrl?.trim() ||
+      base.tursoUrl,
+    tursoToken:
+      parsed.tursoToken?.trim() ||
+      storage.tursoToken?.trim() ||
+      storage.libsqlAuthToken?.trim() ||
+      base.tursoToken,
+  };
+}
+
+/**
+ * Defensive: some stores can surface duplicate rows (same ref or same id).
+ * Prefer one row per ref (newest modified wins), then dedupe any remaining by id.
+ */
+function dedupeNoteListItems(items: NoteListItem[]): NoteListItem[] {
+  const byRef = new Map<number, NoteListItem>();
+  const noRef: NoteListItem[] = [];
+  for (const n of items) {
+    const r = n.ref;
+    if (r != null && typeof r === 'number' && Number.isFinite(r)) {
+      const existing = byRef.get(r);
+      if (!existing) {
+        byRef.set(r, n);
+      } else {
+        const a = new Date(existing.modified).getTime();
+        const b = new Date(n.modified).getTime();
+        if (b >= a) byRef.set(r, n);
+      }
+    } else {
+      noRef.push(n);
+    }
+  }
+  const seenId = new Set<string>();
+  const uniqNoRef = noRef.filter(n => {
+    if (!n.id) return false;
+    if (seenId.has(n.id)) return false;
+    seenId.add(n.id);
+    return true;
+  });
+  return [...byRef.values(), ...uniqNoRef];
+}
 
 function printHelp(rest: string[]): void {
   if (rest.length === 0) {
@@ -701,6 +775,7 @@ const TOP_LEVEL_VAULT = new Set([
   'compose',
   'write',
   'edit',
+  'sync',
 ]);
 
 async function cmdRecent(argv: string[]): Promise<void> {
@@ -734,41 +809,195 @@ async function cmdRecent(argv: string[]): Promise<void> {
   }
 }
 
+async function cmdSync(argv: string[]): Promise<void> {
+  const { outJson, argv: av } = resolveJsonOutput(argv);
+  const sub = av[0]?.toLowerCase();
+  const tail = av.slice(1);
+  if (sub !== 'pull' && sub !== 'push') {
+    console.error(
+      'Usage: mnemo sync pull|push [--db <path>] [--vault <path>] [--workspace <id|index>] [--turso-url …] [--turso-token …]',
+    );
+    process.exit(1);
+  }
+
+  const parsed = parseMcpStdioArgs(tail);
+  const { workspaceId: wsFlag, argv: rest } = stripWorkspaceFlag(tail);
+  const root = resolveWorkspaceBootstrapRoot();
+  migrateLegacyFlatWorkspace(root);
+
+  const creds = resolveTursoCredentials(parsed);
+  const hasGlobalTurso = !!(creds.tursoUrl?.trim() && creds.tursoToken?.trim());
+
+  let turso: TursoNoteStore | null = null;
+  try {
+    if (hasGlobalTurso) {
+      const vaultPath = path.join(root, 'vault');
+      turso = new TursoNoteStore(creds.tursoUrl!, creds.tursoToken!, vaultPath);
+      await turso.initSchema();
+      const merged = await readWorkspaceProfilesMerged(turso, root);
+      const wsRes = resolveWorkspaceSelector(merged, wsFlag?.trim());
+      if (wsRes.kind === 'error') {
+        console.error(`mnemo: ${wsRes.message}`);
+        process.exit(1);
+      }
+    } else {
+      const st = await loadWorkspaceProfilesForCli(tail, root);
+      const wsRes = resolveWorkspaceSelector(st, wsFlag?.trim());
+      if (wsRes.kind === 'error') {
+        console.error(`mnemo: ${wsRes.message}`);
+        process.exit(1);
+      }
+      const activeId = pickWorkspaceId(st, wsRes);
+      const entry = st.workspaces.find(w => w.id === activeId);
+      const mergedStorage: WorkspaceStorage = entry?.storage ?? { mode: 'inherit' };
+      if (mergedStorage.mode !== 'remote') {
+        console.error(
+          'mnemo: No global Turso/libSQL URL in config (or env) and the chosen workspace has no dedicated remote.\n' +
+            '  Configure Settings → Database or set MNEMO_TURSO_URL / MNEMO_TURSO_TOKEN, or use a workspace with remote storage.',
+        );
+        process.exit(1);
+      }
+      const { tursoUrl: url, tursoToken: token } = mergeRemoteCredsForStorage(parsed, mergedStorage);
+      if (!url?.trim() || !token?.trim()) {
+        console.error('mnemo: Missing --turso-url / --turso-token for dedicated remote workspace.');
+        process.exit(1);
+      }
+      const vPath = rest.includes('--vault') ? parsed.vaultPath : path.join(root, 'vault');
+      turso = new TursoNoteStore(url, token, vPath);
+      await turso.initSchema();
+    }
+
+    const hasDb = rest.includes('--db');
+    const hasVault = rest.includes('--vault');
+    let dbPath: string;
+    let vaultPath: string;
+    if (hasDb) {
+      dbPath = parsed.dbPath;
+      vaultPath = hasVault ? parsed.vaultPath : path.join(path.dirname(dbPath), 'vault');
+    } else {
+      const boot = getLocalWorkspaceDbPathsForCli();
+      dbPath = boot.dbPath;
+      vaultPath = boot.vaultPath;
+    }
+
+    if (sub === 'pull') {
+      const result = await pullTursoIntoLocalStore(turso!, dbPath, vaultPath);
+      if (outJson) {
+        printJson({ ok: true, direction: 'pull', ...result, dbPath, vaultPath });
+      } else {
+        console.log(
+          `Snapshot: merged ${result.synced} note updates from remote (${result.skipped} skipped: local newer or unchanged).`,
+        );
+        console.log(`Database: ${dbPath}`);
+        console.log(`Vault:    ${vaultPath}`);
+      }
+    } else {
+      const result = await pushLocalToTursoStore(turso!, dbPath);
+      if (outJson) {
+        printJson({ ok: true, direction: 'push', ...result, dbPath });
+      } else {
+        console.log(`Upload: sent ${result.synced} note rows to remote (additive merge by updated_at).`);
+        console.log(`Local database: ${dbPath}`);
+      }
+    }
+  } finally {
+    turso?.close();
+  }
+}
+
 async function openStoreForNote(argv: string[]): Promise<{ store: INoteStore; tenantId: string }> {
   const { workspaceId: wsFlag, argv: av } = stripWorkspaceFlag(argv);
   const parsed = parseMcpStdioArgs(av);
   const hasDb = av.includes('--db');
   const hasVault = av.includes('--vault');
-  const { tursoUrl, tursoToken } = resolveTursoCredentials(parsed);
-
-  let tenantId: string;
-  if (hasDb) {
-    tenantId = 'default';
-  } else {
-    const root = resolveWorkspaceBootstrapRoot();
-    migrateLegacyFlatWorkspace(root);
-    const profiles = listWorkspaceProfiles(root);
-    const w = wsFlag?.trim();
-    tenantId =
-      w && profiles.workspaces.some(x => x.id === w) ? w : profiles.activeWorkspaceId;
+  const root = resolveWorkspaceBootstrapRoot();
+  migrateLegacyFlatWorkspace(root);
+  const profilesDisk = listWorkspaceProfiles(root);
+  const ws = wsFlag?.trim();
+  const wsResDisk = resolveWorkspaceSelector(profilesDisk, ws);
+  if (wsResDisk.kind === 'error') {
+    console.error(`mnemo: ${wsResDisk.message}`);
+    process.exit(1);
   }
-
-  if (tursoUrl && tursoToken) {
-    const bootstrap = resolveWorkspaceBootstrapRoot();
-    const vaultPath = hasVault ? parsed.vaultPath : path.join(bootstrap, 'vault');
-    const turso = new TursoNoteStore(tursoUrl, tursoToken, vaultPath);
-    await turso.initSchema();
-    return { store: turso, tenantId };
-  }
+  const activeIdDisk = pickWorkspaceId(profilesDisk, wsResDisk);
+  const entryDisk = profilesDisk.workspaces.find(x => x.id === activeIdDisk);
+  const storageDisk: WorkspaceStorage = entryDisk?.storage ?? { mode: 'inherit' };
 
   if (hasDb) {
     const dbPath = parsed.dbPath;
     const vaultPath = hasVault ? parsed.vaultPath : path.join(path.dirname(dbPath), 'vault');
-    return { store: new LocalNoteStore(dbPath, vaultPath), tenantId };
+    return { store: new LocalNoteStore(dbPath, vaultPath), tenantId: 'default' };
+  }
+
+  const { tursoUrl, tursoToken } = resolveTursoCredentials(parsed);
+  const hasGlobalTurso = !!(tursoUrl?.trim() && tursoToken?.trim());
+
+  // Global Turso in config (same DB as GUI): merge profiles first. Do not trust disk-only "sqlite"
+  // before merge — stale profiles can mark workspaces as dedicated local while the cloud uses inherit.
+  if (hasGlobalTurso) {
+    const vaultPath = hasVault ? parsed.vaultPath : path.join(root, 'vault');
+    const turso = new TursoNoteStore(tursoUrl!, tursoToken!, vaultPath);
+    await turso.initSchema();
+    const merged = await readWorkspaceProfilesMerged(turso, root);
+    const wsResMerged = resolveWorkspaceSelector(merged, ws);
+    if (wsResMerged.kind === 'error') {
+      console.error(`mnemo: ${wsResMerged.message}`);
+      process.exit(1);
+    }
+    const activeId = pickWorkspaceId(merged, wsResMerged);
+    const entry = merged.workspaces.find(x => x.id === activeId);
+    const mergedStorage: WorkspaceStorage = entry?.storage ?? { mode: 'inherit' };
+
+    if (mergedStorage.mode === 'sqlite') {
+      turso.close();
+      const dbPath = path.resolve(mergedStorage.dbPath);
+      const vaultPathResolved = path.resolve(mergedStorage.vaultPath);
+      return { store: new LocalNoteStore(dbPath, vaultPathResolved), tenantId: 'default' };
+    }
+
+    if (mergedStorage.mode === 'remote') {
+      turso.close();
+      const { tursoUrl: url, tursoToken: token } = mergeRemoteCredsForStorage(parsed, mergedStorage);
+      if (!url?.trim() || !token?.trim()) {
+        console.error(
+          'mnemo: This workspace uses dedicated remote storage but URL/token are missing.\n' +
+            '  Set credentials in Settings → Storage, or pass --turso-url and --turso-token.',
+        );
+        process.exit(1);
+      }
+      const vPath = hasVault ? parsed.vaultPath : path.join(root, 'vault');
+      const dedicated = new TursoNoteStore(url, token, vPath);
+      await dedicated.initSchema();
+      return { store: dedicated, tenantId: 'default' };
+    }
+
+    return { store: turso, tenantId: activeId };
+  }
+
+  // No global Turso — disk-only routing (dedicated local SQLite or remote, or inherit → local bootstrap db).
+  if (storageDisk.mode === 'sqlite') {
+    const dbPath = path.resolve(storageDisk.dbPath);
+    const vaultPath = path.resolve(storageDisk.vaultPath);
+    return { store: new LocalNoteStore(dbPath, vaultPath), tenantId: 'default' };
+  }
+
+  if (storageDisk.mode === 'remote') {
+    const { tursoUrl: url, tursoToken: token } = mergeRemoteCredsForStorage(parsed, storageDisk);
+    if (!url?.trim() || !token?.trim()) {
+      console.error(
+        'mnemo: This workspace uses dedicated remote storage but URL/token are missing.\n' +
+          '  Set credentials in Settings → Storage, or pass --turso-url and --turso-token.',
+      );
+      process.exit(1);
+    }
+    const vaultPath = hasVault ? parsed.vaultPath : path.join(root, 'vault');
+    const turso = new TursoNoteStore(url, token, vaultPath);
+    await turso.initSchema();
+    return { store: turso, tenantId: 'default' };
   }
 
   const { dbPath, vaultPath } = getLocalWorkspaceDbPathsForCli();
-  return { store: new LocalNoteStore(dbPath, vaultPath), tenantId };
+  return { store: new LocalNoteStore(dbPath, vaultPath), tenantId: activeIdDisk };
 }
 
 async function cmdWorkspace(argv: string[]): Promise<void> {
@@ -779,14 +1008,14 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
   migrateLegacyFlatWorkspace(root);
 
   if (!sub || sub === 'list' || sub === 'ls') {
-    const st = listWorkspaceProfiles(root);
+    const st = await loadWorkspaceProfilesForCli(tail, root);
     if (outJson) {
       printJson(st);
     } else {
-      for (const w of st.workspaces) {
+      st.workspaces.forEach((w, i) => {
         const mark = w.id === st.activeWorkspaceId ? ' (active)' : '';
-        console.log(`${w.id}\t${w.name}${mark}`);
-      }
+        console.log(`${i + 1}\t${w.id}\t${w.name}${mark}`);
+      });
     }
     return;
   }
@@ -807,11 +1036,18 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
   }
 
   if (sub === 'switch') {
-    const id = tail[0]?.trim();
-    if (!id || tail.length > 1) {
-      console.error('Usage: mnemo workspace switch <id>');
+    const raw = tail[0]?.trim();
+    if (!raw || tail.length > 1) {
+      console.error('Usage: mnemo workspace switch <id|index>');
       process.exit(1);
     }
+    const st = await loadWorkspaceProfilesForCli(tail, root);
+    const sel = resolveWorkspaceSelector(st, raw);
+    if (sel.kind === 'error') {
+      console.error(`mnemo: ${sel.message}`);
+      process.exit(1);
+    }
+    const id = pickWorkspaceId(st, sel);
     const next = setActiveWorkspace(root, id);
     if (!next) {
       console.error(`Unknown workspace id: ${id}`);
@@ -826,13 +1062,20 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
   }
 
   if (sub === 'archive') {
-    const id = tail[0]?.trim();
-    if (!id || tail.length > 1) {
-      console.error('Usage: mnemo workspace archive <id>');
+    const raw = tail[0]?.trim();
+    if (!raw || tail.length > 1) {
+      console.error('Usage: mnemo workspace archive <id|index>');
       process.exit(1);
     }
+    const st = await loadWorkspaceProfilesForCli(tail, root);
+    const sel = resolveWorkspaceSelector(st, raw);
+    if (sel.kind === 'error') {
+      console.error(`mnemo: ${sel.message}`);
+      process.exit(1);
+    }
+    const id = pickWorkspaceId(st, sel);
     const before = listWorkspaceProfiles(root);
-    const entry = before.workspaces.find(w => w.id === id);
+    const entry = st.workspaces.find(w => w.id === id);
     const r = archiveWorkspaceProfile(root, id);
     if (!r) {
       console.error(
@@ -865,13 +1108,20 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
   }
 
   if (sub === 'delete') {
-    const id = tail[0]?.trim();
-    if (!id || tail.length > 1) {
-      console.error('Usage: mnemo workspace delete <id>');
+    const raw = tail[0]?.trim();
+    if (!raw || tail.length > 1) {
+      console.error('Usage: mnemo workspace delete <id|index>');
       process.exit(1);
     }
+    const st = await loadWorkspaceProfilesForCli(tail, root);
+    const sel = resolveWorkspaceSelector(st, raw);
+    if (sel.kind === 'error') {
+      console.error(`mnemo: ${sel.message}`);
+      process.exit(1);
+    }
+    const id = pickWorkspaceId(st, sel);
     const before = listWorkspaceProfiles(root);
-    const entry = before.workspaces.find(w => w.id === id);
+    const entry = st.workspaces.find(w => w.id === id);
     const r = deleteWorkspaceProfile(root, id);
     if (!r) {
       console.error(
@@ -959,7 +1209,7 @@ async function cmdNote(argv: string[]): Promise<void> {
           const folderPath = trimmed ? normalizePath(trimmed) || GENERAL_PATH : GENERAL_PATH;
           notes = filterNotesByCategory(notes, folderPath, includeDescendants);
         }
-        const sorted = [...notes].sort((a, b) => {
+        const sorted = [...dedupeNoteListItems(notes)].sort((a, b) => {
           const cmp = a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0;
           if (cmp !== 0) return cmp;
           return (a.ref ?? 0) - (b.ref ?? 0);
@@ -991,6 +1241,11 @@ async function cmdNote(argv: string[]): Promise<void> {
           !explicitLimit &&
           process.stdout.isTTY &&
           process.stdin.isTTY;
+
+        let limitForPlain = limit;
+        if (!useInteractive && !explicitLimit) {
+          limitForPlain = limit ?? DEFAULT_LIST_PLAIN_LIMIT;
+        }
 
         const effectivePagerSize = pagerSize ?? DEFAULT_LIST_PAGE_SIZE;
 
@@ -1033,13 +1288,15 @@ async function cmdNote(argv: string[]): Promise<void> {
           toPrint = sorted.slice(fromOneBased - 1);
         }
 
-        const totalPages = limit != null ? Math.max(1, Math.ceil(toPrint.length / limit)) : 1;
-        if (limit != null && page > totalPages) {
+        const totalPages =
+          limitForPlain != null ? Math.max(1, Math.ceil(toPrint.length / limitForPlain)) : 1;
+        if (limitForPlain != null && page > totalPages) {
           console.error(`No page ${page} (only ${totalPages} page(s), ${toPrint.length} note(s)).`);
           process.exit(1);
         }
-        const start = limit != null ? (page - 1) * limit : 0;
-        const slice = limit != null ? toPrint.slice(start, start + limit) : toPrint;
+        const start = limitForPlain != null ? (page - 1) * limitForPlain : 0;
+        const slice =
+          limitForPlain != null ? toPrint.slice(start, start + limitForPlain) : toPrint;
 
         if (outJson) {
           const rows = slice.map((n) => {
@@ -1055,9 +1312,9 @@ async function cmdNote(argv: string[]): Promise<void> {
             return row;
           });
           const payload: Record<string, unknown> = { notes: rows };
-          if (limit != null) {
+          if (limitForPlain != null) {
             payload.page = page;
-            payload.pageSize = limit;
+            payload.pageSize = limitForPlain;
             payload.total = toPrint.length;
             payload.totalPages = totalPages;
           }
@@ -1066,7 +1323,7 @@ async function cmdNote(argv: string[]): Promise<void> {
           for (const n of slice) {
             console.log(formatLine(n));
           }
-          if (limit != null) {
+          if (limitForPlain != null) {
             const from = toPrint.length === 0 ? 0 : start + 1;
             const to = start + slice.length;
             console.error(
@@ -1474,6 +1731,11 @@ async function main(): Promise<void> {
 
   if (cmd === 'workspace') {
     await cmdWorkspace(rest);
+    return;
+  }
+
+  if (cmd === 'sync') {
+    await cmdSync(rest);
     return;
   }
 

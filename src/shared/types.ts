@@ -70,7 +70,11 @@ export interface GraphData {
   links: Array<{ source: string; target: string }>;
 }
 
-/** Result of a local→Turso sync operation */
+/**
+ * Result of a sync operation.
+ * - Push (local→Turso): `synced` is rows processed; `skipped` is unused (0).
+ * - Pull (Turso→local): `synced` is rows updated/inserted; `skipped` is rows left unchanged (local newer or tie).
+ */
 export interface SyncResult {
   synced: number;
   skipped: number;
@@ -234,6 +238,8 @@ export const IPC = {
   CONFIG_SAVE: 'config:save',
   CONFIG_STORE_TYPE: 'config:storeType',
   CONFIG_SYNC_LOCAL: 'config:syncLocal',
+  /** Merge remote libSQL rows into local bootstrap mnemo.db + vault (additive; same semantics as `mnemo sync pull`). */
+  CONFIG_SYNC_PULL_LOCAL: 'config:syncPullLocal',
   // UI preferences (disk + MCP)
   UI_PREFERENCES_READ: 'uiPreferences:read',
   UI_PREFERENCES_SAVE: 'uiPreferences:save',

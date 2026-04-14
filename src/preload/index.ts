@@ -44,6 +44,8 @@ export interface MnemoAPI {
     save(cfg: AppConfig): Promise<boolean>;
     storeType(): Promise<'turso' | 'local'>;
     syncLocalNotes(): Promise<SyncResult>;
+    /** Turso → local bootstrap DB + vault; additive merge (last-write-wins per note id). */
+    syncPullLocalNotes(): Promise<SyncResult>;
   };
   /**
    * UI preferences (theme, layout, toggles, category colors, Markdown CSS overrides, IDE tab order).
@@ -124,6 +126,7 @@ const api: MnemoAPI = {
     save: (cfg: AppConfig) => ipcRenderer.invoke(IPC.CONFIG_SAVE, cfg),
     storeType: () => ipcRenderer.invoke(IPC.CONFIG_STORE_TYPE),
     syncLocalNotes: (): Promise<SyncResult> => ipcRenderer.invoke(IPC.CONFIG_SYNC_LOCAL),
+    syncPullLocalNotes: (): Promise<SyncResult> => ipcRenderer.invoke(IPC.CONFIG_SYNC_PULL_LOCAL),
   },
   preferences: {
     read: () => ipcRenderer.invoke(IPC.UI_PREFERENCES_READ),

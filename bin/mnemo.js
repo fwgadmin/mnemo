@@ -80,7 +80,8 @@ function shouldRunVaultCli(argv) {
     cmd === 'category' ||
     cmd === 'compose' ||
     cmd === 'write' ||
-    cmd === 'edit'
+    cmd === 'edit' ||
+    cmd === 'sync'
   ) {
     return true;
   }
@@ -109,6 +110,7 @@ GET STARTED
   mnemo help topics      List help sections (vault, mcp, config, …)
   mnemo help vault       Paths, flags, and every vault command
   mnemo help workspace   Local vault workspaces (CLI)
+  mnemo help sync        mnemo sync push / pull (additive libSQL sync)
 
 OTHER
   mnemo gui              Graphical app (see mnemo help desktop after build)

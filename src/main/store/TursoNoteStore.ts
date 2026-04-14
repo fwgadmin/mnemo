@@ -471,6 +471,49 @@ export class TursoNoteStore implements INoteStore {
   close(): void { /* no-op */ }
 
   /**
+   * Full export of notes + links for additive merge into another store (e.g. local SQLite snapshot).
+   */
+  async exportAllNotesAndLinks(): Promise<{
+    notes: Array<{
+      id: string;
+      title: string;
+      body: string;
+      tags: string;
+      tenant_id: string;
+      created_at: string;
+      updated_at: string;
+      ref: number | null;
+      hide_header: number;
+    }>;
+    links: Array<{ source_id: string; target_id: string }>;
+  }> {
+    const notesR = await this.client.execute({
+      sql: 'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',
+      args: [],
+    });
+    const linksR = await this.client.execute({
+      sql: 'SELECT source_id, target_id FROM note_links',
+      args: [],
+    });
+    const notes = notesR.rows.map(row => ({
+      id: row['id'] as string,
+      title: row['title'] as string,
+      body: row['body'] as string,
+      tags: row['tags'] as string,
+      tenant_id: row['tenant_id'] as string,
+      created_at: row['created_at'] as string,
+      updated_at: row['updated_at'] as string,
+      ref: (row['ref'] as number | null | undefined) ?? null,
+      hide_header: Number(row['hide_header'] ?? 0) ? 1 : 0,
+    }));
+    const links = linksR.rows.map(row => ({
+      source_id: row['source_id'] as string,
+      target_id: row['target_id'] as string,
+    }));
+    return { notes, links };
+  }
+
+  /**
    * Bulk-upsert notes from another store (e.g. local SQLite) into Turso.
    * Uses "last-write-wins by updated_at" — existing Turso notes are only
    * overwritten if the incoming version is newer.

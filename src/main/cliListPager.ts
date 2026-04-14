@@ -4,7 +4,7 @@
 import * as readline from 'readline';
 
 /** Default rows per page when `mnemo list` runs in the interactive TTY pager. */
-export const DEFAULT_LIST_PAGE_SIZE = 50;
+export const DEFAULT_LIST_PAGE_SIZE = 20;
 
 export type ListPagerMeta = {
   /** Total notes after filters (sorted). */
@@ -131,7 +131,6 @@ export async function runInteractiveListPager(
 
   const render = (): void => {
     const lines = pages[pageIdx] ?? [];
-    const refs = refsPerPage[pageIdx] ?? [];
     const n = lines.length;
     if (n > 0) {
       selectedIdx = Math.min(Math.max(0, selectedIdx), n - 1);
@@ -143,19 +142,18 @@ export async function runInteractiveListPager(
     const listHeight = Math.max(1, termRows - FOOTER_LINE_COUNT);
     const scrollOffset = computeScrollOffset(selectedIdx, n, listHeight);
 
+    /** Only draw visible note lines — do not pad to the full terminal height (padding looked like “empty rows”). */
+    const rowsToDraw = Math.min(listHeight, Math.max(0, n - scrollOffset));
+
     console.clear();
-    for (let row = 0; row < listHeight; row++) {
+    for (let row = 0; row < rowsToDraw; row++) {
       const i = scrollOffset + row;
-      if (i < n) {
-        const line = lines[i]!;
-        const isSel = i === selectedIdx;
-        if (isSel) {
-          console.log('\x1b[7m' + line + '\x1b[0m');
-        } else {
-          console.log(line);
-        }
+      const line = lines[i]!;
+      const isSel = i === selectedIdx;
+      if (isSel) {
+        console.log('\x1b[7m' + line + '\x1b[0m');
       } else {
-        console.log('');
+        console.log(line);
       }
     }
 

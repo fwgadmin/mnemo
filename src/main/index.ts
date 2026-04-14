@@ -17,14 +17,20 @@ try {
 } catch {
   // .env is optional — ignore if absent
 }
-import { LocalNoteStore, migrateNoteDatabaseHideHeader, migrateNoteDatabaseRef } from './store/NoteStore';
+import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
+import { pullTursoIntoLocalStore, readLocalNotesAndLinksForSync } from './storePullRemote';
 import type { INoteStore, AppConfig, MnemoUiPreferences, SyncResult, WorkspaceStorage } from '../shared/types';
 import { IPC } from '../shared/types';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from './uiPreferences';
-import { defaultLocalDataDir, getRemoteLibsqlCredentials, legacyElectronUserDataDir } from './userConfig';
+import {
+  defaultLocalDataDir,
+  getRemoteLibsqlCredentials,
+  legacyElectronUserDataDir,
+  readRemoteConfigFromBootstrapDir,
+} from './userConfig';
 import { syncWorkspaceFolder } from './workspaceImport';
 import { relocateWikilinksAfterTitleChange } from './noteOutgoingLinks';
 import {
@@ -140,27 +146,10 @@ if (!app.isReady()) {
   } else {
     try {
       const legacyDir = legacyElectronUserDataDir();
-      const legacyCfgPath = path.join(legacyDir, 'config.json');
       const currentDir = app.getPath('userData');
-      const currentCfgPath = path.join(currentDir, 'config.json');
-      let legacyCfg: AppConfig | null = null;
-      let currentCfg: AppConfig | null = null;
-      try {
-        if (fs.existsSync(legacyCfgPath)) {
-          legacyCfg = JSON.parse(fs.readFileSync(legacyCfgPath, 'utf-8')) as AppConfig;
-        }
-      } catch {
-        legacyCfg = null;
-      }
-      try {
-        if (fs.existsSync(currentCfgPath)) {
-          currentCfg = JSON.parse(fs.readFileSync(currentCfgPath, 'utf-8')) as AppConfig;
-        }
-      } catch {
-        currentCfg = null;
-      }
-      const legacyRemote = legacyCfg != null && configHasRemoteCredentials(legacyCfg);
-      const currentRemote = currentCfg != null && configHasRemoteCredentials(currentCfg);
+      // Flat + workspaces/default/config.json — same as CLI resolveWorkspaceBootstrapRoot / applyBootstrapRootOnly.
+      const legacyRemote = readRemoteConfigFromBootstrapDir(legacyDir) != null;
+      const currentRemote = readRemoteConfigFromBootstrapDir(currentDir) != null;
       if (legacyRemote && !currentRemote && legacyDir !== currentDir) {
         app.setPath('userData', legacyDir);
       }
@@ -547,35 +536,19 @@ function registerIpcHandlers(): void {
       throw new Error('Not connected to a remote libSQL database — configure one in Settings first.');
     }
     const dbPath = path.join(app.getPath('userData'), 'mnemo.db');
-    if (!fs.existsSync(dbPath)) return { synced: 0, skipped: 0 };
+    const { notes, links } = readLocalNotesAndLinksForSync(dbPath);
+    if (notes.length === 0) return { synced: 0, skipped: 0 };
+    return gs.importNotes(notes, links);
+  });
 
-    const Database = require('better-sqlite3');
-    const localDb = new Database(dbPath);
-    try {
-      migrateNoteDatabaseRef(localDb);
-      migrateNoteDatabaseHideHeader(localDb);
-      const notes = localDb
-        .prepare(
-          'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',
-        )
-        .all() as Array<{
-          id: string;
-          title: string;
-          body: string;
-          tags: string;
-          tenant_id: string;
-          created_at: string;
-          updated_at: string;
-          ref: number | null;
-          hide_header: number;
-        }>;
-      const links = localDb
-        .prepare('SELECT source_id, target_id FROM note_links')
-        .all() as Array<{ source_id: string; target_id: string }>;
-      return await gs.importNotes(notes, links);
-    } finally {
-      localDb.close();
+  ipcMain.handle(IPC.CONFIG_SYNC_PULL_LOCAL, async (): Promise<SyncResult> => {
+    const gs = getGlobalStore();
+    if (!(gs instanceof TursoNoteStore)) {
+      throw new Error('Not connected to a remote libSQL database — configure one in Settings first.');
     }
+    const dbPath = path.join(app.getPath('userData'), 'mnemo.db');
+    const vaultPath = path.join(app.getPath('userData'), 'vault');
+    return await pullTursoIntoLocalStore(gs, dbPath, vaultPath);
   });
 
   ipcMain.handle(IPC.UI_PREFERENCES_READ, async () => {
