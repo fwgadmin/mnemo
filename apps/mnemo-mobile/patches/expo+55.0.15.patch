@@ -1,0 +1,74 @@
+diff --git a/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.mm b/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.mm
+index 33e26db..7770217 100644
+--- a/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.mm
++++ b/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.mm
+@@ -2,6 +2,7 @@
+ 
+ #import <Expo/EXReactRootViewFactory.h>
+ #import <Expo/RCTAppDelegateUmbrella.h>
++#import <React/RCTBundleManager.h>
+ #import <React/RCTDevMenu.h>
+ #import <ExpoModulesCore/EXReactDelegateProtocol.h>
+ 
+@@ -27,12 +28,19 @@
+ - (UIView *)viewWithModuleName:(NSString *)moduleName
+              initialProperties:(nullable NSDictionary *)initialProperties
+                  launchOptions:(nullable NSDictionary *)launchOptions
++           bundleConfiguration:(RCTBundleConfiguration *)bundleConfiguration
+           devMenuConfiguration:(RCTDevMenuConfiguration *)devMenuConfiguration
+ {
+   if (self.reactDelegate != nil) {
+     return [((id<EXReactDelegateProtocol>)self.reactDelegate) createReactRootViewWithModuleName:moduleName initialProperties:initialProperties launchOptions:launchOptions];
+   }
+-  return [super viewWithModuleName:moduleName initialProperties:initialProperties launchOptions:launchOptions devMenuConfiguration:devMenuConfiguration];
++  RCTBundleConfiguration *bundleConfig = bundleConfiguration ?: [RCTBundleConfiguration defaultConfiguration];
++  RCTDevMenuConfiguration *devMenuConfig = devMenuConfiguration ?: [RCTDevMenuConfiguration defaultConfiguration];
++  return [super viewWithModuleName:moduleName
++                 initialProperties:initialProperties
++                     launchOptions:launchOptions
++               bundleConfiguration:bundleConfig
++              devMenuConfiguration:devMenuConfig];
+ }
+ 
+ - (UIView *)superViewWithModuleName:(NSString *)moduleName
+@@ -40,11 +48,13 @@
+                       launchOptions:(nullable NSDictionary *)launchOptions
+                devMenuConfiguration:(nullable RCTDevMenuConfiguration *)devMenuConfiguration
+ {
+-  if (devMenuConfiguration == nil) {
+-    devMenuConfiguration = [RCTDevMenuConfiguration defaultConfiguration];
+-  }
++  RCTDevMenuConfiguration *devMenuConfig = devMenuConfiguration ?: [RCTDevMenuConfiguration defaultConfiguration];
+ 
+-  return [super viewWithModuleName:moduleName initialProperties:initialProperties launchOptions:launchOptions devMenuConfiguration:devMenuConfiguration];
++  return [super viewWithModuleName:moduleName
++                 initialProperties:initialProperties
++                     launchOptions:launchOptions
++               bundleConfiguration:[RCTBundleConfiguration defaultConfiguration]
++              devMenuConfiguration:devMenuConfig];
+ }
+ #else
+ - (UIView *)viewWithModuleName:(NSString *)moduleName
+diff --git a/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.swift b/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.swift
+index 925e0f9..e2676aa 100644
+--- a/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.swift
++++ b/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.swift
+@@ -118,7 +118,7 @@ public class ExpoReactNativeFactory: ExpoReactNativeFactoryObjC, ExpoReactNative
+         withModuleName: moduleName ?? defaultModuleName,
+         initialProperties: initialProps,
+         launchOptions: launchOptions ?? [:],
+-        devMenuConfiguration: self.devMenuConfiguration
++        devMenuConfiguration: self.devMenuConfiguration ?? RCTDevMenuConfiguration.defaultConfiguration()
+       )
+ #else
+       rootView = factory.superView(
+@@ -133,7 +133,8 @@ public class ExpoReactNativeFactory: ExpoReactNativeFactoryObjC, ExpoReactNative
+         withModuleName: moduleName ?? defaultModuleName,
+         initialProperties: initialProps,
+         launchOptions: launchOptions,
+-        devMenuConfiguration: self.devMenuConfiguration
++        bundleConfiguration: self.bundleConfiguration,
++        devMenuConfiguration: self.devMenuConfiguration ?? RCTDevMenuConfiguration.defaultConfiguration()
+       )
+ #else
+       rootView = rootViewFactory.view(
