@@ -42,10 +42,10 @@
     "typescript": "~6.0.2"
   },
   "overrides": {
+    "@react-native/codegen": "0.85.1",
     "@xmldom/xmldom": "^0.8.12",
     "tar": "^7.5.13",
     "node-forge": "^1.4.0",
-    "minimatch": "^5.1.9",
     "yaml": "^2.8.3",
     "markdown-it": "^14.1.0",
     "ajv": "^8.18.0",
