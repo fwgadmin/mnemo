@@ -115,5 +115,11 @@
   },
   "bin": {
     "mnemo": "bin/mnemo.js"
+  },
+  "overrides": {
+    "tar": "^7.5.13",
+    "tmp": "^0.2.5",
+    "@tootallnate/once": "^3.0.1",
+    "webpack-dev-server": "^5.2.3"
   }
 }

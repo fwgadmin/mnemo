@@ -16,6 +16,7 @@
 | `TURSO_AUTH_TOKEN` or `LIBSQL_AUTH_TOKEN` | Yes      | Database auth token            |
 | `MCP_API_KEY`                             | Yes      | Bearer token clients must send |
 | `PORT`                                    | No       | Listen port (default **3001**) |
+| `MCP_HTTP_HOST`                           | No       | Bind address (default **127.0.0.1**). Set `0.0.0.0` only behind a controlled reverse proxy or firewall. |
 
 
 ## Run
