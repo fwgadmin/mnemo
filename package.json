@@ -20,6 +20,8 @@
     "README.md"
   ],
   "scripts": {
+    "postinstall": "node scripts/rebuild-electron-native.js",
+    "rebuild:native": "node scripts/rebuild-electron-native.js",
     "start": "node scripts/start-electron-forge.js",
     "package": "electron-forge package",
     "make": "electron-forge make",
@@ -42,6 +44,9 @@
     "url": "https://www.ferrowoodgroup.com"
   },
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "config": {
     "forge": "./forge.config.js"
   },

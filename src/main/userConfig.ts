@@ -57,26 +57,9 @@ export function resolveWorkspaceBootstrapRoot(): string {
 
   const legacyDir = legacyElectronUserDataDir();
   const currentDir = electronDefaultUserDataDirMnemoNote();
-  const legacyCfgPath = path.join(legacyDir, 'config.json');
-  const currentCfgPath = path.join(currentDir, 'config.json');
-  let legacyCfg: AppConfig | null = null;
-  let currentCfg: AppConfig | null = null;
-  try {
-    if (fs.existsSync(legacyCfgPath)) {
-      legacyCfg = JSON.parse(fs.readFileSync(legacyCfgPath, 'utf-8')) as AppConfig;
-    }
-  } catch {
-    legacyCfg = null;
-  }
-  try {
-    if (fs.existsSync(currentCfgPath)) {
-      currentCfg = JSON.parse(fs.readFileSync(currentCfgPath, 'utf-8')) as AppConfig;
-    }
-  } catch {
-    currentCfg = null;
-  }
-  const legacyRemote = legacyCfg != null && configHasRemoteCredentials(legacyCfg);
-  const currentRemote = currentCfg != null && configHasRemoteCredentials(currentCfg);
+  // Same flat + nested rules as applyBootstrapRootOnly / readAppConfigFile (not flat-only).
+  const legacyRemote = readRemoteConfigFromBootstrapDir(legacyDir) != null;
+  const currentRemote = readRemoteConfigFromBootstrapDir(currentDir) != null;
   if (legacyRemote && !currentRemote && legacyDir !== currentDir) {
     return legacyDir;
   }
@@ -87,31 +70,86 @@ function hasRemoteCredentialsInFile(cfg: AppConfig): boolean {
   return configHasRemoteCredentials(cfg);
 }
 
-/**
- * Read config.json from the same places the GUI might use (MNEMO_HOME, XDG data, legacy ~/.config).
- */
-export function readAppConfigFile(): AppConfig {
-  const paths: string[] = [];
-  const home = process.env['MNEMO_HOME']?.trim();
-  if (home) paths.push(path.join(path.resolve(home), 'config.json'));
-  paths.push(path.join(defaultLocalDataDir(), 'config.json'));
-  paths.push(path.join(legacyElectronUserDataDir(), 'config.json'));
+/** Same as `DEFAULT_WORKSPACE_ID` in workspaceProfiles (avoid circular import). */
+const WORKSPACE_DEFAULT_ID = 'default';
 
-  for (const p of paths) {
-    try {
-      const raw = fs.readFileSync(p, 'utf-8');
-      const cfg = JSON.parse(raw) as AppConfig;
-      if (hasRemoteCredentialsInFile(cfg)) return cfg;
-    } catch {
-      /* try next */
-    }
+/**
+ * Electron may store Turso creds only under `workspaces/<id>/config.json` when the flat
+ * `config.json` has no remote section — see `applyBootstrapRootOnly` in workspaceProfiles.
+ */
+function configPathsForBootstrapDir(dir: string): [string, string] {
+  const flat = path.join(dir, 'config.json');
+  const nested = path.join(dir, 'workspaces', WORKSPACE_DEFAULT_ID, 'config.json');
+  return [flat, nested];
+}
+
+/** Exported for Electron startup redirect (must match CLI bootstrap rules). */
+export function readRemoteConfigFromBootstrapDir(dir: string): AppConfig | null {
+  const [flat, nested] = configPathsForBootstrapDir(dir);
+  try {
+    const cfg = JSON.parse(fs.readFileSync(flat, 'utf-8')) as AppConfig;
+    if (hasRemoteCredentialsInFile(cfg)) return cfg;
+  } catch {
+    /* try nested */
   }
-  for (const p of paths) {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(nested, 'utf-8')) as AppConfig;
+    if (hasRemoteCredentialsInFile(cfg)) return cfg;
+  } catch {
+    /* none */
+  }
+  return null;
+}
+
+function readAnyConfigFromBootstrapDir(dir: string): AppConfig | null {
+  for (const p of configPathsForBootstrapDir(dir)) {
     try {
       return JSON.parse(fs.readFileSync(p, 'utf-8')) as AppConfig;
     } catch {
       /* try next */
     }
+  }
+  return null;
+}
+
+function bootstrapDirsForConfigSearch(): string[] {
+  const dirs: string[] = [];
+  const home = process.env['MNEMO_HOME']?.trim();
+  if (home) dirs.push(path.resolve(home));
+  // Packaged Electron `userData` for npm name `mnemo-note` (was missing — CLI never saw GUI Turso creds).
+  dirs.push(electronDefaultUserDataDirMnemoNote());
+  dirs.push(defaultLocalDataDir());
+  dirs.push(legacyElectronUserDataDir());
+  return dirs;
+}
+
+/** Prefer the same bootstrap root as workspace-profiles.json, then other candidates. */
+function configSearchDirsOrdered(): string[] {
+  const bootstrap = resolveWorkspaceBootstrapRoot();
+  const rest = bootstrapDirsForConfigSearch();
+  const ordered: string[] = [bootstrap];
+  for (const d of rest) {
+    if (path.resolve(d) !== path.resolve(bootstrap)) {
+      ordered.push(d);
+    }
+  }
+  return ordered;
+}
+
+/**
+ * Read config.json from the same places the GUI might use (MNEMO_HOME, Electron userData,
+ * XDG data, legacy ~/.config). Checks flat `config.json` then `workspaces/default/config.json`
+ * per directory when looking for Turso credentials.
+ */
+export function readAppConfigFile(): AppConfig {
+  const dirs = configSearchDirsOrdered();
+  for (const dir of dirs) {
+    const cfg = readRemoteConfigFromBootstrapDir(dir);
+    if (cfg) return cfg;
+  }
+  for (const dir of dirs) {
+    const cfg = readAnyConfigFromBootstrapDir(dir);
+    if (cfg) return cfg;
   }
   return {};
 }

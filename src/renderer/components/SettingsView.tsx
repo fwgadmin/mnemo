@@ -54,8 +54,10 @@ export default function SettingsView({
   const [showToken, setShowToken]   = useState(false);
   const [storeType, setStoreType]   = useState<'turso' | 'local' | null>(null);
   const [saving, setSaving]         = useState(false);
-  const [syncing, setSyncing]       = useState(false);
-  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncingPush, setSyncingPush] = useState(false);
+  const [syncingPull, setSyncingPull] = useState(false);
+  const [syncPushResult, setSyncPushResult] = useState<SyncResult | null>(null);
+  const [syncPullResult, setSyncPullResult] = useState<SyncResult | null>(null);
   const [status, setStatus]         = useState<{ ok: boolean; msg: string } | null>(null);
   const [workspaceFolder, setWorkspaceFolder] = useState('');
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
@@ -787,38 +789,87 @@ export default function SettingsView({
         </div>
       </section>
 
-      {/* Local → Turso sync — only visible when connected */}
+      {/* Local ↔ Turso sync — only visible when connected */}
       {storeType === 'turso' && (
-        <section className="mb-8 max-w-lg">
-          <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Import Local Notes</h2>
-          <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
-            Copy notes from your offline local database into the remote database. Existing remote notes are kept;
-            local notes are only written if they are newer. Safe to run more than once.
-          </p>
-          {syncResult && (
-            <p className={`text-xs mb-3 ${successMsgClass}`}>
-              Done — {syncResult.synced} note{syncResult.synced !== 1 ? 's' : ''} synced to remote database.
+        <section className="mb-8 max-w-lg space-y-8">
+          <div>
+            <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Sync with remote</h2>
+            <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
+              Both directions are <strong className="text-mnemo-muted">additive</strong>: nothing is deleted on either side.
+              Notes merge by <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">updated_at</code> (newer
+              wins). Links only use <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">INSERT OR IGNORE</code>.
+              CLI: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo sync push</code> /{' '}
+              <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo sync pull</code> (see{' '}
+              <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo help sync</code>).
             </p>
-          )}
-          <button
-            onClick={async () => {
-              setSyncing(true);
-              setSyncResult(null);
-              try {
-                const result = await window.mnemo.config.syncLocalNotes();
-                setSyncResult(result);
-                onSaved?.();  // reload sidebar
-              } catch (e) {
-                setStatus({ ok: false, msg: `Sync failed: ${e instanceof Error ? e.message : String(e)}` });
-              } finally {
-                setSyncing(false);
-              }
-            }}
-            disabled={syncing || saving}
-            className="px-4 py-1.5 bg-mnemo-panel-elevated hover:bg-mnemo-hover border border-mnemo-border-strong rounded text-sm text-mnemo-text transition-colors disabled:opacity-50"
-          >
-            {syncing ? 'Syncing…' : 'Sync local notes to remote database'}
-          </button>
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold text-mnemo-muted uppercase tracking-wide mb-3">Upload (local → remote)</h3>
+            <p className="text-xs text-mnemo-dim mb-4 leading-relaxed">
+              Copy rows from this device&apos;s local <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo.db</code> into
+              the remote database. Remote rows stay unless your local copy is newer.
+            </p>
+            {syncPushResult && (
+              <p className={`text-xs mb-3 ${successMsgClass}`}>
+                Done — {syncPushResult.synced} note row{syncPushResult.synced !== 1 ? 's' : ''} sent to remote (additive merge).
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                setSyncingPush(true);
+                setSyncPushResult(null);
+                try {
+                  const result = await window.mnemo.config.syncLocalNotes();
+                  setSyncPushResult(result);
+                  onSaved?.();
+                } catch (e) {
+                  setStatus({ ok: false, msg: `Upload failed: ${e instanceof Error ? e.message : String(e)}` });
+                } finally {
+                  setSyncingPush(false);
+                }
+              }}
+              disabled={syncingPush || syncingPull || saving}
+              className="px-4 py-1.5 bg-mnemo-panel-elevated hover:bg-mnemo-hover border border-mnemo-border-strong rounded text-sm text-mnemo-text transition-colors disabled:opacity-50"
+            >
+              {syncingPush ? 'Uploading…' : 'Upload local database to remote'}
+            </button>
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold text-mnemo-muted uppercase tracking-wide mb-3">Download (remote → local)</h3>
+            <p className="text-xs text-mnemo-dim mb-4 leading-relaxed">
+              Merge the remote database into your local <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo.db</code> and
+              mirror <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">vault/*.md</code>. Local-only notes remain; each row updates
+              only when the remote copy is newer than your local copy.
+            </p>
+            {syncPullResult && (
+              <p className={`text-xs mb-3 ${successMsgClass}`}>
+                Done — merged {syncPullResult.synced} updates from remote ({syncPullResult.skipped} skipped: local newer or unchanged).
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                setSyncingPull(true);
+                setSyncPullResult(null);
+                try {
+                  const result = await window.mnemo.config.syncPullLocalNotes();
+                  setSyncPullResult(result);
+                  onSaved?.();
+                } catch (e) {
+                  setStatus({ ok: false, msg: `Download failed: ${e instanceof Error ? e.message : String(e)}` });
+                } finally {
+                  setSyncingPull(false);
+                }
+              }}
+              disabled={syncingPush || syncingPull || saving}
+              className="px-4 py-1.5 bg-mnemo-panel-elevated hover:bg-mnemo-hover border border-mnemo-border-strong rounded text-sm text-mnemo-text transition-colors disabled:opacity-50"
+            >
+              {syncingPull ? 'Downloading…' : 'Download remote snapshot to local'}
+            </button>
+          </div>
         </section>
       )}
 

@@ -15,7 +15,7 @@ export const USER_GUIDE_PATHS_ROWS: string[][] = [
 
 /** MCP stdio without --db: same bootstrap paths as `mnemo note` (MNEMO_HOME / default userData), not cwd ./mnemo.db. */
 export const MCP_STDIO_DEFAULT_NOTE =
-  'MCP stdio without --db/--turso: uses the same bootstrap SQLite as mnemo note (see DATA LOCATIONS). Pass --workspace <id> to match a GUI vault when using the shared database.';
+  'MCP stdio without --db/--turso: uses the same bootstrap SQLite as mnemo note (see DATA LOCATIONS). Pass --workspace <id|index> to match a GUI vault when using the shared database.';
 
 export const MCP_RESOURCES_HEADERS = ['URI', 'Description'] as const;
 export const MCP_RESOURCES_ROWS: string[][] = [
@@ -101,6 +101,7 @@ export const CLI_HELP_TOPICS = [
   'topics',
   'vault',
   'workspace',
+  'sync',
   'note',
   'mcp',
   'mcp-http',
@@ -132,18 +133,20 @@ GET STARTED
 
 OTHER COMMANDS
   mnemo workspace …      List / create / switch / archive / delete vault profiles (see mnemo help workspace)
+  mnemo sync push|pull   Additive merge with remote libSQL (local↔bootstrap DB; see mnemo help sync)
   mnemo mcp              MCP server on stdio (editors / agents; optional --workspace)
   mnemo mcp-http         Remote HTTP MCP (Turso / libSQL)
   mnemo completion …     Shell tab-completion script
   mnemo note …           Advanced vault subcommands (legacy form; see mnemo help note)
 
-  Global flags on note commands (after mnemo / before subcommands): --workspace <id>, --db, --vault,
+  Global flags on note commands (after mnemo / before subcommands): --workspace <id|index>, --db, --vault,
   --turso-url, --turso-token (see mnemo help vault).
 
 HELP SECTIONS (read these next)
   mnemo help topics      List section names
   mnemo help vault       Paths, --db/--vault, every vault command and flag
   mnemo help workspace   Vault profiles, tenant id, workspace-profiles.json, CLI commands
+  mnemo help sync        mnemo sync push / pull, additive rules, GUI buttons
   mnemo help mcp         MCP stdio: options, resources, tools
   mnemo help config      ~/.config/mnemo/cli.json and JSON output
   mnemo help desktop     Graphical app and keyboard shortcuts
@@ -163,11 +166,12 @@ ${paths}
 
   Next to mnemo.db (same bootstrap folder):
     workspace-profiles.json     Active workspace id, vault names/ids, optional per-vault storage overrides
-    config.json                 Global libSQL URL/token (Settings → Database tab)
+    config.json                 Global libSQL URL/token (Settings → Database tab); if missing remote creds here, the app may use workspaces/default/config.json
     ui-preferences.json         Default workspace UI state; ui-preferences.<workspaceId>.json for other vaults
   Workspaces use tenant_id = workspace id in the shared DB unless a profile uses dedicated SQLite/libSQL (tenant "default" in that file).
 
   Legacy ~/.config/mnemo may still apply when it holds Turso credentials and mnemo-note does not (same as the desktop app).
+  CLI loads remote DB credentials from the same bootstrap folder first (then other paths) so Turso URL/token stay aligned with workspace-profiles.json and mnemo.db.
 `;
 }
 
@@ -179,32 +183,58 @@ function sectionRemoteDb(): string {
 `;
 }
 
+function sectionSync(): string {
+  return `SYNC (local ↔ remote libSQL)
+  Non-destructive: no deletes on either side. Notes merge by id using newer \`updated_at\`; links use INSERT OR IGNORE only.
+
+  CLI (same remote credential rules as \`mnemo help vault\` — config, env, or flags)
+  mnemo sync push [--db <path>] [--workspace <id|index>] [--turso-url …] [--turso-token …]
+    Upload rows from the local SQLite file into the remote database (same as Settings → Database → “Upload local database to remote”).
+    Default file is the bootstrap \`mnemo.db\`; use --db to read a different SQLite file.
+  mnemo sync pull [--db <path>] [--vault <path>] [--workspace <id|index>] [--turso-url …] [--turso-token …]
+    Download remote rows into the local \`mnemo.db\` and refresh \`vault/<id>.md\` for touched notes (same as “Download”).
+    Default target is bootstrap paths; use --db / --vault for another pair.
+
+  Desktop (Settings → Database, when connected to libSQL)
+    Upload local database to remote — push from this device’s \`mnemo.db\`.
+    Download remote snapshot to local — pull into \`mnemo.db\` + vault mirror.
+
+  JSON output includes \`direction\`, \`synced\`, \`skipped\` (pull only uses \`skipped\` for rows left unchanged).
+`;
+}
+
 function sectionWorkspace(): string {
   return `WORKSPACE (vault profiles)
   Same bootstrap root as the GUI: MNEMO_HOME, or the default Electron userData for mnemo-note,
   with the same legacy ~/.config/mnemo redirect when that folder holds Turso credentials.
 
   Active workspace (in workspace-profiles.json) sets which tenant_id applies for inherit-mode vaults: tenant_id equals
-  the profile id. Per-vault dedicated SQLite or libSQL URLs are stored in that JSON (edited in the GUI under
-  Settings → Workspace tab → Storage…); there is no separate CLI subcommand for storage overrides.
+  the profile id.   With Turso, the CLI merges this file with the remote app_kv copy (same as the desktop app) so the
+  active workspace and tenant_id for list/search match your cloud data. Stale on-disk entries may still
+  say dedicated SQLite while the merged list uses inherit — \`mnemo workspace list\` uses the merge when Turso is configured.
+  Per-vault dedicated SQLite or libSQL URLs are stored in that JSON (edited
+  in the GUI under Settings → Workspace tab → Storage…); there is no separate CLI subcommand for storage overrides.
 
   mnemo workspace list
-    Print id, name, and which workspace is active.
+    Prints columns: index (1-based), id, name, and which workspace is active. The index is a shortcut for switch and
+    for --workspace on note/MCP/sync commands. When global Turso credentials are configured, lists the same merged
+    workspace list as the desktop app (not disk-only), so storage overrides match the cloud.
 
   mnemo workspace new <name>
     Create an empty workspace profile. Does not change the active workspace (use switch). The graphical app can
     create a vault and switch in one step from the Workspace tab.
 
-  mnemo workspace switch <id>
-    Set the active workspace. Commands below then use this id without repeating --workspace:
+  mnemo workspace switch <id|index>
+    Set the active workspace. <index> is the first column from \`mnemo workspace list\` (1-based). Commands below then
+    use this vault without repeating --workspace:
     • mnemo note … / mnemo list / mnemo find … when --db is omitted (bootstrap DB)
     • mnemo mcp when --db is omitted (stdio MCP uses the same profiles file)
 
-  mnemo workspace archive <id>
+  mnemo workspace archive <id|index>
     Non-default, non-active workspace only; removes the profile and purges that workspace’s notes (and deletes
     dedicated SQLite files if the profile used dedicated storage).
 
-  mnemo workspace delete <id>
+  mnemo workspace delete <id|index>
     Same constraints as archive; permanent removal.
 
   Optional: --json / --no-json (see mnemo help config).
@@ -214,11 +244,14 @@ function sectionWorkspace(): string {
 function sectionVaultCommands(): string {
   return `VAULT COMMANDS (store: same --db / --vault / Turso as mnemo mcp)
   Without --db: uses bootstrap mnemo.db (see DATA LOCATIONS).
-  --workspace <id>  Use this vault’s tenant for the command (must match an id in workspace-profiles.json). If omitted,
-                     uses the active workspace from that file (same as mnemo workspace switch).
+  --workspace <id|index>  Use this vault’s tenant for the command (id from workspace list, or 1-based index from the
+                           first column of \`mnemo workspace list\`). If omitted, uses the active workspace (same as
+                           \`mnemo workspace switch\`).
   With --db <path>  Opens that SQLite file only; tenant is always "default" inside that file (--workspace is ignored).
 
   Optional JSON: --json / --no-json, or MNEMO_OUTPUT / cli.json (see mnemo help config).
+
+  SYNC — \`mnemo sync push\` / \`mnemo sync pull\`, Settings → Database, and merge rules: \`mnemo help sync\`.
 
   Short forms (preferred)
     mnemo list …           Same as mnemo note list …
@@ -236,16 +269,16 @@ function sectionVaultCommands(): string {
 
   mnemo note list [--category <folder path>] [--exact|--shallow] [-v|--verbose] [--ids]
                   [--pager-size N] [--plain] [--from N] [--page N] [--limit N] [--json|--no-json]
-    In a normal terminal, list opens an interactive pager (50 notes per page by default): ↑↓ move, Enter opens the note in your editor, ←→ change page, q quit. The visible rows scroll so the highlighted line stays on screen when the terminal is shorter than a page; pagination hints stay at the bottom.
+    In a normal terminal, list opens an interactive pager (20 notes per page by default): ↑↓ move, Enter opens the note in your editor, ←→ change page, q quit. The visible rows scroll so the highlighted line stays on screen when the terminal is shorter than a page; pagination hints stay at the bottom.
     Sorted by modified time (newest first). [ref] is the id you pass to mnemo show / mnemo edit.
     --category, -c   Only notes in that folder. Paths nest with slashes (e.g. Work/Meetings). Same as the first tag in the app.
     --exact          With --category: this folder only, not subfolders.
     -v               Verbose: category, id, modified.
     --ids            Note id (uuid) on each line (for copy/paste).
-    --pager-size N   Rows per page in the interactive pager only (default 50). Does not apply with --json/--limit scripting.
-    --plain, --no-pager   Print all matching lines at once (for scripts or pipes); disables the interactive pager.
-    --from N         1-based position in the sorted list: open the pager at the page containing that note, or with --plain print from that note through the end.
-    --limit, --page-size   With --json or scripting: fixed page size and --page (default 1). Not needed for everyday use.
+    --pager-size N   Rows per page in the interactive pager only (default 20). Does not apply with --json/--limit scripting.
+    --plain, --no-pager   Disables the interactive pager. Plain text / JSON output defaults to 20 rows per page unless you set --limit (use a large --limit to dump everything).
+    --from N         1-based position in the sorted list: open the pager at the page containing that note, or with --plain start the slice at that note (still respects default --limit unless you pass --limit).
+    --limit, --page-size   Page size for plain/JSON output (default 20 when not interactive). Use with --page for pagination.
 
   mnemo note show <ref|uuid>
     Print one note. ref is the stable # from list.
@@ -309,9 +342,9 @@ function sectionMcpStdio(): string {
   const mcpTools = tableToPlainText(MCP_TOOLS_HEADERS, MCP_TOOLS_ROWS);
   const mcpPrompts = tableToPlainText(MCP_PROMPTS_HEADERS, MCP_PROMPTS_ROWS);
   return `MCP (stdio)
-  mnemo mcp [--db <path>] [--vault <path>] [--turso-url …] [--turso-token …] [--workspace <id>]
+  mnemo mcp [--db <path>] [--vault <path>] [--turso-url …] [--turso-token …] [--workspace <id|index>]
   Without --db/--turso: uses the same bootstrap DB and workspace-profiles.json as the GUI (set MNEMO_HOME to match).
-    --workspace <id>  Optional; same meaning as on mnemo note — pick tenant for shared DB. Omit to use active vault.
+    --workspace <id|index>  Optional; same meaning as on mnemo note — pick tenant for shared DB. Omit to use active vault.
   With --db: opens only that file (--workspace ignored; tenant "default").
   With global Turso credentials (config.json or env): same remote DB as Settings → Database; --workspace still applies.
 
@@ -378,7 +411,7 @@ function sectionDesktop(): string {
     General     Theme, layout, note #refs, category color tips
     Markdown    Editor font/CSS variables for preview
     Workspace   Folder sync (markdown import), vault list, storage overrides, create/archive/delete vaults
-    Database    libSQL URL/token, save/reconnect, import local → remote, hosted/self-hosted help
+    Database    libSQL URL/token, save/reconnect, upload + download (additive sync), hosted/self-hosted help
 
   In-app documentation: Help → Documentation (this file in the app).
 
@@ -408,6 +441,8 @@ export function formatCliHelpFull(): string {
     '',
     sectionWorkspace(),
     '',
+    sectionSync(),
+    '',
     sectionVaultCommands(),
     '',
     sectionNoteLegacy(),
@@ -432,6 +467,7 @@ export function formatCliHelpTopicsIndex(): string {
   topics       This list
   vault        Paths, --db/--vault/--workspace, remote env, all note commands
   workspace    workspace-profiles.json, mnemo workspace …, tenants
+  sync         mnemo sync push / pull, Settings buttons, merge rules
   note         Legacy mnemo note … only
   mcp          MCP stdio: --workspace, resources, tools, prompts
   mcp-http     MCP over HTTP/SSE
@@ -454,6 +490,8 @@ export function formatCliHelpTopic(topic: string): string | null {
       return [sectionDataLocations(), sectionRemoteDb(), sectionVaultCommands()].join('\n');
     case 'workspace':
       return [sectionDataLocations(), sectionWorkspace()].join('\n');
+    case 'sync':
+      return [sectionDataLocations(), sectionRemoteDb(), sectionSync()].join('\n');
     case 'note':
       return sectionNoteLegacy();
     case 'mcp':

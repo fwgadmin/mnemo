@@ -14,8 +14,8 @@ Mnemo keeps a **stable ref** per note, **full-text search**, **wikilinks**, and 
 
 ## Features
 
-- **Desktop app (Electron)** — Markdown editor, graph, **IDE layout with editor tabs** as the default (classic sidebar and top layouts in Settings), remote DB in Settings, background vault sync + manual reload (Turso), **F11** fullscreen on Linux/Windows
-- **CLI** — `mnemo note …` for list/search/show/new/import, compose/edit in `$EDITOR`, categories, link graph, autolink; interactive list pager scrolls with selection
+- **Desktop app (Electron)** — Markdown editor, graph, **IDE layout with editor tabs** as the default (classic sidebar and top layouts in Settings), remote DB in Settings with **upload + download** (additive sync), background vault sync + manual reload (Turso), **F11** fullscreen on Linux/Windows
+- **CLI** — `mnemo note …` for list/search/show/new/import, compose/edit in `$EDITOR`, categories, link graph, autolink; **`mnemo sync push` / `mnemo sync pull`** for additive merges with libSQL (see `mnemo help sync`); interactive list pager scrolls with selection
 - **MCP** — stdio server (`mnemo mcp`) for Cursor / Claude Desktop (list/categories/ref-based tools, autolink, etc.); HTTP/SSE (`mnemo mcp-http`) for remote libSQL + bearer auth
 - **Optional cloud** — same credentials in GUI Settings or env vars for CLI/MCP
 
@@ -31,6 +31,10 @@ mnemo note show 1
 
 `ref` in `show` is the **#** column from `note list` (not arbitrary IDs). See `**mnemo --help`** for every subcommand.
 
+## Prerequisites
+
+- **Node.js** 22 or newer (required for this repo’s dependency tree, including Mermaid’s parser stack). GitHub Actions already use Node 22. With [nvm](https://github.com/nvm-sh/nvm), run `nvm use` in the repo root (see `.nvmrc`).
+
 ## Quick start (desktop)
 
 ```bash
@@ -39,6 +43,8 @@ cd mnemo
 npm install
 npm start
 ```
+
+`npm install` runs a native rebuild so `better-sqlite3` matches **Electron** (the `mnemo` CLI uses Electron’s Node). If you skipped it, run `npm run rebuild:native`. To opt out of the postinstall step (e.g. CI), set `MNEMO_SKIP_NATIVE_REBUILD=1`.
 
 Installers: [GitHub Releases](https://github.com/fwgadmin/mnemo/releases) (tagged `**v***` builds).
 
