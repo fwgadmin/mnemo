@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.6 — 2026-04-15
+
+- **CLI / workspaces:** Friendly **1-based index** for `mnemo workspace list`, `switch`, `archive`, `delete`, and `--workspace` (alongside vault ids). MCP stdio validates `--workspace` the same way.
+- **Sync (additive):** `mnemo sync push` and `mnemo sync pull` merge by `updated_at`; links use `INSERT OR IGNORE` only (nothing deleted on either side). **Settings → Database:** Upload (local → remote) and Download (remote → local) when using libSQL. IPC: `syncPullLocalNotes`.
+- **npm / GitHub:** `mnemo-note@2.1.6`; tagged release builds Windows, Linux, and macOS zips via CI.
+- **Mobile (Expo):** App version **2.1.6**, iOS build number **3** for App Store Connect / EAS submit.
+
 ## 2.1.5 — 2026-04-14
 
 - **Desktop (GUI):** Markdown / Preview icon toggle (eye / pencil) in shipped **GitHub Release** desktop zips/installers.
