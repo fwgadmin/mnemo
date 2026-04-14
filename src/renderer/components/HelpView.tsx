@@ -1,4 +1,6 @@
 import {
+  DESKTOP_EDITOR_FEATURES_HEADERS,
+  DESKTOP_EDITOR_FEATURES_ROWS,
   KEYBOARD_SHORTCUTS_HEADERS,
   KEYBOARD_SHORTCUTS_ROWS,
   MCP_CLIENT_CONFIG_HEADERS,
@@ -208,8 +210,9 @@ export default function HelpView({ onClose }: HelpViewProps) {
             <KV label="Themes &amp; layout">
               <strong>Default:</strong> Dark (IDE) — category tree and editor with tabs. <Key>Ctrl+,</Key> opens{' '}
               <Mono>Settings</Mono> (tabbed: <strong>General</strong> for theme and layout; <strong>Markdown</strong> for
-              preview typography; <strong>Workspace</strong> for disk folder sync and vaults; <strong>Database</strong> for
-              remote libSQL). Command palette (<Key>Ctrl+P</Key>) includes layout commands when you type <Mono>&gt;</Mono>.
+              editor toggles and preview typography; <strong>Summary &amp; LLM</strong> for local summarization profiles;
+              <strong>Workspace</strong> for disk folder sync and vaults; <strong>Database</strong> for remote libSQL). Command
+              palette (<Key>Ctrl+P</Key>) includes layout commands when you type <Mono>&gt;</Mono>.
             </KV>
             <KV label="Markdown helper">
               <Key>Ctrl+M</Key> toggles the Markdown reference side panel.
@@ -410,6 +413,21 @@ SELECT * FROM notes WHERE title LIKE '%mnemo%';
                 ]}
               />
             </SubSection>
+          </Section>
+
+          <Section title="Desktop editor: spell, autocomplete, AI summary">
+            <p className="text-mnemo-text mb-3">
+              The packaged desktop app includes optional spell checking, CodeMirror autocomplete for fenced languages and
+              wikilinks, and <strong>Copy / Paste as summary</strong> (plain or Markdown-formatted) via locally configured LLM
+              profiles. Use <strong className="text-mnemo-muted">Ctrl+Shift+C</strong> / <strong className="text-mnemo-muted">Ctrl+Shift+V</strong>{' '}
+              in the editor for plain summaries when Summary is enabled; <strong className="text-mnemo-muted">Ctrl+Alt+C</strong> /{' '}
+              <strong className="text-mnemo-muted">Ctrl+Alt+V</strong> for formatted Markdown. If Summary is off,{' '}
+              <strong className="text-mnemo-muted">Ctrl+Shift+V</strong> still toggles the Markdown preview. Text you summarize
+              is sent only to the provider you choose; API keys stay in a local JSON file. Configure under{' '}
+              <strong className="text-mnemo-muted">Settings</strong> → <strong className="text-mnemo-muted">Markdown</strong> and{' '}
+              <strong className="text-mnemo-muted">Summary &amp; LLM</strong>.
+            </p>
+            <Table headers={[...DESKTOP_EDITOR_FEATURES_HEADERS]} rows={DESKTOP_EDITOR_FEATURES_ROWS} />
           </Section>
 
           <Section title="Keyboard Shortcuts">

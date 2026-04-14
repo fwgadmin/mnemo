@@ -85,7 +85,50 @@ export const KEYBOARD_SHORTCUTS_ROWS: string[][] = [
   ['Ctrl+Shift+H', 'Toggle note header'],
   ['Ctrl+Shift+L', 'Toggle line numbers'],
   ['Ctrl+Shift+N', 'Toggle note index numbers (#refs)'],
-  ['Ctrl+,', 'Settings (General, Markdown, Workspace, Database tabs)'],
+  ['Ctrl+,', 'Settings (General, Markdown, Summary & LLM, Workspace, Database)'],
+  [
+    'Ctrl+Shift+C / ⌘⇧C',
+    'Copy as summary (note editor, when Summary & LLM is configured with a valid default profile)',
+  ],
+  [
+    'Ctrl+Shift+V / ⌘⇧V',
+    'Paste as summary in editor when configured; otherwise toggles Markdown preview panel',
+  ],
+  ['Ctrl+Alt+C / ⌃⌥C', 'Copy as formatted Markdown summary (editor, when Summary is configured)'],
+  ['Ctrl+Alt+V / ⌃⌥V', 'Paste as formatted Markdown summary (editor, when Summary is configured)'],
+];
+
+/** Desktop app only: editor spellcheck, autocomplete, local LLM summarization (see Help). */
+export const DESKTOP_EDITOR_FEATURES_HEADERS = ['Topic', 'Description'] as const;
+export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
+  [
+    'Spell check',
+    'Settings → Markdown → Editor behavior: enables browser spell checking on the CodeMirror editing surface.',
+  ],
+  [
+    'Autocomplete',
+    'Settings → Markdown: suggests fenced-block language ids after ``` and note titles after [[ (current vault).',
+  ],
+  [
+    'Summary & LLM',
+    'Settings → Summary & LLM: named provider profiles (OpenAI-compatible chat, Ollama, Anthropic, Gemini), base URL, model, optional API key; pick a default profile. Keys live in userData llm-config.json only (not synced to Turso).',
+  ],
+  [
+    'Guardrails',
+    'Optional style text in Summary & LLM; empty uses a bundled neutral default. A fixed summarization instruction is always added in the main process.',
+  ],
+  [
+    'Copy / Paste as summary',
+    'Editor context menu entries only when the feature is enabled and the default profile is complete — otherwise they are omitted. Sends the selection or clipboard text to the configured provider for summarization.',
+  ],
+  [
+    'Formatted summary (Markdown)',
+    'Extra menu items and optional Ctrl+Alt+C/V (⌃⌥C/V, or ⌥⌘C/V on macOS) ask the model to return GFM: headings, lists, bold, short paragraphs.',
+  ],
+  [
+    'Summary keyboard shortcuts',
+    'With Summary enabled and a valid profile: in the note editor, Ctrl+Shift+C copies selection as summary; Ctrl+Shift+V replaces selection with clipboard summarized (Shift+V still toggles Markdown preview when this path does not apply). Ctrl+Alt+C / Ctrl+Alt+V = formatted Markdown summaries.',
+  ],
 ];
 
 function tableToPlainText(headers: readonly string[], rows: string[][]): string {
@@ -413,6 +456,7 @@ ${mcpClients}
 
 function sectionDesktop(): string {
   const shortcuts = tableToPlainText(KEYBOARD_SHORTCUTS_HEADERS, KEYBOARD_SHORTCUTS_ROWS);
+  const editorFeatures = tableToPlainText(DESKTOP_EDITOR_FEATURES_HEADERS, DESKTOP_EDITOR_FEATURES_ROWS);
   return `DESKTOP APP (optional)
   mnemo gui [args…]     Start the graphical app (dev: electron-forge start; pass args after --)
   npm start
@@ -420,12 +464,16 @@ function sectionDesktop(): string {
   Default UI for new installs: Dark (IDE) — sidebar + editor with tabs. Change theme or layout in Settings (Ctrl+,).
 
   Settings (Ctrl+,) is organized into tabs:
-    General     Theme, layout, note #refs, category color tips
-    Markdown    Editor font/CSS variables for preview
-    Workspace   Folder sync (markdown import), vault list, storage overrides, create/archive/delete vaults
-    Database    libSQL URL/token, save/reconnect, upload + download (additive sync), hosted/self-hosted help
+    General       Theme, layout, note #refs, category color tips
+    Markdown      Spell check / autocomplete toggles, editor font/CSS variables for preview
+    Summary & LLM Optional local LLM profiles (OpenAI-compatible, Ollama, Anthropic, Gemini), guardrails, Copy/Paste as summary
+    Workspace     Folder sync (markdown import), vault list, storage overrides, create/archive/delete vaults
+    Database      libSQL URL/token, save/reconnect, upload + download (additive sync), hosted/self-hosted help
 
   In-app documentation: Help → Documentation (this file in the app).
+
+DESKTOP EDITOR (SPELL, AUTOCOMPLETE, AI SUMMARY)
+${editorFeatures}
 
   Vault switcher: menu bar (or File → New / Manage Vault Workspaces). Matches active workspace in workspace-profiles.json.
 

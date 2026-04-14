@@ -13,6 +13,7 @@ import type {
   VaultSnapshot,
   WorkspaceProfilesState,
   WorkspaceStorage,
+  LlmSettingsFile,
 } from '../shared/types';
 
 export interface MnemoAPI {
@@ -54,6 +55,15 @@ export interface MnemoAPI {
   preferences: {
     read(): Promise<MnemoUiPreferences>;
     save(partial: Partial<MnemoUiPreferences>): Promise<boolean>;
+  };
+  /** Local-only LLM profiles (`llm-config.json`); not synced to Turso. */
+  llm: {
+    read(): Promise<LlmSettingsFile>;
+    save(settings: LlmSettingsFile): Promise<boolean>;
+    summarize(
+      text: string,
+      opts?: { formattedMarkdown?: boolean },
+    ): Promise<{ ok: true; summary: string } | { ok: false; error: string }>;
   };
   onMenuCommand(callback: (command: string) => void): () => void;
   onFileOpenedExternally(callback: (data: { title: string; body: string }) => void): () => void;
@@ -134,6 +144,12 @@ const api: MnemoAPI = {
   preferences: {
     read: () => ipcRenderer.invoke(IPC.UI_PREFERENCES_READ),
     save: (partial: Partial<MnemoUiPreferences>) => ipcRenderer.invoke(IPC.UI_PREFERENCES_SAVE, partial),
+  },
+  llm: {
+    read: () => ipcRenderer.invoke(IPC.LLM_READ),
+    save: (settings: LlmSettingsFile) => ipcRenderer.invoke(IPC.LLM_SAVE, settings),
+    summarize: (text: string, opts?: { formattedMarkdown?: boolean }) =>
+      ipcRenderer.invoke(IPC.LLM_SUMMARIZE, { text, formattedMarkdown: opts?.formattedMarkdown }),
   },
   onMenuCommand: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, command: string) => callback(command);

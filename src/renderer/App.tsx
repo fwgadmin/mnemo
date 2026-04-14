@@ -36,7 +36,8 @@ import { buildEffectiveCategoryColors, getSuggestedCategorySwatches } from './ca
 import { gatherLocalStoragePreferences } from './uiPreferencesSync';
 import { applyThemeToDocument, DEFAULT_THEME_ID, getTheme } from './theme/themes';
 import { applyMarkdownOverridesToDocument, mergeMarkdownLayers } from './editor/markdownOverrides';
-import type { MnemoUiPreferences, Note, NoteListItem } from '../shared/types';
+import type { LlmSettingsFile, MnemoUiPreferences, Note, NoteListItem } from '../shared/types';
+import { shouldShowSummaryMenuItems } from '../shared/llmProfile';
 import { vaultFingerprint } from '../shared/types';
 import {
   decodeFileTabPath,
@@ -118,6 +119,9 @@ export default function App() {
   const [prefsReady, setPrefsReady] = useState(false);
   const [markdownGlobal, setMarkdownGlobal] = useState<Record<string, string>>({});
   const [markdownByTheme, setMarkdownByTheme] = useState<Record<string, Record<string, string>>>({});
+  const [editorSpellcheck, setEditorSpellcheck] = useState(true);
+  const [editorAutocomplete, setEditorAutocomplete] = useState(true);
+  const [llmSettings, setLlmSettings] = useState<LlmSettingsFile>({ profiles: [] });
 
   const themeDef = useMemo(() => getTheme(themeId), [themeId]);
 
@@ -265,6 +269,8 @@ export default function App() {
     }
     if (file.markdownGlobal !== undefined) setMarkdownGlobal(file.markdownGlobal);
     if (file.markdownByTheme !== undefined) setMarkdownByTheme(file.markdownByTheme);
+    if (file.editorSpellcheck !== undefined) setEditorSpellcheck(file.editorSpellcheck);
+    if (file.editorAutocomplete !== undefined) setEditorAutocomplete(file.editorAutocomplete);
     if (file.ideTabIds !== undefined) {
       setOpenTabIds(file.ideTabIds.length > 0 ? file.ideTabIds : []);
     }
@@ -278,6 +284,30 @@ export default function App() {
       /* ignore */
     }
   }, [applyMergedPreferences]);
+
+  useEffect(() => {
+    void window.mnemo.llm.read().then(setLlmSettings).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!showSettings) {
+      void window.mnemo.llm.read().then(setLlmSettings).catch(() => {});
+    }
+  }, [showSettings]);
+
+  const showSummaryMenuItems = useMemo(() => shouldShowSummaryMenuItems(llmSettings), [llmSettings]);
+  const showSummaryMenuItemsRef = useRef(showSummaryMenuItems);
+  showSummaryMenuItemsRef.current = showSummaryMenuItems;
+
+  const handleEditorSpellcheckChange = useCallback((v: boolean) => {
+    setEditorSpellcheck(v);
+    void window.mnemo.preferences.save({ editorSpellcheck: v });
+  }, []);
+
+  const handleEditorAutocompleteChange = useCallback((v: boolean) => {
+    setEditorAutocomplete(v);
+    void window.mnemo.preferences.save({ editorAutocomplete: v });
+  }, []);
 
   const LAST_STORE_TYPE_KEY = 'mnemo.lastStoreType';
 
@@ -345,6 +375,8 @@ export default function App() {
         showNoteHeader,
         showLineNumbers,
         showNoteRefs,
+        editorSpellcheck,
+        editorAutocomplete,
         grouped: sidebarGrouped,
         categoryScopeSubtree: sidebarIncludeSubfolders,
         categoryColors,
@@ -363,6 +395,8 @@ export default function App() {
     showNoteHeader,
     showLineNumbers,
     showNoteRefs,
+    editorSpellcheck,
+    editorAutocomplete,
     sidebarGrouped,
     sidebarIncludeSubfolders,
     categoryColors,
@@ -997,9 +1031,37 @@ export default function App() {
         e.preventDefault();
         setRightPanel(p => p === 'markdown-help' ? 'none' : 'markdown-help');
       }
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'V') {
+      const mod = e.ctrlKey || e.metaKey;
+      const inCodeMirror = (e.target as HTMLElement | null)?.closest?.('.cm-editor') != null;
+      if (mod && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+        if (inCodeMirror && showSummaryMenuItemsRef.current && activeTab === 'note') {
+          e.preventDefault();
+          void editorRef.current?.copyAsSummary(false);
+          return;
+        }
+      }
+      if (mod && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+        if (inCodeMirror && showSummaryMenuItemsRef.current && activeTab === 'note') {
+          e.preventDefault();
+          void editorRef.current?.pasteAsSummary(false);
+          return;
+        }
         e.preventDefault();
-        setRightPanel(p => p === 'markdown-preview' ? 'none' : 'markdown-preview');
+        setRightPanel(p => (p === 'markdown-preview' ? 'none' : 'markdown-preview'));
+      }
+      if (mod && e.altKey && !e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+        if (inCodeMirror && showSummaryMenuItemsRef.current && activeTab === 'note') {
+          e.preventDefault();
+          void editorRef.current?.copyAsSummary(true);
+          return;
+        }
+      }
+      if (mod && e.altKey && !e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+        if (inCodeMirror && showSummaryMenuItemsRef.current && activeTab === 'note') {
+          e.preventDefault();
+          void editorRef.current?.pasteAsSummary(true);
+          return;
+        }
       }
       if (e.altKey && e.shiftKey && (e.key.toLowerCase() === 'f' || e.code === 'KeyF')) {
         e.preventDefault();
@@ -1542,6 +1604,10 @@ export default function App() {
               markdownPaintKey={markdownPaintKey}
               onEditorLiveBody={handleEditorLiveBody}
               reloadNonce={editorReloadNonce}
+              editorSpellcheck={editorSpellcheck}
+              editorAutocomplete={editorAutocomplete}
+              showSummaryMenuItems={showSummaryMenuItems}
+              tenantId={activeNote.tenantId}
             />
           </div>
           {!activeNote.filePath && (
@@ -1624,6 +1690,10 @@ export default function App() {
         onLayoutOverrideChange={setLayoutOverride}
         showNoteRefs={showNoteRefs}
         onShowNoteRefsChange={setShowNoteRefs}
+        editorSpellcheck={editorSpellcheck}
+        editorAutocomplete={editorAutocomplete}
+        onEditorSpellcheckChange={handleEditorSpellcheckChange}
+        onEditorAutocompleteChange={handleEditorAutocompleteChange}
         markdownGlobal={markdownGlobal}
         markdownByTheme={markdownByTheme}
         onMarkdownGlobalChange={setMarkdownGlobal}

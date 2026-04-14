@@ -22,6 +22,14 @@ import { TursoNoteStore } from './store/TursoNoteStore';
 import { pullTursoIntoLocalStore, readLocalNotesAndLinksForSync } from './storePullRemote';
 import type { INoteStore, AppConfig, MnemoUiPreferences, SyncResult, WorkspaceStorage } from '../shared/types';
 import { IPC } from '../shared/types';
+import { resolveActiveProfile } from '../shared/llmProfile';
+import {
+  readLlmConfig,
+  writeLlmConfig,
+  sanitizeLlmSettings,
+  effectiveGuardrails,
+} from './llm/llmConfig';
+import { summarizeWithProfile } from './llm/summarizeWithProfile';
 import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from './uiPreferences';
@@ -561,6 +569,58 @@ function registerIpcHandlers(): void {
     const ctx = await ensureActiveContext();
     await mergeAndWriteUiPreferencesAsync(partial, app.getPath('userData'), ctx.store, ctx.workspaceId);
     return true;
+  });
+
+  ipcMain.handle(IPC.LLM_READ, () => readLlmConfig(app.getPath('userData')));
+
+  ipcMain.handle(IPC.LLM_SAVE, async (_event, incoming: unknown) => {
+    const userData = app.getPath('userData');
+    const prev = readLlmConfig(userData);
+    const next = sanitizeLlmSettings(incoming);
+    for (const p of next.profiles) {
+      const old = prev.profiles.find(o => o.id === p.id);
+      if (
+        old &&
+        (!p.apiKey || !p.apiKey.trim()) &&
+        (p.providerKind === 'anthropic' || p.providerKind === 'google_gemini')
+      ) {
+        p.apiKey = old.apiKey;
+      }
+    }
+    writeLlmConfig(userData, next);
+    return true;
+  });
+
+  ipcMain.handle(IPC.LLM_SUMMARIZE, async (_event, body: unknown) => {
+    if (!body || typeof body !== 'object') {
+      return { ok: false as const, error: 'Invalid request' };
+    }
+    const text = typeof (body as { text?: unknown }).text === 'string' ? (body as { text: string }).text : '';
+    if (!text.trim()) {
+      return { ok: false as const, error: 'No text to summarize' };
+    }
+    const formattedMarkdown =
+      typeof (body as { formattedMarkdown?: unknown }).formattedMarkdown === 'boolean'
+        ? (body as { formattedMarkdown: boolean }).formattedMarkdown
+        : false;
+    const userData = app.getPath('userData');
+    const settings = readLlmConfig(userData);
+    const profile = resolveActiveProfile(settings);
+    if (!profile) {
+      return { ok: false as const, error: 'No valid LLM profile configured' };
+    }
+    const guardrailsUser = effectiveGuardrails(settings);
+    try {
+      const summary = await summarizeWithProfile({
+        profile,
+        guardrailsUser,
+        textToSummarize: text.trim(),
+        formattedMarkdown,
+      });
+      return { ok: true as const, summary };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   ipcMain.handle(IPC.WINDOW_TOGGLE_FULLSCREEN, event => {
