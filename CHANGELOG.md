@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.7 — 2026-04-16
+
+- **Workspace / CLI / MCP:** Turso `deletedWorkspaceIds` tombstones; merged workspace profiles when using global libSQL; cloud-vs-disk sync rules; workspace rename (Settings, CLI, MCP). CLI and MCP use the same merged profile list as the GUI for tenant parity.
+- **Desktop:** Optional LLM summarization — named provider profiles (OpenAI-compatible, Ollama, Anthropic, Gemini), local `llm-config.json`, IPC and context menu *Copy as summary* / *Paste as summary*. Markdown editor: spell check and autocomplete preferences; fenced language + `[[` wikilink completions on the runtime markdown language (nested JS/Python/etc. completions preserved); Tab accepts completion when the tooltip is active.
+- **Mobile (CI):** Scoped `eas-cli` / `minimatch` override for `npm audit` workflow.
+- **npm / GitHub:** `mnemo-note@2.1.7`; tag `v2.1.7` builds Windows, Linux, and macOS zips via CI.
+- **Mobile (Expo):** App version **2.1.7**, iOS build number **7** for App Store Connect / EAS submit.
+
 ## 2.1.6 — 2026-04-15
 
 - **CLI / workspaces:** Friendly **1-based index** for `mnemo workspace list`, `switch`, `archive`, `delete`, and `--workspace` (alongside vault ids). MCP stdio validates `--workspace` the same way.

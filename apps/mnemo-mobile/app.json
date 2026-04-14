@@ -2,7 +2,7 @@
   "expo": {
     "name": "mnemo-mobile",
     "slug": "mnemo-mobile",
-    "version": "2.1.6",
+    "version": "2.1.7",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,7 +18,7 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "6"
+      "buildNumber": "7"
     },
     "android": {
       "package": "com.ferrowood.mnemo.mobile",
