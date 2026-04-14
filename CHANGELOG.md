@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.8 — 2026-04-16
+
+- **npm:** Stop listing `README.md` and `LICENSE` under `package.json` `files`. npm always includes those paths in the tarball; relying on the default avoids rare registry/UI cases where the package page showed no README despite the file being published.
+- **npm / GitHub:** `mnemo-note@2.1.8`; tag `v2.1.8` when released.
+- **Mobile (Expo):** App version **2.1.8**, iOS build number **8**.
+
 ## 2.1.7 — 2026-04-16
 
 - **Workspace / CLI / MCP:** Turso `deletedWorkspaceIds` tombstones; merged workspace profiles when using global libSQL; cloud-vs-disk sync rules; workspace rename (Settings, CLI, MCP). CLI and MCP use the same merged profile list as the GUI for tenant parity.
