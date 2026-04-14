@@ -16,6 +16,7 @@ import {
   likeWordsFromUserQuery,
   snippetForSearchResult,
 } from '../../shared/searchQuery';
+import { escapeYamlDoubleQuotedString } from '../../shared/yamlEscape';
 
 /** Add `ref` column + backfill; safe to call on every open. Exported for Turso sync from local file. */
 export function migrateNoteDatabaseRef(db: Database.Database): void {
@@ -382,8 +383,8 @@ export class LocalNoteStore implements INoteStore {
       '---',
       `id: "${note.id}"`,
       `ref: ${note.ref}`,
-      `title: "${note.title.replace(/"/g, '\\"')}"`,
-      `tags: [${note.tags.map(t => `"${t}"`).join(', ')}]`,
+      `title: "${escapeYamlDoubleQuotedString(note.title)}"`,
+      `tags: [${note.tags.map(t => `"${escapeYamlDoubleQuotedString(t)}"`).join(', ')}]`,
       `created: "${note.created}"`,
       `modified: "${note.modified}"`,
       `tenantId: "${note.tenantId}"`,

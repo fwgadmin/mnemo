@@ -11,6 +11,7 @@
  *
  * Optional:
  *   PORT              HTTP port (default: 3001)
+ *   MCP_HTTP_HOST     Bind address (default: 127.0.0.1). Use 0.0.0.0 only behind a reverse proxy / firewall you control.
  */
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
@@ -18,6 +19,7 @@ import { TursoNoteStore } from '../store/TursoNoteStore';
 import { createMcpServer } from './server';
 
 const PORT = parseInt(process.env['PORT'] ?? '3001', 10);
+const HOST = process.env['MCP_HTTP_HOST'] ?? '127.0.0.1';
 const API_KEY = process.env['MCP_API_KEY'];
 const TURSO_URL = process.env['TURSO_URL']?.trim() || process.env['LIBSQL_URL']?.trim();
 const TURSO_AUTH_TOKEN =
@@ -92,8 +94,8 @@ async function bootstrap(): Promise<void> {
     res.json({ status: 'ok', sessions: transports.size });
   });
 
-  app.listen(PORT, () => {
-    console.log(`Mnemo MCP HTTP server listening on port ${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`Mnemo MCP HTTP server listening on ${HOST}:${PORT}`);
   });
 }
 

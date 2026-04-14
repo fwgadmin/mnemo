@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 15
+    groups:
+      npm-root:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /apps/mnemo-mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      npm-mobile:
+        patterns:
+          - "*"

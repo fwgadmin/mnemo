@@ -16,6 +16,7 @@ import type {
   INoteStore,
   VaultSnapshot,
 } from '../../shared/types';
+import { escapeYamlDoubleQuotedString } from '../../shared/yamlEscape';
 
 const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS notes (
@@ -561,8 +562,8 @@ export class TursoNoteStore implements INoteStore {
     const filePath = path.join(this.vaultPath, `${note.id}.md`);
     const content = [
       '---',
-      `title: "${note.title.replace(/"/g, '\\"')}"`,
-      `tags: [${note.tags.map(t => `"${t}"`).join(', ')}]`,
+      `title: "${escapeYamlDoubleQuotedString(note.title)}"`,
+      `tags: [${note.tags.map(t => `"${escapeYamlDoubleQuotedString(t)}"`).join(', ')}]`,
       `created: ${note.created}`,
       `modified: ${note.modified}`,
       `hideHeader: ${note.hideHeader}`,
