@@ -8,18 +8,29 @@ import * as path from 'path';
 import { execSync, spawn } from 'child_process';
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
-import type { INoteStore, Note, NoteListItem, WorkspaceProfilesState, WorkspaceStorage } from '../shared/types';
+import type {
+  INoteStore,
+  Note,
+  NoteListItem,
+  WorkspaceProfilesState,
+  WorkspaceStorage,
+} from '../shared/types';
 import { runMcpStdioServer, parseMcpStdioArgs } from './mcp/stdio-bootstrap';
 import { resolveTursoCredentials, resolveWorkspaceBootstrapRoot } from './userConfig';
+import { openBootstrapNoteStoreForImport } from './workspaceBootstrapStore';
 import {
+  applyWorkspaceRemovalDataPurge,
   archiveWorkspaceProfile,
   createWorkspaceProfile,
   deleteWorkspaceProfile,
   getLocalWorkspaceDbPathsForCli,
+  importFolderIntoWorkspaceProfile,
   listWorkspaceProfiles,
   migrateLegacyFlatWorkspace,
-  purgeWorkspaceTenantData,
+  parseWorkspaceStorageRoot,
+  renameWorkspaceProfile,
   setActiveWorkspace,
+  setWorkspaceProfileStorage,
 } from './workspaceProfiles';
 import { readWorkspaceProfilesMerged } from './workspaceProfilesSync';
 import { pickWorkspaceId, resolveWorkspaceSelector } from './workspaceResolve';
@@ -1000,6 +1011,64 @@ async function openStoreForNote(argv: string[]): Promise<{ store: INoteStore; te
   return { store: new LocalNoteStore(dbPath, vaultPath), tenantId: activeIdDisk };
 }
 
+function parseSqliteStorageArgv(argv: string[]): WorkspaceStorage {
+  let dbPath = '';
+  let vaultPath = '';
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--db' && argv[i + 1]) {
+      dbPath = path.resolve(argv[++i]!);
+      continue;
+    }
+    if (a === '--vault' && argv[i + 1]) {
+      vaultPath = path.resolve(argv[++i]!);
+      continue;
+    }
+  }
+  if (!dbPath || !vaultPath) {
+    throw new Error('sqlite storage requires --db and --vault (absolute paths allowed)');
+  }
+  return { mode: 'sqlite', dbPath, vaultPath };
+}
+
+function parseRemoteStorageArgv(argv: string[]): WorkspaceStorage {
+  let tursoUrl: string | undefined;
+  let tursoToken: string | undefined;
+  let libsqlUrl: string | undefined;
+  let libsqlAuthToken: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--turso-url' && argv[i + 1]) {
+      tursoUrl = argv[++i];
+      continue;
+    }
+    if (a === '--turso-token' && argv[i + 1]) {
+      tursoToken = argv[++i];
+      continue;
+    }
+    if (a === '--libsql-url' && argv[i + 1]) {
+      libsqlUrl = argv[++i];
+      continue;
+    }
+    if (a === '--libsql-auth-token' && argv[i + 1]) {
+      libsqlAuthToken = argv[++i];
+      continue;
+    }
+  }
+  const url = (tursoUrl || libsqlUrl || '').trim();
+  const tok = (tursoToken || libsqlAuthToken || '').trim();
+  if (!url || !tok) {
+    throw new Error('remote storage requires --turso-url and --turso-token (or --libsql-url / --libsql-auth-token)');
+  }
+  return {
+    mode: 'remote',
+    tursoUrl,
+    tursoToken,
+    libsqlUrl,
+    libsqlAuthToken,
+  };
+}
+
 async function cmdWorkspace(argv: string[]): Promise<void> {
   const { outJson, argv: av } = resolveJsonOutput(argv);
   const sub = av[0]?.toLowerCase();
@@ -1020,13 +1089,38 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
     return;
   }
 
-  if (sub === 'new') {
-    const name = tail.join(' ').trim();
+  if (sub === 'new' || sub === 'create') {
+    const parts: string[] = [];
+    let importFolder: string | null = null;
+    for (let i = 0; i < tail.length; i++) {
+      if (tail[i] === '--from' && tail[i + 1]) {
+        importFolder = path.resolve(tail[++i]!);
+        continue;
+      }
+      parts.push(tail[i]!);
+    }
+    const name = parts.join(' ').trim();
     if (!name) {
-      console.error('Usage: mnemo workspace new <name>');
+      console.error('Usage: mnemo workspace new|create <name> [--from <import dir>]');
       process.exit(1);
     }
     const { state, newId } = createWorkspaceProfile(root, name);
+    if (importFolder) {
+      const importStore = await openBootstrapNoteStoreForImport(root, tail);
+      try {
+        const stats = await importFolderIntoWorkspaceProfile(root, newId, importFolder, importStore);
+        if (outJson) {
+          printJson({ ok: true, newId, profiles: state, imported: stats.imported, updated: stats.updated });
+        } else {
+          console.log(
+            `Created workspace ${newId} (${name}); imported ${stats.imported}, updated ${stats.updated} from ${importFolder}. Switch: mnemo workspace switch ${newId}`,
+          );
+        }
+      } finally {
+        importStore.close();
+      }
+      return;
+    }
     if (outJson) {
       printJson({ ok: true, newId, profiles: state });
     } else {
@@ -1061,6 +1155,107 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
     return;
   }
 
+  if (sub === 'rename') {
+    if (tail.length < 2) {
+      console.error('Usage: mnemo workspace rename <id|index> <new name…>');
+      process.exit(1);
+    }
+    const raw = tail[0]!.trim();
+    const newName = tail.slice(1).join(' ').trim();
+    if (!raw || !newName) {
+      console.error('Usage: mnemo workspace rename <id|index> <new name…>');
+      process.exit(1);
+    }
+    const st = await loadWorkspaceProfilesForCli(tail, root);
+    const sel = resolveWorkspaceSelector(st, raw);
+    if (sel.kind === 'error') {
+      console.error(`mnemo: ${sel.message}`);
+      process.exit(1);
+    }
+    const id = pickWorkspaceId(st, sel);
+    const next = renameWorkspaceProfile(root, id, newName);
+    if (!next) {
+      console.error('Cannot rename: unknown workspace or empty name.');
+      process.exit(1);
+    }
+    if (outJson) {
+      printJson({ ok: true, profiles: next });
+    } else {
+      console.log(`Renamed workspace ${id} to “${newName.trim().slice(0, 128)}”.`);
+    }
+    return;
+  }
+
+  if (sub === 'set-storage') {
+    if (tail.length < 2) {
+      console.error('Usage: mnemo workspace set-storage <id|index> inherit');
+      console.error('       mnemo workspace set-storage <id|index> sqlite --db <path> --vault <path>');
+      console.error(
+        '       mnemo workspace set-storage <id|index> remote --turso-url <url> --turso-token <token>',
+      );
+      console.error('       mnemo workspace set-storage <id|index> --json <storage-json>');
+      process.exit(1);
+    }
+    const idRaw = tail[0]!.trim();
+    const st = await loadWorkspaceProfilesForCli(tail, root);
+    const sel = resolveWorkspaceSelector(st, idRaw);
+    if (sel.kind === 'error') {
+      console.error(`mnemo: ${sel.message}`);
+      process.exit(1);
+    }
+    const id = pickWorkspaceId(st, sel);
+
+    let storage: WorkspaceStorage;
+    if (tail[1] === '--json') {
+      if (!tail[2]) {
+        console.error('Expected JSON string after --json');
+        process.exit(1);
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(tail[2]!);
+      } catch (e) {
+        console.error('Invalid JSON:', e instanceof Error ? e.message : e);
+        process.exit(1);
+      }
+      const coerced = parseWorkspaceStorageRoot(parsed);
+      if (!coerced) {
+        console.error('Invalid storage object (supported: mode inherit|sqlite|remote with required fields).');
+        process.exit(1);
+      }
+      storage = coerced;
+    } else {
+      const mode = tail[1]?.toLowerCase();
+      try {
+        if (mode === 'inherit') {
+          storage = { mode: 'inherit' };
+        } else if (mode === 'sqlite') {
+          storage = parseSqliteStorageArgv(tail.slice(2));
+        } else if (mode === 'remote') {
+          storage = parseRemoteStorageArgv(tail.slice(2));
+        } else {
+          console.error('Second argument must be inherit, sqlite, remote, or --json');
+          process.exit(1);
+        }
+      } catch (e) {
+        console.error(`mnemo: ${e instanceof Error ? e.message : String(e)}`);
+        process.exit(1);
+      }
+    }
+
+    const next = setWorkspaceProfileStorage(root, id, storage);
+    if (!next) {
+      console.error('Unknown workspace id.');
+      process.exit(1);
+    }
+    if (outJson) {
+      printJson({ ok: true, profiles: next });
+    } else {
+      console.log(`Updated storage for workspace ${id} (${storage.mode}).`);
+    }
+    return;
+  }
+
   if (sub === 'archive') {
     const raw = tail[0]?.trim();
     if (!raw || tail.length > 1) {
@@ -1074,7 +1269,6 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const id = pickWorkspaceId(st, sel);
-    const before = listWorkspaceProfiles(root);
     const entry = st.workspaces.find(w => w.id === id);
     const r = archiveWorkspaceProfile(root, id);
     if (!r) {
@@ -1084,20 +1278,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     if (entry) {
-      await purgeWorkspaceTenantData(root, entry);
-      const st = entry.storage ?? { mode: 'inherit' as const };
-      if (st.mode === 'sqlite') {
-        try {
-          fs.unlinkSync(st.dbPath);
-        } catch {
-          /* ignore */
-        }
-        try {
-          fs.rmSync(st.vaultPath, { recursive: true, force: true });
-        } catch {
-          /* ignore */
-        }
-      }
+      await applyWorkspaceRemovalDataPurge(root, entry);
     }
     if (outJson) {
       printJson({ ok: true, profiles: r.state });
@@ -1120,7 +1301,6 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const id = pickWorkspaceId(st, sel);
-    const before = listWorkspaceProfiles(root);
     const entry = st.workspaces.find(w => w.id === id);
     const r = deleteWorkspaceProfile(root, id);
     if (!r) {
@@ -1130,20 +1310,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     if (entry) {
-      await purgeWorkspaceTenantData(root, entry);
-      const st = entry.storage ?? { mode: 'inherit' as const };
-      if (st.mode === 'sqlite') {
-        try {
-          fs.unlinkSync(st.dbPath);
-        } catch {
-          /* ignore */
-        }
-        try {
-          fs.rmSync(st.vaultPath, { recursive: true, force: true });
-        } catch {
-          /* ignore */
-        }
-      }
+      await applyWorkspaceRemovalDataPurge(root, entry);
     }
     if (outJson) {
       printJson({ ok: true, profiles: r.state });

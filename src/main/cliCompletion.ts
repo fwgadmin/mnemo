@@ -71,7 +71,7 @@ _mnemo() {
       COMPREPLY=( $(compgen -W "--db --vault --turso-url --turso-token" -- "\${cur}") )
       ;;
     workspace)
-      COMPREPLY=( $(compgen -W "list new switch archive delete --json --no-json" -- "\${cur}") )
+      COMPREPLY=( $(compgen -W "list new create switch rename set-storage archive delete --json --no-json" -- "\${cur}") )
       ;;
     sync)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
@@ -166,7 +166,7 @@ _mnemo() {
       ;;
     workspace)
       _arguments '--json' '--no-json' \
-        '1:subcommand:(list new switch archive delete)'
+        '1:subcommand:(list new create switch rename set-storage archive delete)'
       ;;
     sync)
       if (( CURRENT == 3 )); then

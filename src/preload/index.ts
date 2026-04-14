@@ -95,6 +95,9 @@ export interface MnemoAPI {
     deleteVault(id: string): Promise<
       { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
     >;
+    renameVault(id: string, name: string): Promise<
+      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
+    >;
   };
 }
 
@@ -157,6 +160,8 @@ const api: MnemoAPI = {
       ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_SET_STORAGE, id, storage),
     archiveVault: (id: string) => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_ARCHIVE, id),
     deleteVault: (id: string) => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_DELETE, id),
+    renameVault: (id: string, name: string) =>
+      ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_RENAME, id, name),
   },
 };
 

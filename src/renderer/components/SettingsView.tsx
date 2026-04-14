@@ -67,6 +67,8 @@ export default function SettingsView({
   const [newVaultName, setNewVaultName] = useState('');
   const [newVaultImportFolder, setNewVaultImportFolder] = useState<string | null>(null);
   const [vaultProfileBusy, setVaultProfileBusy] = useState(false);
+  const [renameEditId, setRenameEditId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
 
   useEffect(() => {
@@ -357,7 +359,8 @@ export default function SettingsView({
             when using the shared connection; dedicated databases switch without restarting the app.{' '}
             <strong className="text-mnemo-muted">Archive</strong> / <strong className="text-mnemo-muted">Delete</strong>{' '}
             remove the profile and purge that workspace’s notes (dedicated SQLite: deletes the DB and vault folder). You need
-            at least two vaults, and you cannot archive or delete the active or Default vault.             The <strong className="text-mnemo-muted">Workspace folder</strong> block above syncs markdown into the{' '}
+            at least two vaults, and you cannot archive or delete the active or Default vault. Use <strong className="text-mnemo-muted">Rename</strong> to
+            change the default vault’s label (or any vault; the id stays fixed). The <strong className="text-mnemo-muted">Workspace folder</strong> block above syncs markdown into the{' '}
             <strong className="text-mnemo-muted">current</strong> workspace.
           </p>
           <ul className="space-y-2 mb-4">
@@ -408,8 +411,21 @@ export default function SettingsView({
                       type="button"
                       disabled={vaultProfileBusy}
                       onClick={() => {
+                        setRenameEditId(renameEditId === w.id ? null : w.id);
+                        setRenameDraft(w.name);
+                        setStorageEditId(null);
+                      }}
+                      className="px-2 py-1 rounded border border-mnemo-border text-mnemo-dim hover:text-mnemo-text hover:bg-mnemo-hover disabled:opacity-50"
+                    >
+                      Rename…
+                    </button>
+                    <button
+                      type="button"
+                      disabled={vaultProfileBusy}
+                      onClick={() => {
                         setStorageEditId(storageEditId === w.id ? null : w.id);
                         setStorageDraft(w.storage ?? { mode: 'inherit' });
+                        setRenameEditId(null);
                       }}
                       className="px-2 py-1 rounded border border-mnemo-border text-mnemo-dim hover:text-mnemo-text hover:bg-mnemo-hover disabled:opacity-50"
                     >
@@ -477,6 +493,49 @@ export default function SettingsView({
                     ) : null}
                   </div>
                   </div>
+                  {renameEditId === w.id ? (
+                    <div className="pl-1 pt-2 border-t border-mnemo-border space-y-2 w-full max-w-xl">
+                      <div className="text-[10px] text-mnemo-dim uppercase tracking-wide">Rename vault</div>
+                      <input
+                        type="text"
+                        value={renameDraft}
+                        onChange={e => setRenameDraft(e.target.value)}
+                        className="w-full bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text text-sm"
+                        autoFocus
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={vaultProfileBusy || !renameDraft.trim()}
+                          onClick={async () => {
+                            setVaultProfileBusy(true);
+                            try {
+                              const r = await window.mnemo.workspaceProfiles.renameVault(w.id, renameDraft.trim());
+                              if (r.ok) {
+                                setVaultProfiles(r.profiles);
+                                setRenameEditId(null);
+                                setStatus({ ok: true, msg: `Renamed to “${renameDraft.trim()}”.` });
+                              } else {
+                                setStatus({ ok: false, msg: r.error });
+                              }
+                            } finally {
+                              setVaultProfileBusy(false);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded bg-mnemo-accent text-mnemo-on-accent text-xs font-medium"
+                        >
+                          Save name
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRenameEditId(null)}
+                          className="px-3 py-1.5 rounded border border-mnemo-border text-xs text-mnemo-dim hover:text-mnemo-text"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   {storageEditId === w.id ? (
                     <div className="pl-1 pt-2 border-t border-mnemo-border space-y-2 w-full max-w-xl">
                       <div className="text-[10px] text-mnemo-dim uppercase tracking-wide">Storage override</div>

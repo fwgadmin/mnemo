@@ -209,20 +209,20 @@ function sectionWorkspace(): string {
   with the same legacy ~/.config/mnemo redirect when that folder holds Turso credentials.
 
   Active workspace (in workspace-profiles.json) sets which tenant_id applies for inherit-mode vaults: tenant_id equals
-  the profile id.   With Turso, the CLI merges this file with the remote app_kv copy (same as the desktop app) so the
-  active workspace and tenant_id for list/search match your cloud data. Stale on-disk entries may still
-  say dedicated SQLite while the merged list uses inherit — \`mnemo workspace list\` uses the merge when Turso is configured.
-  Per-vault dedicated SQLite or libSQL URLs are stored in that JSON (edited
-  in the GUI under Settings → Workspace tab → Storage…); there is no separate CLI subcommand for storage overrides.
+  the profile id. With Turso, the CLI merges this file with the remote \`app_kv\` copy (same as the desktop app). When the
+  cloud copy is newer, inherit/remote vault rows come from the server; local-only dedicated SQLite profiles are preserved.
+  Deletes and renames sync via the same payload (deletion tombstones prevent removed vaults from reappearing on another device).
+  Per-vault dedicated SQLite or libSQL URLs live in that JSON; use \`mnemo workspace set-storage\` or the MCP tools
+  below when running headless.
 
   mnemo workspace list
     Prints columns: index (1-based), id, name, and which workspace is active. The index is a shortcut for switch and
     for --workspace on note/MCP/sync commands. When global Turso credentials are configured, lists the same merged
     workspace list as the desktop app (not disk-only), so storage overrides match the cloud.
 
-  mnemo workspace new <name>
-    Create an empty workspace profile. Does not change the active workspace (use switch). The graphical app can
-    create a vault and switch in one step from the Workspace tab.
+  mnemo workspace new|create <name> [--from <import dir>]
+    Aliases. Create a workspace profile; optional \`--from\` imports/syncs markdown into the new vault’s tenant
+    (same as Settings). Does not switch the active workspace unless you run \`workspace switch\`.
 
   mnemo workspace switch <id|index>
     Set the active workspace. <index> is the first column from \`mnemo workspace list\` (1-based). Commands below then
@@ -230,12 +230,24 @@ function sectionWorkspace(): string {
     • mnemo note … / mnemo list / mnemo find … when --db is omitted (bootstrap DB)
     • mnemo mcp when --db is omitted (stdio MCP uses the same profiles file)
 
+  mnemo workspace rename <id|index> <new name…>
+    Change a vault’s display label (including the default vault; stable id is unchanged). Syncs to Turso \`app_kv\` when configured.
+
+  mnemo workspace set-storage <id|index> inherit
+  mnemo workspace set-storage <id|index> sqlite --db <path> --vault <path>
+  mnemo workspace set-storage <id|index> remote --turso-url <url> --turso-token <token>
+  mnemo workspace set-storage <id|index> --json '{"mode":"inherit"}'
+    Edit storage overrides (same as Settings → Workspace → Storage…). JSON form accepts the same \`storage\` object as \`workspace-profiles.json\`.
+
   mnemo workspace archive <id|index>
     Non-default, non-active workspace only; removes the profile and purges that workspace’s notes (and deletes
     dedicated SQLite files if the profile used dedicated storage).
 
   mnemo workspace delete <id|index>
     Same constraints as archive; permanent removal.
+
+  MCP (stdio): \`list_workspace_profiles\`, \`switch_workspace\`, \`create_workspace\` (optional \`import_folder\`),
+  \`rename_workspace\`, \`set_workspace_storage\`, \`archive_workspace\`, \`delete_workspace\` — same semantics as this CLI when the MCP server uses bootstrap workspace profiles (Turso merge when configured).
 
   Optional: --json / --no-json (see mnemo help config).
 `;
