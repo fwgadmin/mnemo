@@ -4,7 +4,7 @@ Native-first prototype for **iOS** and **Android**. This app is **not** the Elec
 
 ## Development
 
-**Run Expo / Metro from this folder** (`apps/mnemo-mobile`). The **repo root** is the Electron desktop app — it has no `expo` or `start:dev`. From the monorepo root you can use **`npm run mobile:start:dev`** (see root `package.json`).
+**Run Expo / Metro from this folder** (`apps/mnemo-mobile`). The **repo root** is the Electron desktop app. From the monorepo root you can use the same script names: **`npm run mobile:start:dev`**, **`npm run eas:dev:ios`**, **`npm run eas:build:ios`**, etc. (they delegate here — see root **`package.json`**). Do **not** install the stray npm package **`eas`** at the repo root; EAS uses **`eas-cli`** from this package (`npx eas-cli`).
 
 ```bash
 cd apps/mnemo-mobile
