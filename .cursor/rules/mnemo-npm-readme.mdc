@@ -1,0 +1,14 @@
+---
+description: mnemo-note npm package must always ship README.md and LICENSE explicitly
+alwaysApply: true
+---
+
+# mnemo-note npm README / LICENSE (do not regress)
+
+For the **repo root** package `mnemo-note` (`package.json` at the monorepo root):
+
+1. **`package.json` → `"files"`** must **always** include **`README.md`** and **`LICENSE`** explicitly, in addition to `bin`, `dist`, and `examples`.
+2. **Never remove** those two entries to “rely on npm defaults.” Although `npm pack` often includes them anyway, **npmjs.com has shown the package page without a README** when they were not listed (see CHANGELOG **2.1.8** vs **2.1.10**).
+3. **`prepublishOnly`** runs **`scripts/verify-npm-package-readme.js`** — if someone drops `README.md` / `LICENSE` from `"files"`, publish will fail.
+
+This does **not** apply to `apps/mnemo-mobile/package.json` or other nested packages unless they are published to npm with the same issue.

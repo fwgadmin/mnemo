@@ -1,6 +1,6 @@
 {
   "name": "mnemo-note",
-  "version": "2.1.9",
+  "version": "2.1.11",
   "description": "AI-native memory layer — notes, embeddings, and MCP for intelligence systems",
   "main": ".webpack/main",
   "license": "MIT",
@@ -13,6 +13,8 @@
   },
   "homepage": "https://github.com/fwgadmin/mnemo#readme",
   "files": [
+    "README.md",
+    "LICENSE",
     "bin",
     "dist",
     "examples"
@@ -30,7 +32,14 @@
     "build:cli": "npx webpack-cli --config webpack.cli.config.js",
     "mobile:start:dev": "npm run start:dev --prefix apps/mnemo-mobile",
     "mobile:expo": "npm run start --prefix apps/mnemo-mobile",
-    "prepublishOnly": "npm run typecheck && npm run build:cli && npm run build:mcp && npm run build:mcp-http"
+    "eas:dev:ios": "npm run eas:dev:ios --prefix apps/mnemo-mobile",
+    "eas:dev:android": "npm run eas:dev:android --prefix apps/mnemo-mobile",
+    "eas:build:ios": "npm run eas:build:ios --prefix apps/mnemo-mobile",
+    "eas:build:android": "npm run eas:build:android --prefix apps/mnemo-mobile",
+    "eas:build:ios:simulator": "npm run eas:build:ios:simulator --prefix apps/mnemo-mobile",
+    "eas:submit:ios": "npm run eas:submit:ios --prefix apps/mnemo-mobile",
+    "eas:submit:android": "npm run eas:submit:android --prefix apps/mnemo-mobile",
+    "prepublishOnly": "node scripts/verify-npm-package-readme.js && npm run typecheck && npm run build:cli && npm run build:mcp && npm run build:mcp-http"
   },
   "keywords": [
     "notes",

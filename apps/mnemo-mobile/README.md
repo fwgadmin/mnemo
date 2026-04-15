@@ -4,7 +4,7 @@ Native-first prototype for **iOS** and **Android**. This app is **not** the Elec
 
 ## Development
 
-**Run Expo / Metro from this folder** (`apps/mnemo-mobile`). The **repo root** is the Electron desktop app — it has no `expo` or `start:dev`. From the monorepo root you can use **`npm run mobile:start:dev`** (see root `package.json`).
+**Run Expo / Metro from this folder** (`apps/mnemo-mobile`). The **repo root** is the Electron desktop app. From the monorepo root you can use the same script names: **`npm run mobile:start:dev`**, **`npm run eas:dev:ios`**, **`npm run eas:build:ios`**, etc. (they delegate here — see root **`package.json`**). Do **not** install the stray npm package **`eas`** at the repo root; EAS uses **`eas-cli`** from this package (`npx eas-cli`).
 
 ```bash
 cd apps/mnemo-mobile
@@ -32,7 +32,7 @@ If you see **`RNSScreenStack`**, **`RNSScreenContentWrapper`**, **`RNSScreenNavi
 
 ```bash
 cd apps/mnemo-mobile
-eas build --profile development --platform ios   # or android, or development-simulator for iOS sim
+npm run eas:dev:ios          # or eas:dev:android, or eas:build:ios:simulator
 ```
 
 Or build locally:
@@ -46,7 +46,7 @@ Until you install that build, the app falls back to **AsyncStorage** or **in-mem
 
 ### Dev client on a **physical phone** (EAS internal build)
 
-- **iOS:** Your device **UDID must be registered** before the build, or install will fail or refuse to run. Run `npx eas device:create` in this folder, then **rebuild** with `npx eas build --platform ios --profile development`. See **[docs/TROUBLESHOOTING_DEV_INSTALL.md](./docs/TROUBLESHOOTING_DEV_INSTALL.md)**.
+- **iOS:** Your device **UDID must be registered** before the build, or install will fail or refuse to run. Run `npx eas-cli device:create` in this folder, then **rebuild** with `npm run eas:dev:ios` (or `EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform ios --profile development`). See **[docs/TROUBLESHOOTING_DEV_INSTALL.md](./docs/TROUBLESHOOTING_DEV_INSTALL.md)**.
 - **Android:** The `development` profile builds an **APK** for easier sideloading. If install still fails, see the same doc.
 
 ### Development client + iOS Simulator (EAS)
@@ -64,9 +64,42 @@ This uses the `development-simulator` profile (`ios.simulator: true`, `developme
 npm run start:dev
 ```
 
+## EAS Build & Submit (`npx eas-cli`)
+
+Run from **`apps/mnemo-mobile`** so `eas-cli` uses this package’s devDependency. **`EAS_BUILD_NO_EXPO_GO_WARNING=1`** silences the Expo Go warning (this app uses **expo-dev-client**).
+
+| Goal | npm script |
+|------|------------|
+| **Dev client — iOS (device)** | `npm run eas:dev:ios` |
+| **Dev client — Android (APK)** | `npm run eas:dev:android` |
+| **Dev client — iOS Simulator** | `npm run eas:build:ios:simulator` |
+| **Production — iOS** | `npm run eas:build:ios` |
+| **Production — Android** | `npm run eas:build:android` |
+| **Submit latest build — iOS** (TestFlight / App Store Connect) | `npm run eas:submit:ios` |
+| **Submit latest build — Android** (Play Console) | `npm run eas:submit:android` |
+
+**Raw `npx` equivalents** (same directory):
+
+```bash
+# —— Development (native dev client, not Expo Go) ——
+EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform ios --profile development
+EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform android --profile development
+EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform ios --profile development-simulator
+
+# —— Production (store binaries; versions from app.json) ——
+EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform ios --profile production
+EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform android --profile production
+
+# —— Submit latest finished production build ——
+npx eas-cli submit --platform ios --latest --profile production
+npx eas-cli submit --platform android --latest
+```
+
+`eas.json` **`submit.production`** currently configures **iOS** (team id, App Store Connect app id); Android submit uses Play Console credentials from EAS or your Google Service Account as set up in Expo.
+
 ## iOS production build (EAS)
 
-The **first** App Store–style build must be run **interactively** on your Mac (Apple sign-in / 2FA). See **[docs/IOS_EAS_BUILD.md](../../docs/IOS_EAS_BUILD.md)** or run:
+The **first** App Store–style build may need Apple sign-in / 2FA in the CLI. See **[docs/IOS_EAS_BUILD.md](../../docs/IOS_EAS_BUILD.md)** or run:
 
 ```bash
 ./scripts/ios-eas-production-build.sh

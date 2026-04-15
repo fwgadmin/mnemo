@@ -48,6 +48,10 @@ npm start
 
 Installers: [GitHub Releases](https://github.com/fwgadmin/mnemo/releases) (tagged `**v***` builds).
 
+## Mobile app (Expo)
+
+Native iOS / Android lives under **`apps/mnemo-mobile`**. From the **repo root**, `npm run mobile:start:dev`, `npm run eas:dev:ios`, `npm run eas:build:ios`, etc. forward into that package. Use **`eas-cli`** (via those scripts), not the unrelated npm package **`eas`**. See **[apps/mnemo-mobile/README.md](apps/mnemo-mobile/README.md)**.
+
 ## Documentation
 
 

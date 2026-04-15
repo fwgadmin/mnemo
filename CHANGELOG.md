@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.11 — 2026-04-16
+
+- **Mobile (Expo / iOS):** **`patch-package`** patch for **`expo-dev-menu@55.0.23`** — React Native **0.85** removed **`RCTPackagerConnection.shared()`**; dev menu packager handlers now register on **`RCTDevSettings`** when **`DevMenuManager.currentBridge`** is set (fixes Xcode: *type `RCTPackagerConnection` has no member `shared`* on EAS iOS builds).
+- **npm / GitHub:** `mnemo-note@2.1.11`; tag `v2.1.11` when released.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.11**, iOS build number **11**. In **`app.json`**: **`expo.version`** = **2.1.11**, **`ios.buildNumber`** = **11**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
+## 2.1.10 — 2026-04-16
+
+- **npm (mnemo-note):** Restore **`README.md`** and **`LICENSE`** to **`package.json` → `files`** so the tarball and registry UI always ship/show the readme. v2.1.8 removed them assuming npm always included them; the **npmjs.com** package page sometimes showed **no README** anyway.
+- **`prepublishOnly`** now runs **`scripts/verify-npm-package-readme.js`** — publish fails if those paths are missing from **`files`** or from disk.
+- **Cursor:** **`.cursor/rules/mnemo-npm-readme.mdc`** — do not remove README/LICENSE from `"files"` again.
+
 ## 2.1.9 — 2026-04-15
 
 - **Mobile (Expo):** `SplashScreen.preventAutoHideAsync()` in `earlyStartup` (after RN init); global `ErrorUtils` wrapper logs `[mnemo-mobile]` before redbox / RCTFatal; `AppErrorBoundary` wraps full `AppInner` including the boot “Connecting…” screen. **`ELECTRON_DISABLE_SANDBOX=1`** on `start` / `start:dev` / `web` for Linux hosts where React Native DevTools (Electron) hits `chrome-sandbox` / SUID issues (documented in `apps/mnemo-mobile/README.md`).
