@@ -1,6 +1,6 @@
 {
   "name": "mnemo-note",
-  "version": "2.1.8",
+  "version": "2.1.9",
   "description": "AI-native memory layer — notes, embeddings, and MCP for intelligence systems",
   "main": ".webpack/main",
   "license": "MIT",
@@ -28,6 +28,8 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "build:cli": "npx webpack-cli --config webpack.cli.config.js",
+    "mobile:start:dev": "npm run start:dev --prefix apps/mnemo-mobile",
+    "mobile:expo": "npm run start --prefix apps/mnemo-mobile",
     "prepublishOnly": "npm run typecheck && npm run build:cli && npm run build:mcp && npm run build:mcp-http"
   },
   "keywords": [

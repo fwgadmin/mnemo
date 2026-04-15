@@ -63,6 +63,13 @@ async function preferActiveTenantWithNotes(
   const mode = activeEntry?.storage?.mode ?? 'inherit';
   if (mode !== 'inherit') return state;
 
+  // Only adjust when the active profile is still the default vault. If the user chose another
+  // workspace (CLI `workspace switch`, Settings, etc.), keep it even when that tenant is empty —
+  // otherwise merge/repair would snap back to the tenant with the most notes.
+  if (state.activeWorkspaceId !== DEFAULT_WORKSPACE_ID) {
+    return state;
+  }
+
   let counts: Record<string, number>;
   try {
     counts = await store.getNoteCountsByTenant();

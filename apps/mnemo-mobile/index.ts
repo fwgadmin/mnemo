@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import './src/bootstrap/earlyStartup';
 import './src/bootstrap/screensNative';
 import { registerRootComponent } from 'expo';
 

@@ -34,6 +34,9 @@ Desktop.ini
 certificate.pfx
 electron-windows-sign.log
 
+# Local recordings (asciinema, etc.)
+*.cast
+
 # Logs
 *.log
 npm-debug.log*

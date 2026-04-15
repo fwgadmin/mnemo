@@ -3,10 +3,10 @@
  */
 
 const NOTE_SUBS =
-  'list show search new compose write edit import graph autolink categories set-category category';
+  'list show search delete rm new compose write edit import graph autolink categories set-category category';
 const HELP_TOPICS = 'topics vault workspace sync note mcp mcp-http config clients desktop full';
 const TOP_CMDS =
-  'add a find f search list import graph categories autolink set-category category compose write edit note workspace sync mcp mcp-http gui completion help';
+  'add a find f search list import graph categories autolink set-category category compose write edit delete rm note workspace sync mcp mcp-http gui completion help';
 
 const BASH = `#!/usr/bin/env bash
 # mnemo bash completion — source with: eval "$(mnemo completion bash)"
@@ -37,6 +37,9 @@ _mnemo() {
     find|f|search)
       COMPREPLY=( $(compgen -W "--db --vault --turso-url --turso-token --json --no-json -c --category --exact --shallow --no-descendants -r --recursive" -- "\${cur}") )
       ;;
+    delete|rm)
+      COMPREPLY=( $(compgen -W "--db --vault --turso-url --turso-token --json --no-json" -- "\${cur}") )
+      ;;
     import|graph|categories|autolink|set-category|category)
       COMPREPLY=( $(compgen -W "--db --vault --turso-url --turso-token --json --no-json" -- "\${cur}") )
       ;;
@@ -62,7 +65,7 @@ _mnemo() {
         edit)
           COMPREPLY=( $(compgen -W "--json --no-json -c --category" -- "\${cur}") )
           ;;
-        show|import|graph|autolink|categories|set-category|category)
+        show|delete|rm|import|graph|autolink|categories|set-category|category)
           COMPREPLY=( $(compgen -W "--json --no-json" -- "\${cur}") )
           ;;
       esac
@@ -100,7 +103,7 @@ const ZSH = `#compdef mnemo
 
 _mnemo() {
   local -a cmds
-  cmds=(add a find f search list import graph categories autolink set-category category compose write edit note workspace sync mcp mcp-http gui completion help)
+  cmds=(add a find f search list import graph categories autolink set-category category compose write edit delete rm note workspace sync mcp mcp-http gui completion help)
   # help <topic> completed in case help below
   if (( CURRENT == 2 )); then
     _describe -t commands command cmds
@@ -127,12 +130,16 @@ _mnemo() {
         '-c+:category path:' '--category+:category path:' \
         '--exact' '--shallow' '--no-descendants' '-r' '--recursive'
       ;;
+    delete|rm)
+      _arguments '--db+:path:' '--vault+:path:' '--turso-url+:url:' '--turso-token+:token:' '--json' '--no-json' \
+        '1:ref or uuid:'
+      ;;
     import|graph|categories|autolink|set-category|category)
       _arguments '--db+:path:' '--vault+:path:' '--turso-url+:url:' '--turso-token+:token:' '--json' '--no-json'
       ;;
     note)
       if (( CURRENT == 3 )); then
-        _values 'note subcommand' list show search new compose write edit import graph autolink categories set-category category
+        _values 'note subcommand' list show search delete rm new compose write edit import graph autolink categories set-category category
         return
       fi
       case "\${words[3]}" in
@@ -155,6 +162,9 @@ _mnemo() {
           ;;
         edit)
           _arguments '--json' '--no-json' '-c+:category path:' '--category+:category path:'
+          ;;
+        delete|rm)
+          _arguments '--json' '--no-json' '1:ref or uuid:'
           ;;
         *)
           _arguments '--json' '--no-json'
@@ -226,32 +236,39 @@ complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'clients' -d 'MCP 
 complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'desktop' -d 'GUI shortcuts'
 complete -c mnemo -f -n '__fish_seen_subcommand_from help' -a 'full' -d 'Full reference'
 
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'list' -d 'List notes'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'show' -d 'Show note'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'search' -d 'Search'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'new' -d 'New note'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'compose' -d 'Create in editor'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'write' -d 'Alias compose'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'edit' -d 'Edit in editor'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'import' -d 'Import file'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'graph' -d 'Link graph'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'autolink' -d 'Recompute links'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'categories' -d 'Category tree'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'set-category' -d 'Set note folder'
-complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category' \\
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
   -a 'category' -d 'Rename / promote / demote folders'
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
+  -a 'delete' -d 'Delete note'
+complete -c mnemo -f -n '__fish_seen_subcommand_from note; and not __fish_seen_subcommand_from list show search new compose write edit import graph autolink categories set-category category delete rm' \\
+  -a 'rm' -d 'Delete note (alias)'
+
+complete -c mnemo -f -n '__fish_use_subcommand' -a delete -d 'Delete note'
+complete -c mnemo -f -n '__fish_use_subcommand' -a rm -d 'Delete note (alias)'
 
 complete -c mnemo -f -n '__fish_seen_subcommand_from completion' -a 'bash' -d 'Bash'
 complete -c mnemo -f -n '__fish_seen_subcommand_from completion' -a 'zsh' -d 'Zsh'

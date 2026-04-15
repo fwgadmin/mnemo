@@ -4,6 +4,8 @@ Native-first prototype for **iOS** and **Android**. This app is **not** the Elec
 
 ## Development
 
+**Run Expo / Metro from this folder** (`apps/mnemo-mobile`). The **repo root** is the Electron desktop app — it has no `expo` or `start:dev`. From the monorepo root you can use **`npm run mobile:start:dev`** (see root `package.json`).
+
 ```bash
 cd apps/mnemo-mobile
 npm install
@@ -13,6 +15,8 @@ npm run start
 Then press `i` / `a` for iOS simulator or Android emulator, or scan the QR code with [Expo Go](https://expo.dev/go).
 
 If Metro shows **`Requiring unknown module "<number>"`**, stop the bundler and run **`npx expo start --clear`** (stale cache). The app avoids dynamic `import()` for native-heavy packages to keep a single module graph.
+
+On **Linux**, React Native DevTools (Electron/Chromium) may abort with **`chrome-sandbox`** / SUID errors. The **`start`** / **`start:dev`** / **`web`** scripts set **`ELECTRON_DISABLE_SANDBOX=1`** so the DevTools installer can run locally (dev-only; not used in production app binaries). Alternatively fix sandbox permissions as Chromium documents, or skip opening DevTools from the Metro menu.
 
 If you see **`RNGestureHandlerModule` could not be found** (TurboModuleRegistry), your **dev client binary** does not include **`react-native-gesture-handler`** native code. In **development**, Metro can resolve that package to a **JS shim** (`src/shims/react-native-gesture-handler.js`) so the app runs (swipe gestures are inert). **Production** bundles use the real library. Use **`EXPO_USE_RNGH_SHIM=0`** with `expo start` if your dev client already has RNGH linked. Prefer a **rebuilt dev client**: `npx expo prebuild && npx expo run:ios|android` or an EAS development build.
 
