@@ -138,6 +138,15 @@ When all **three secrets** and **three variables** are set, the **Set up Azure A
 - **DLL / SignTool not found**: open an issue — the script expects `Azure.CodeSigning.Dlib.dll` under the NuGet package layout and SignTool under `C:\Program Files (x86)\Windows Kits\10\bin\<version>\x64\`.
 - **Fork PRs**: secrets from the base repo are not available to workflows from forks; Windows jobs will usually build **unsigned** unless you use a different policy.
 
+- **`AADSTS700016` / `unauthorized_client` / “Application with identifier '…' was not found in the directory '…'”** (often during `ClientSecretCredential` / `SignAsync`):
+  - **`AZURE_CLIENT_ID`**, **`AZURE_TENANT_ID`**, and the client secret must all refer to the **same** Microsoft Entra ID (Azure AD) **tenant** and **one** app registration.
+  - In **[Microsoft Entra admin center](https://entra.microsoft.com)** → **Identity** → **Applications** → **App registrations** → open **your** app (the one granted Artifact Signing access). Copy from **Overview**:
+    - **Application (client) ID** → GitHub secret `AZURE_CLIENT_ID`
+    - **Directory (tenant) ID** → GitHub secret `AZURE_TENANT_ID`
+  - Create or rotate **Certificates & secrets** → **Client secret** → paste the **value** into `AZURE_CLIENT_SECRET` (secrets expire; an expired secret causes auth failures).
+  - If the client ID was copied from a **different** directory, subscription, or app, or the tenant ID is from another organization, Entra returns **700016**. Re-paste all three values from the **same** app blade in the **same** tenant—do not mix IDs from the Artifact Signing resource blade with IDs from a different Entra tenant.
+  - The display name **“Default Directory”** in the error is Microsoft’s label for the tenant you authenticated to; it does not mean you should use a literal string—your secret must still be the **GUID** for your organization’s directory that **contains** that app registration.
+
 ## Local signing (optional)
 
 On a Windows machine with the `.pfx` file:
