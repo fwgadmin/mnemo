@@ -10,11 +10,13 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "ELECTRON_DISABLE_SANDBOX=1 expo start --web",
-    "eas:build:android": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas build --platform android --profile production",
-    "eas:build:ios": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas build --platform ios --profile production",
-    "eas:build:ios:simulator": "EAS_BUILD_NO_EXPO_GO_WARNING=1 eas build --platform ios --profile development-simulator",
-    "eas:submit:android": "eas submit --platform android --latest",
-    "eas:submit:ios": "eas submit --platform ios --latest"
+    "eas:dev:android": "EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform android --profile development",
+    "eas:dev:ios": "EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform ios --profile development",
+    "eas:build:android": "EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform android --profile production",
+    "eas:build:ios": "EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform ios --profile production",
+    "eas:build:ios:simulator": "EAS_BUILD_NO_EXPO_GO_WARNING=1 npx eas-cli build --platform ios --profile development-simulator",
+    "eas:submit:android": "npx eas-cli submit --platform android --latest",
+    "eas:submit:ios": "npx eas-cli submit --platform ios --latest --profile production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
