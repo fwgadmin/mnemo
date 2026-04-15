@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.11 — 2026-04-16
+
+- **Mobile (Expo / iOS):** **`patch-package`** patch for **`expo-dev-menu@55.0.23`** — React Native **0.85** removed **`RCTPackagerConnection.shared()`**; dev menu packager handlers now register on **`RCTDevSettings`** when **`DevMenuManager.currentBridge`** is set (fixes Xcode: *type `RCTPackagerConnection` has no member `shared`* on EAS iOS builds).
+- **npm / GitHub:** `mnemo-note@2.1.11`; tag `v2.1.11` when released.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.11**, iOS build number **11**. In **`app.json`**: **`expo.version`** = **2.1.11**, **`ios.buildNumber`** = **11**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
 ## 2.1.10 — 2026-04-16
 
 - **npm (mnemo-note):** Restore **`README.md`** and **`LICENSE`** to **`package.json` → `files`** so the tarball and registry UI always ship/show the readme. v2.1.8 removed them assuming npm always included them; the **npmjs.com** package page sometimes showed **no README** anyway.

@@ -1,0 +1,95 @@
+diff --git a/node_modules/expo-dev-menu/ios/DevMenuPackagerConnectionHandler.swift b/node_modules/expo-dev-menu/ios/DevMenuPackagerConnectionHandler.swift
+index aaeb550..dbe6827 100644
+--- a/node_modules/expo-dev-menu/ios/DevMenuPackagerConnectionHandler.swift
++++ b/node_modules/expo-dev-menu/ios/DevMenuPackagerConnectionHandler.swift
+@@ -7,6 +7,13 @@ class DevMenuPackagerConnectionHandler {
+   weak var manager: DevMenuManager?
+   private static var suppressRNDevMenu = true
+ 
++#if DEBUG
++  /// React Native no longer exposes `RCTPackagerConnection.shared()`; the connection is owned by `RCTDevSettings`.
++  private weak var packagerBridge: RCTBridge?
++  private var sendDevCommandHandlerToken: RCTHandlerToken = 0
++  private var devMenuHandlerToken: RCTHandlerToken = 0
++#endif
++
+   init(manager: DevMenuManager) {
+     self.manager = manager
+   }
+@@ -16,22 +23,46 @@ class DevMenuPackagerConnectionHandler {
+     // It shouldn't diverge, because of the definition of `RCT_DEV`.
+ #if DEBUG
+     self.swizzleRCTDevMenuShow()
++#endif
++  }
++
++  /// Register Metro notification handlers on the packager connection for this bridge.
++  /// Call when `DevMenuManager.currentBridge` changes (replacing removed `RCTPackagerConnection.shared()`).
++  func attachToPackagerConnection(for bridge: RCTBridge?) {
++#if DEBUG
++    if self.packagerBridge === bridge {
++      return
++    }
++
++    if let previous = self.packagerBridge {
++      let packagerConnection = previous.devSettings.packagerConnection
++      if self.sendDevCommandHandlerToken != 0 {
++        packagerConnection.removeHandler(self.sendDevCommandHandlerToken)
++      }
++      if self.devMenuHandlerToken != 0 {
++        packagerConnection.removeHandler(self.devMenuHandlerToken)
++      }
++      self.sendDevCommandHandlerToken = 0
++      self.devMenuHandlerToken = 0
++    }
++
++    self.packagerBridge = bridge
++
++    guard let bridge else {
++      return
++    }
+ 
+-    RCTPackagerConnection
+-      .shared()
+-      .addNotificationHandler(
+-        self.sendDevCommandNotificationHandler,
+-        queue: DispatchQueue.main,
+-        forMethod: "sendDevCommand"
+-      )
+-
+-    RCTPackagerConnection
+-      .shared()
+-      .addNotificationHandler(
+-        self.devMenuNotificationHanlder,
+-        queue: DispatchQueue.main,
+-        forMethod: "devMenu"
+-      )
++    self.sendDevCommandHandlerToken = bridge.devSettings.addNotificationHandler(
++      self.sendDevCommandNotificationHandler,
++      queue: DispatchQueue.main,
++      forMethod: "sendDevCommand"
++    )
++
++    self.devMenuHandlerToken = bridge.devSettings.addNotificationHandler(
++      self.devMenuNotificationHanlder,
++      queue: DispatchQueue.main,
++      forMethod: "devMenu"
++    )
+ #endif
+   }
+ 
+diff --git a/node_modules/expo-dev-menu/ios/DevMenuManager.swift b/node_modules/expo-dev-menu/ios/DevMenuManager.swift
+index 0fbf236..45fd215 100644
+--- a/node_modules/expo-dev-menu/ios/DevMenuManager.swift
++++ b/node_modules/expo-dev-menu/ios/DevMenuManager.swift
+@@ -115,8 +115,10 @@ open class DevMenuManager: NSObject {
+           self.disableRNDevMenuHoykeys(for: currentBridge)
+         }
+         observeContentDidAppear()
++        self.packagerConnectionHandler?.attachToPackagerConnection(for: currentBridge)
+       } else {
+         updateFABVisibility()
++        self.packagerConnectionHandler?.attachToPackagerConnection(for: nil)
+       }
+     }
+   }

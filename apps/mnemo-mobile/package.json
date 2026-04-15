@@ -1,6 +1,6 @@
 {
   "name": "mnemo-mobile",
-  "version": "2.1.9",
+  "version": "2.1.11",
   "main": "index.ts",
   "scripts": {
     "postinstall": "patch-package",
