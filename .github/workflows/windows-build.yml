@@ -29,7 +29,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     env:
+      # Secrets cannot be referenced in step `if:` — use job env (same values) for conditionals.
       WINDOWS_CERTIFICATE_PFX_B64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_B64 }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
 
     steps:
       - name: Checkout
@@ -45,7 +47,7 @@ jobs:
         run: npm ci
 
       - name: Set up Azure Artifact Signing (NuGet dlib + metadata + SignTool)
-        if: ${{ secrets.AZURE_CLIENT_ID != '' && vars.AZURE_CODESIGNING_ENDPOINT != '' && vars.AZURE_CODESIGNING_ACCOUNT_NAME != '' && vars.AZURE_CERTIFICATE_PROFILE_NAME != '' }}
+        if: ${{ env.AZURE_CLIENT_ID != '' && vars.AZURE_CODESIGNING_ENDPOINT != '' && vars.AZURE_CODESIGNING_ACCOUNT_NAME != '' && vars.AZURE_CERTIFICATE_PROFILE_NAME != '' }}
         shell: pwsh
         env:
           AZURE_CODESIGNING_ENDPOINT: ${{ vars.AZURE_CODESIGNING_ENDPOINT }}
@@ -54,7 +56,7 @@ jobs:
         run: ./scripts/ci/azure-trusted-signing-setup.ps1
 
       - name: Prepare Windows code signing certificate (PFX fallback)
-        if: ${{ secrets.WINDOWS_CERTIFICATE_PFX_B64 != '' && (secrets.AZURE_CLIENT_ID == '' || vars.AZURE_CODESIGNING_ENDPOINT == '' || vars.AZURE_CODESIGNING_ACCOUNT_NAME == '' || vars.AZURE_CERTIFICATE_PROFILE_NAME == '') }}
+        if: ${{ env.WINDOWS_CERTIFICATE_PFX_B64 != '' && (env.AZURE_CLIENT_ID == '' || vars.AZURE_CODESIGNING_ENDPOINT == '' || vars.AZURE_CODESIGNING_ACCOUNT_NAME == '' || vars.AZURE_CERTIFICATE_PROFILE_NAME == '') }}
         shell: pwsh
         run: |
           $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_B64)
