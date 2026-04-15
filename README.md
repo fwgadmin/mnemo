@@ -60,7 +60,7 @@ Native iOS / Android lives under **`apps/mnemo-mobile`**. From the **repo root**
 | **Help → Documentation** (in the app)            | Full GUI help: notes, wikilinks, categories, MCP tables, shortcuts                                                                                    |
 | `**mnemo --help`**                               | Same facts as in-app documentation (paths, MCP resources/tools/prompts, note commands) — source: `[src/shared/userGuide.ts](src/shared/userGuide.ts)` |
 | **[examples/](examples/README.md)**              | CLI local / libSQL, MCP stdio & HTTP, GUI + shared config                                                                                             |
-| **[docs/CODE_SIGNING.md](docs/CODE_SIGNING.md)** | Optional Windows Authenticode signing in CI                                                                                                           |
+| **[docs/CODE_SIGNING.md](docs/CODE_SIGNING.md)** | Windows signing: Azure Artifact Signing in CI (preferred), PFX fallback, or local Trusted Signing (`make:win:trusted`)                              |
 
 
 ## Using Mnemo with AI
