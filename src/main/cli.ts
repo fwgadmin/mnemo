@@ -786,6 +786,8 @@ const TOP_LEVEL_VAULT = new Set([
   'compose',
   'write',
   'edit',
+  'delete',
+  'rm',
   'sync',
 ]);
 
@@ -1518,6 +1520,33 @@ async function cmdNote(argv: string[]): Promise<void> {
         }
         break;
       }
+      case 'delete':
+      case 'rm': {
+        const idArg = args[0];
+        if (!idArg || args.length > 1) {
+          console.error('Usage: mnemo note delete <ref | uuid>');
+          process.exit(1);
+        }
+        const toRemove = await resolveNoteForShow(store, idArg, tenantId);
+        if (!toRemove) {
+          console.error('Note not found.');
+          process.exit(1);
+        }
+        const ok = await store.delete(toRemove.id);
+        if (!ok) {
+          console.error('Delete failed.');
+          process.exit(1);
+        }
+        if (outJson) {
+          printJson({
+            ok: true,
+            deleted: { ref: toRemove.ref, id: toRemove.id, title: toRemove.title },
+          });
+        } else {
+          console.log(`Deleted #${toRemove.ref} ${toRemove.title}`);
+        }
+        break;
+      }
       case 'search': {
         const { queryParts, categoryPath: searchCat, includeDescendants: searchDesc } =
           parseSearchArgs(args);
@@ -1785,7 +1814,7 @@ async function cmdNote(argv: string[]): Promise<void> {
       }
       default:
         console.error(
-          'Unknown note subcommand. Use: list, show, search, new, compose, write, edit, import, graph, autolink, categories, set-category, category …',
+          'Unknown note subcommand. Use: list, show, search, delete, new, compose, write, edit, import, graph, autolink, categories, set-category, category …',
         );
         process.exit(1);
     }

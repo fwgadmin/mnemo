@@ -170,6 +170,7 @@ GET STARTED
   mnemo edit <ref>       Edit in your editor; optional --category to set folder after save
   mnemo list             Interactive list (↑↓ Enter editor ←→ pages q); optional --pager-size; optional --category
   mnemo find <words>     Search vault (short: mnemo f …); optional --category Work to limit to that folder
+  mnemo delete <ref|uuid>  Remove a note (alias: mnemo rm …)
   mnemo <ref>            Show note by number (from list output)
   mnemo <uuid>           Show note by id
   mnemo <word>           If one word and not a command → same as find
@@ -315,6 +316,7 @@ function sectionVaultCommands(): string {
     mnemo write …          Alias of compose
     mnemo edit …           Same as mnemo note edit …
     mnemo find …           Same as mnemo note search …
+    mnemo delete … | mnemo rm …   Same as mnemo note delete …
     mnemo import …         Same as mnemo note import …
     mnemo graph …          Link graph
     mnemo categories …     Folder tree
@@ -337,6 +339,9 @@ function sectionVaultCommands(): string {
 
   mnemo note show <ref|uuid>
     Print one note. ref is the stable # from list.
+
+  mnemo note delete <ref|uuid> | mnemo delete … | mnemo rm …
+    Permanently removes the note from the vault (SQLite row + markdown file). Same ref and uuid rules as show.
 
   mnemo note search <words…> [--category <folder>] [--exact|--shallow]
     Full-text search in titles and bodies. Optional --category limits hits to notes filed under that folder (paths use slashes; same rules as list).

@@ -29,21 +29,21 @@ function AppInner() {
   }
 
   return (
-    <AppErrorBoundary>
-      <CategoryColorsProvider>
-        <View style={[styles.appRoot, { minHeight: height, backgroundColor: theme.background }]}>
-          <RootNavigator />
-          <StatusBar style={resolvedScheme === 'dark' ? 'light' : 'dark'} />
-        </View>
-      </CategoryColorsProvider>
-    </AppErrorBoundary>
+    <CategoryColorsProvider>
+      <View style={[styles.appRoot, { minHeight: height, backgroundColor: theme.background }]}>
+        <RootNavigator />
+        <StatusBar style={resolvedScheme === 'dark' ? 'light' : 'dark'} />
+      </View>
+    </CategoryColorsProvider>
   );
 }
 
 export function AppShell() {
   return (
     <ConnectionProvider>
-      <AppInner />
+      <AppErrorBoundary>
+        <AppInner />
+      </AppErrorBoundary>
     </ConnectionProvider>
   );
 }

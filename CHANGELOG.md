@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.9 — 2026-04-15
+
+- **Mobile (Expo):** `SplashScreen.preventAutoHideAsync()` in `earlyStartup` (after RN init); global `ErrorUtils` wrapper logs `[mnemo-mobile]` before redbox / RCTFatal; `AppErrorBoundary` wraps full `AppInner` including the boot “Connecting…” screen. **`ELECTRON_DISABLE_SANDBOX=1`** on `start` / `start:dev` / `web` for Linux hosts where React Native DevTools (Electron) hits `chrome-sandbox` / SUID issues (documented in `apps/mnemo-mobile/README.md`).
+- **CLI:** `mnemo note delete <ref|uuid>` (aliases `mnemo delete`, `mnemo rm`); vault CLI routing and tab completion updated.
+- **Repo:** Root scripts `npm run mobile:start:dev` and `npm run mobile:expo` delegate to `apps/mnemo-mobile`.
+- **npm / GitHub:** `mnemo-note@2.1.9`; tag `v2.1.9` when released.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.9**, iOS build number **9**. In **`app.json`**: **`expo.version`** = **2.1.9** (user-facing / marketing version, **CFBundleShortVersionString**), **`ios.buildNumber`** = **9** (monotonic **CFBundleVersion** per upload). After merge, run **`eas build --platform ios --profile production`** then **`eas submit --platform ios --latest`** so TestFlight and App Store Connect show **2.1.9** with build **9** (replacing older trains such as **2.1.6 (7)** once this build is submitted).
+
 ## 2.1.8 — 2026-04-16
 
 - **npm:** Stop listing `README.md` and `LICENSE` under `package.json` `files`. npm always includes those paths in the tarball; relying on the default avoids rare registry/UI cases where the package page showed no README despite the file being published.

@@ -81,6 +81,8 @@ function shouldRunVaultCli(argv) {
     cmd === 'compose' ||
     cmd === 'write' ||
     cmd === 'edit' ||
+    cmd === 'delete' ||
+    cmd === 'rm' ||
     cmd === 'sync'
   ) {
     return true;
