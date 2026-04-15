@@ -31,7 +31,54 @@ function getWindowsCodeSigningOptions() {
   };
 }
 
-const winSign = getWindowsCodeSigningOptions();
+/**
+ * Azure Trusted Signing (SignTool + Dlib + metadata.json). Ignored if a PFX is configured.
+ * Set AZURE_CLIENT_ID / AZURE_CLIENT_SECRET / AZURE_TENANT_ID in the environment (SignTool reads them).
+ * @returns {null | { signToolPath?: string, signWithParams: string, timestampServer: string, hashes: string[] }}
+ */
+function getTrustedSigningWindowsSign() {
+  if (process.platform !== 'win32') return null;
+  const dlib = process.env.AZURE_CODE_SIGNING_DLIB?.trim();
+  const metadata = process.env.AZURE_METADATA_JSON?.trim();
+  if (!dlib || !metadata) return null;
+  if (!fs.existsSync(dlib) || !fs.existsSync(metadata)) return null;
+  const signToolPath =
+    process.env.WINDOWS_SIGNTOOL_PATH?.trim() ||
+    process.env.SIGNTOOL_PATH?.trim() ||
+    undefined;
+  return {
+    ...(signToolPath ? { signToolPath } : {}),
+    signWithParams: `/v /debug /dlib ${dlib} /dmdf ${metadata}`,
+    timestampServer:
+      process.env.WINDOWS_TRUSTED_TIMESTAMP_SERVER?.trim() ||
+      'http://timestamp.acs.microsoft.com',
+    hashes: ['sha256'],
+  };
+}
+
+const pfxSign = getWindowsCodeSigningOptions();
+const trustedSign = pfxSign ? null : getTrustedSigningWindowsSign();
+
+/** @type {null | Record<string, unknown>} */
+let packagerWindowsSign = null;
+/** @type {Record<string, unknown>} */
+let squirrelSigning = {};
+
+if (pfxSign) {
+  packagerWindowsSign = {
+    certificateFile: pfxSign.certificateFile,
+    certificatePassword: pfxSign.certificatePassword,
+    hashes: pfxSign.hashes,
+    timestampServer: pfxSign.timestampServer,
+  };
+  squirrelSigning = {
+    certificateFile: pfxSign.certificateFile,
+    certificatePassword: pfxSign.certificatePassword,
+  };
+} else if (trustedSign) {
+  packagerWindowsSign = trustedSign;
+  squirrelSigning = { windowsSign: trustedSign };
+}
 
 /**
  * Minimal node_modules beside mnemo-cli.js so ELECTRON_RUN_AS_NODE + NODE_PATH works
@@ -176,14 +223,9 @@ module.exports = {
         role: 'Editor',
       },
     ],
-    ...(winSign
+    ...(packagerWindowsSign
       ? {
-          windowsSign: {
-            certificateFile: winSign.certificateFile,
-            certificatePassword: winSign.certificatePassword,
-            hashes: winSign.hashes,
-            timestampServer: winSign.timestampServer,
-          },
+          windowsSign: packagerWindowsSign,
         }
       : {}),
   },
@@ -202,12 +244,7 @@ module.exports = {
         // noMsi creates only the Squirrel setup .exe; set to false if you also
         // want an .msi side-by-side (requires WiX toolset on the build machine).
         noMsi: true,
-        ...(winSign
-          ? {
-              certificateFile: winSign.certificateFile,
-              certificatePassword: winSign.certificatePassword,
-            }
-          : {}),
+        ...squirrelSigning,
       },
     },
     {

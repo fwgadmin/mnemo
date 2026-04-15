@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.12 — 2026-04-15
+
+- **Desktop (CI / signing):** **Azure Artifact Signing** on GitHub Actions — **`scripts/ci/azure-trusted-signing-setup.ps1`** installs the NuGet dlib, writes **`metadata.json`**, locates **SignTool**; **`.github/workflows/release.yml`** and **`windows-build.yml`** run it when repository **secrets** (`AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`) and **variables** (`AZURE_CODESIGNING_ENDPOINT`, `AZURE_CODESIGNING_ACCOUNT_NAME`, `AZURE_CERTIFICATE_PROFILE_NAME`) are set. **`forge.config.js`** supports Trusted Signing alongside **PFX** fallback; **`docs/CODE_SIGNING.md`** documents setup and troubleshooting.
+- **npm / GitHub:** `mnemo-note@2.1.12`; tag **`v2.1.12`** when released so Windows (and other) release assets build with signing when Azure is configured.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.12**, iOS build number **12**. In **`app.json`**: **`expo.version`** = **2.1.12**, **`ios.buildNumber`** = **12**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
 ## 2.1.11 — 2026-04-16
 
 - **Mobile (Expo / iOS):** **`patch-package`** patch for **`expo-dev-menu@55.0.23`** — React Native **0.85** removed **`RCTPackagerConnection.shared()`**; dev menu packager handlers now register on **`RCTDevSettings`** when **`DevMenuManager.currentBridge`** is set (fixes Xcode: *type `RCTPackagerConnection` has no member `shared`* on EAS iOS builds).

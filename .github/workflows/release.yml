@@ -35,8 +35,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Prepare Windows code signing certificate
-        if: env.WINDOWS_CERTIFICATE_PFX_B64 != ''
+      # Azure Artifact Signing (Trusted Signing): preferred when secrets + repo variables are set.
+      # See docs/CODE_SIGNING.md — forge.config.js uses PFX only if WINDOWS_CERTIFICATE_FILE exists.
+      - name: Set up Azure Artifact Signing (NuGet dlib + metadata + SignTool)
+        id: azure_signing
+        if: ${{ secrets.AZURE_CLIENT_ID != '' && vars.AZURE_CODESIGNING_ENDPOINT != '' && vars.AZURE_CODESIGNING_ACCOUNT_NAME != '' && vars.AZURE_CERTIFICATE_PROFILE_NAME != '' }}
+        shell: pwsh
+        env:
+          AZURE_CODESIGNING_ENDPOINT: ${{ vars.AZURE_CODESIGNING_ENDPOINT }}
+          AZURE_CODESIGNING_ACCOUNT_NAME: ${{ vars.AZURE_CODESIGNING_ACCOUNT_NAME }}
+          AZURE_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+        run: ./scripts/ci/azure-trusted-signing-setup.ps1
+
+      - name: Prepare Windows code signing certificate (PFX fallback)
+        # Skip PFX when Azure Artifact Signing is fully configured (Trusted Signing takes precedence in forge.config.js).
+        if: ${{ secrets.WINDOWS_CERTIFICATE_PFX_B64 != '' && (secrets.AZURE_CLIENT_ID == '' || vars.AZURE_CODESIGNING_ENDPOINT == '' || vars.AZURE_CODESIGNING_ACCOUNT_NAME == '' || vars.AZURE_CERTIFICATE_PROFILE_NAME == '') }}
         shell: pwsh
         run: |
           $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_B64)
@@ -46,6 +59,9 @@ jobs:
 
       - name: Create Windows installers
         env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           WINDOWS_TIMESTAMP_SERVER: ${{ vars.WINDOWS_TIMESTAMP_SERVER }}
         run: npm run make

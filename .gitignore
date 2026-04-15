@@ -32,6 +32,8 @@ Desktop.ini
 
 # Code signing (never commit)
 certificate.pfx
+.env.trustedsigning
+artifact-signing-ci/
 electron-windows-sign.log
 
 # Local recordings (asciinema, etc.)
