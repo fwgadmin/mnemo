@@ -81,8 +81,14 @@ if (Test-Path $kitsRoot) {
 if (-not $signtool) {
   throw 'signtool.exe not found under Windows Kits. Install the Windows SDK on this machine or set WINDOWS_SIGNTOOL_PATH.'
 }
+
+# @electron/windows-sign: paths must not contain spaces (issue #45). Windows Kits lives under
+# "Program Files (x86)\...", so copy signtool next to the dlib under $root (workspace path is space-free on CI).
+$signtoolDest = Join-Path $root 'signtool.exe'
+Copy-Item -LiteralPath $signtool -Destination $signtoolDest -Force
+$signtool = (Resolve-Path -LiteralPath $signtoolDest).Path
 if ($signtool -match '\s') {
-  throw 'Path to signtool.exe must not contain spaces.'
+  throw 'Path to signtool.exe must not contain spaces (copy into artifact-signing-ci failed).'
 }
 
 $ghEnv = $env:GITHUB_ENV
