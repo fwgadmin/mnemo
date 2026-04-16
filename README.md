@@ -35,7 +35,7 @@ mnemo note new --title "Hello" --body "Markdown **here**." -c General
 mnemo 1
 ```
 
-`ref` in `show` is the **#** column from `note list` (not arbitrary IDs). See `**mnemo --help`** for every subcommand.
+`ref` in last command (1) is the **#** column from `note list` (not arbitrary IDs). See `**mnemo --help`** for every subcommand.
 
 ## Prerequisites
 
