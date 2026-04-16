@@ -23,13 +23,9 @@ Mnemo keeps a **stable ref** per note, **full-text search**, **wikilinks**, and 
 
 ![Mnemo CLI 1](cli3.gif)
 
-![Mnemo CLI 2](cli4.gif)
+![Mnemo CLI 2](cli5.gif)
 
-![Mnemo CLI 3](cli5.gif)
-
-![Mnemo CLI 4](cli6.gif)
-
-![Mnemo CLI 5](cli7.gif)
+![Mnemo CLI 3](cli6.gif)
 
 ```bash
 npm install -g mnemo-note
