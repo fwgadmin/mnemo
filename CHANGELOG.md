@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.13 — 2026-04-16
+
+- **Security (dependencies):** Transitive **`hono`** (via `@modelcontextprotocol/sdk`) and **`dompurify`** (via `mermaid`) bumped to patched releases; **`package-lock.json`** updated and **`package.json` → `overrides`** pin **`hono@^4.12.14`**, **`dompurify@^3.4.0`** so installs stay on fixed versions. **CI:** `.github/workflows/npm-audit.yml` now fails on **moderate** and above (aligned with Dependabot).
+- **npm / GitHub:** `mnemo-note@2.1.13`; tag **`v2.1.13`** when released.
+
 ## 2.1.12 — 2026-04-15
 
 - **Desktop (CI / signing):** **Azure Artifact Signing** on GitHub Actions — **`scripts/ci/azure-trusted-signing-setup.ps1`** installs the NuGet dlib, writes **`metadata.json`**, locates **SignTool**; **`.github/workflows/release.yml`** and **`windows-build.yml`** run it when repository **secrets** (`AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`) and **variables** (`AZURE_CODESIGNING_ENDPOINT`, `AZURE_CODESIGNING_ACCOUNT_NAME`, `AZURE_CERTIFICATE_PROFILE_NAME`) are set. **`forge.config.js`** supports Trusted Signing alongside **PFX** fallback; **`docs/CODE_SIGNING.md`** documents setup and troubleshooting.
