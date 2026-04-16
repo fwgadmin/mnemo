@@ -1,19 +1,33 @@
-# Publishes GitHub Releases with Windows + Linux zip assets (no macOS desktop zip). Runs ONLY when a tag matching `v*` is pushed — not on PRs or merges to master.
-# After merging a release PR: git tag -a vX.Y.Z <merge-commit> && git push origin vX.Y.Z
-# (The separate “CI: Windows installer” workflow validates builds on PRs but does not ship a Release.)
+# Publishes GitHub Releases with Windows + Linux zip assets (no macOS desktop zip).
+#
+# Triggers:
+#   • Push a tag matching `v*` — typical release path.
+#   • workflow_dispatch — run from Actions → Release → Run workflow; set `tag` (e.g. v2.1.17)
+#     to match package.json on the branch you select (usually `master`).
+#
+# Merging PRs to `master` does not run this workflow; tag push or manual run does.
 name: Release
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v2.1.17). Must match the semver you are shipping; checkout the correct branch/ref first.'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.tag || github.ref }}
   cancel-in-progress: true
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
   build-windows:
@@ -71,13 +85,13 @@ jobs:
       - name: Zip Windows out/make
         shell: pwsh
         run: |
-          Compress-Archive -Path .\out\make\* -DestinationPath "mnemo-${{ github.ref_name }}-windows-x64.zip"
+          Compress-Archive -Path .\out\make\* -DestinationPath "mnemo-${{ env.RELEASE_TAG }}-windows-x64.zip"
 
       - name: Upload Windows zip (staging)
         uses: actions/upload-artifact@v4
         with:
           name: windows-zip
-          path: mnemo-${{ github.ref_name }}-windows-x64.zip
+          path: mnemo-${{ env.RELEASE_TAG }}-windows-x64.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -106,13 +120,13 @@ jobs:
 
       - name: Zip Linux out/make
         run: |
-          (cd out/make && zip -r "${GITHUB_WORKSPACE}/mnemo-${GITHUB_REF_NAME}-linux-amd64.zip" .)
+          (cd out/make && zip -r "${GITHUB_WORKSPACE}/mnemo-${{ env.RELEASE_TAG }}-linux-amd64.zip" .)
 
       - name: Upload Linux zip (staging)
         uses: actions/upload-artifact@v4
         with:
           name: linux-zip
-          path: mnemo-${{ github.ref_name }}-linux-amd64.zip
+          path: mnemo-${{ env.RELEASE_TAG }}-linux-amd64.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -129,11 +143,12 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             assets/windows-zip/*.zip
             assets/linux-zip/*.zip
           generate_release_notes: true
-          make_latest: ${{ !contains(github.ref_name, '-') }}
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(env.RELEASE_TAG, '-') }}
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

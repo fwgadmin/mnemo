@@ -24,3 +24,7 @@ git rebase origin/master
 ## Pull requests
 
 Target **`master`**. After opening or updating a PR, keep the branch current with **`master`** until merge (same commands as above).
+
+## GitHub Releases (desktop zips)
+
+The **Release** workflow (`.github/workflows/release.yml`) runs on **tag push** `v*` or **Actions → Release → Run workflow** (`workflow_dispatch`). Enter **`tag`** (e.g. `v2.1.17`) and run from the branch/commit that matches **`package.json`**. Merging to **`master` alone does not** build release assets.
