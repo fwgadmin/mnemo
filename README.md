@@ -21,7 +21,15 @@ Mnemo keeps a **stable ref** per note, **full-text search**, **wikilinks**, and 
 
 ## Quick start (CLI)
 
-![Mnemo CLI: list, search, and edit notes in the terminal](demo.gif)
+![Mnemo CLI 1](cli3.gif)
+
+![Mnemo CLI 2](cli4.gif)
+
+![Mnemo CLI 3](cli5.gif)
+
+![Mnemo CLI 4](cli6.gif)
+
+![Mnemo CLI 5](cli7.gif)
 
 ```bash
 npm install -g mnemo-note
@@ -39,7 +47,9 @@ mnemo note show 1
 
 ## Quick start (desktop)
 
-![Mnemo desktop: editor, graph, and IDE-style layout](desktop.gif)
+![Mnemo desktop 1](desktop1.gif)
+
+![Mnemo desktop 2](desktop2.gif)
 
 ```bash
 git clone https://github.com/fwgadmin/mnemo.git
