@@ -29,10 +29,10 @@ Mnemo keeps a **stable ref** per note, **full-text search**, **wikilinks**, and 
 
 ```bash
 npm install -g mnemo-note
-mnemo note list
-mnemo note search "your query"
+mnemo list
+mnemo search "your query"
 mnemo note new --title "Hello" --body "Markdown **here**." -c General
-mnemo note show 1
+mnemo 1
 ```
 
 `ref` in `show` is the **#** column from `note list` (not arbitrary IDs). See `**mnemo --help`** for every subcommand.
