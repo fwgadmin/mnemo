@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.17 — 2026-04-16
+
+- **npm (`mnemo-note`):** Global **`npm install -g`** postinstall no longer invokes **`npx @electron/rebuild`** (fails with *electron-rebuild: not found* / exit 127). **`@electron/rebuild`** is added as a **dependency**; **`scripts/rebuild-electron-native.js`** runs the CLI via **`node`** + **`module.createRequire`** (compatible with `@electron/rebuild` v4 **`exports`**). **`MNEMO_SKIP_NATIVE_REBUILD=1`** still skips the step.
+- **npm / GitHub:** `mnemo-note@2.1.17`; tag **`v2.1.17`** when released.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.17**, iOS build number **17**. In **`app.json`**: **`expo.version`** = **2.1.17**, **`ios.buildNumber`** = **17**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
 ## 2.1.16 — 2026-04-16
 
 - **npm (`mnemo-note`):** **`npm install -g mnemo-note`** no longer fails in **`postinstall`** — the tarball now includes **`scripts/rebuild-electron-native.js`** (it was listed in **`scripts`** but omitted from **`package.json` → `files`**). **`electron`** is moved from **`devDependencies`** to **`dependencies`** so the global CLI can **`require('electron')`** (same as the repo install). After a failed install, remove the broken global folder if needed (e.g. **`rm -rf "$(npm root -g)/mnemo-note"`**) then reinstall.
