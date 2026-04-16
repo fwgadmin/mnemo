@@ -1,4 +1,4 @@
-# Fails the job if npm audit reports high or critical vulnerabilities (aligned with Dependabot severities).
+# Fails the job if npm audit reports moderate+ vulnerabilities (matches Dependabot default alerts).
 name: npm audit
 
 on:
@@ -25,8 +25,8 @@ jobs:
             apps/mnemo-mobile/package-lock.json
 
       - name: Install and audit (root)
-        run: npm ci && npm audit --audit-level=high
+        run: npm ci && npm audit --audit-level=moderate
 
       - name: Install and audit (mobile)
         working-directory: apps/mnemo-mobile
-        run: npm ci && npm audit --audit-level=high
+        run: npm ci && npm audit --audit-level=moderate
