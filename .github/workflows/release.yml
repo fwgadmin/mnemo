@@ -1,4 +1,4 @@
-# Publishes GitHub Releases with zip assets. Runs ONLY when a tag matching `v*` is pushed — not on PRs or merges to master.
+# Publishes GitHub Releases with Windows + Linux zip assets (no macOS desktop zip). Runs ONLY when a tag matching `v*` is pushed — not on PRs or merges to master.
 # After merging a release PR: git tag -a vX.Y.Z <merge-commit> && git push origin vX.Y.Z
 # (The separate “CI: Windows installer” workflow validates builds on PRs but does not ship a Release.)
 name: Release
@@ -116,42 +116,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  build-macos:
-    name: Build macOS (zip)
-    runs-on: macos-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Zip output matches the runner CPU (macos-latest is typically arm64).
-      - name: Create macOS installers
-        run: npm run make
-
-      - name: Zip macOS out/make
-        run: |
-          (cd out/make && zip -r "${GITHUB_WORKSPACE}/mnemo-${GITHUB_REF_NAME}-macos.zip" .)
-
-      - name: Upload macOS zip (staging)
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-zip
-          path: mnemo-${{ github.ref_name }}-macos.zip
-          if-no-files-found: error
-          retention-days: 30
-
   publish:
     name: Publish GitHub release assets
-    needs: [build-windows, build-linux, build-macos]
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Download build zips
@@ -165,7 +132,6 @@ jobs:
           files: |
             assets/windows-zip/*.zip
             assets/linux-zip/*.zip
-            assets/macos-zip/*.zip
           generate_release_notes: true
           make_latest: ${{ !contains(github.ref_name, '-') }}
           prerelease: ${{ contains(github.ref_name, '-') }}

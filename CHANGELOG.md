@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.15 — 2026-04-15
+
+- **Desktop (releases):** **GitHub Releases** no longer ship a **macOS** desktop zip — the prior artifact did not work reliably on Mac. **`.github/workflows/release.yml`** builds and attaches **Windows** and **Linux** only; **`forge.config.js`** zip maker targets **`linux`** and **`win32`** (no **`darwin`**). **README** documents that macOS users should use **`mnemo-note`** from npm (CLI) or **`npm start`** from source.
+- **npm / GitHub:** `mnemo-note@2.1.15`; tag **`v2.1.15`** when released.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.15**, iOS build number **15**. In **`app.json`**: **`expo.version`** = **2.1.15**, **`ios.buildNumber`** = **15**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
 ## 2.1.14 — 2026-04-15
 
 - **npm / GitHub:** `mnemo-note@2.1.14`; tag **`v2.1.14`** — ships **2.1.13** security hardening (transitive **`hono`** / **`dompurify`** overrides, **moderate**-level **`npm audit`** CI) plus README demo GIFs and heading tweaks (**#66–#68**).
