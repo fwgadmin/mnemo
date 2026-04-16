@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.16 — 2026-04-16
+
+- **npm (`mnemo-note`):** **`npm install -g mnemo-note`** no longer fails in **`postinstall`** — the tarball now includes **`scripts/rebuild-electron-native.js`** (it was listed in **`scripts`** but omitted from **`package.json` → `files`**). **`electron`** is moved from **`devDependencies`** to **`dependencies`** so the global CLI can **`require('electron')`** (same as the repo install). After a failed install, remove the broken global folder if needed (e.g. **`rm -rf "$(npm root -g)/mnemo-note"`**) then reinstall.
+- **npm / GitHub:** `mnemo-note@2.1.16`; tag **`v2.1.16`** when released.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.16**, iOS build number **16**. In **`app.json`**: **`expo.version`** = **2.1.16**, **`ios.buildNumber`** = **16**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
 ## 2.1.15 — 2026-04-15
 
 - **Desktop (releases):** **GitHub Releases** no longer ship a **macOS** desktop zip — the prior artifact did not work reliably on Mac. **`.github/workflows/release.yml`** builds and attaches **Windows** and **Linux** only; **`forge.config.js`** zip maker targets **`linux`** and **`win32`** (no **`darwin`**). **README** documents that macOS users should use **`mnemo-note`** from npm (CLI) or **`npm start`** from source.
