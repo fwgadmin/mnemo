@@ -21,6 +21,8 @@ Mnemo keeps a **stable ref** per note, **full-text search**, **wikilinks**, and 
 
 ## Quick start (CLI)
 
+![Mnemo CLI: list, search, and edit notes in the terminal](demo.gif)
+
 ```bash
 npm install -g mnemo-note
 mnemo note list
@@ -36,6 +38,8 @@ mnemo note show 1
 - **Node.js** 22 or newer (required for this repo’s dependency tree, including Mermaid’s parser stack). GitHub Actions already use Node 22. With [nvm](https://github.com/nvm-sh/nvm), run `nvm use` in the repo root (see `.nvmrc`).
 
 ## Quick start (desktop)
+
+![Mnemo desktop: editor, graph, and IDE-style layout](desktop.gif)
 
 ```bash
 git clone https://github.com/fwgadmin/mnemo.git
