@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.14 — 2026-04-15
+
+- **npm / GitHub:** `mnemo-note@2.1.14`; tag **`v2.1.14`** — ships **2.1.13** security hardening (transitive **`hono`** / **`dompurify`** overrides, **moderate**-level **`npm audit`** CI) plus README demo GIFs and heading tweaks (**#66–#68**).
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.14**, iOS build number **14**. In **`app.json`**: **`expo.version`** = **2.1.14**, **`ios.buildNumber`** = **14**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
 ## 2.1.13 — 2026-04-16
 
 - **Security (dependencies):** Transitive **`hono`** (via `@modelcontextprotocol/sdk`) and **`dompurify`** (via `mermaid`) bumped to patched releases; **`package-lock.json`** updated and **`package.json` → `overrides`** pin **`hono@^4.12.14`**, **`dompurify@^3.4.0`** so installs stay on fixed versions. **CI:** `.github/workflows/npm-audit.yml` now fails on **moderate** and above (aligned with Dependabot).
