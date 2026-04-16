@@ -19,7 +19,7 @@ Mnemo keeps a **stable ref** per note, **full-text search**, **wikilinks**, and 
 - **MCP** — stdio server (`mnemo mcp`) for Cursor / Claude Desktop (list/categories/ref-based tools, autolink, etc.); HTTP/SSE (`mnemo mcp-http`) for remote libSQL + bearer auth
 - **Optional cloud** — same credentials in GUI Settings or env vars for CLI/MCP
 
-## Quick start (CLI)
+## Examples (CLI)
 
 ![Mnemo CLI 1](cli3.gif)
 
@@ -41,7 +41,7 @@ mnemo note show 1
 
 - **Node.js** 22 or newer (required for this repo’s dependency tree, including Mermaid’s parser stack). GitHub Actions already use Node 22. With [nvm](https://github.com/nvm-sh/nvm), run `nvm use` in the repo root (see `.nvmrc`).
 
-## Quick start (desktop)
+## Examples (desktop)
 
 ![Mnemo desktop 1](desktop1.gif)
 
@@ -58,9 +58,9 @@ npm start
 
 Installers: [GitHub Releases](https://github.com/fwgadmin/mnemo/releases) (tagged `**v***` builds).
 
-## Mobile app (Expo)
+## Mobile app (Expo) - In Development
 
-Native iOS / Android lives under **`apps/mnemo-mobile`**. From the **repo root**, `npm run mobile:start:dev`, `npm run eas:dev:ios`, `npm run eas:build:ios`, etc. forward into that package. Use **`eas-cli`** (via those scripts), not the unrelated npm package **`eas`**. See **[apps/mnemo-mobile/README.md](apps/mnemo-mobile/README.md)**.
+To Be Shipped: Native iOS / Android lives under **`apps/mnemo-mobile`**. From the **repo root**, `npm run mobile:start:dev`, `npm run eas:dev:ios`, `npm run eas:build:ios`, etc. forward into that package. Use **`eas-cli`** (via those scripts), not the unrelated npm package **`eas`**. See **[apps/mnemo-mobile/README.md](apps/mnemo-mobile/README.md)**.
 
 ## Documentation
 
