@@ -35,6 +35,8 @@ mnemo note new --title "Hello" --body "Markdown **here**." -c General
 mnemo note show 1
 ```
 
+Use **`-g`** so **`mnemo`** (and **`mnemo-note`**) are on your **`PATH`**. A **local** install (`npm install mnemo-note` without `-g`) only adds **`node_modules/.bin/`** — run **`npx mnemo`**, **`npx mnemo-note`**, or **`./node_modules/.bin/mnemo`** from that directory.
+
 `ref` in `show` is the **#** column from `note list` (not arbitrary IDs). See `**mnemo --help`** for every subcommand.
 
 ## Prerequisites

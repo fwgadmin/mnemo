@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.19 — 2026-04-16
+
+- **npm (`mnemo-note`):** **`bin`** now exposes **`mnemo-note`** as well as **`mnemo`** (same entry point) so the package name matches a command when using **`npx`**. **README** clarifies that **`npm install -g mnemo-note`** is required for a global **`mnemo`** on **`PATH`**; without **`-g`**, use **`npx mnemo`** / **`npx mnemo-note`** or **`node_modules/.bin/mnemo`**.
+- **npm / GitHub:** `mnemo-note@2.1.19`; tag **`v2.1.19`** when released.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.19**, iOS build number **19**. In **`app.json`**: **`expo.version`** = **2.1.19**, **`ios.buildNumber`** = **19**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
 ## 2.1.18 — 2026-04-16
 
 - **Desktop (CI / packaging):** **`electron`** is listed in **`devDependencies`** again (same range as **`dependencies`**) — **`@electron-forge/plugin-webpack`** resolves the Electron version only from **`devDependencies`**, so **`npm run make`** / Release builds failed with *Could not find any Electron packages in devDependencies* after **`electron`** was moved for global npm installs (**2.1.16**).
