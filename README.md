@@ -56,7 +56,7 @@ npm start
 
 `npm install` runs a native rebuild so `better-sqlite3` matches **Electron** (the `mnemo` CLI uses Electron’s Node). If you skipped it, run `npm run rebuild:native`. To opt out of the postinstall step (e.g. CI), set `MNEMO_SKIP_NATIVE_REBUILD=1`.
 
-Installers: [GitHub Releases](https://github.com/fwgadmin/mnemo/releases) (tagged `**v***` builds).
+Installers: [GitHub Releases](https://github.com/fwgadmin/mnemo/releases) — **Windows** and **Linux** zips for tagged `**v***` builds. **macOS desktop installers are not published**; on macOS use **`npm install -g mnemo-note`** (CLI) or run **`npm start`** from a source checkout.
 
 ## Mobile app (Expo) - In Development
 

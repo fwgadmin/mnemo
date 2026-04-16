@@ -270,7 +270,8 @@ module.exports = {
     },
     {
       name: '@electron-forge/maker-zip',
-      platforms: ['darwin', 'linux', 'win32'],
+      // No darwin: macOS desktop builds are not shipped (see release workflow + CHANGELOG).
+      platforms: ['linux', 'win32'],
     },
   ],
   plugins: [
