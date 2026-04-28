@@ -98,7 +98,7 @@
     "react-markdown": "^10.1.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "uuid": "^13.0.0",
+    "uuid": "^14.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -108,7 +108,7 @@
     "@electron-forge/maker-zip": "^7.11.1",
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
     "@electron-forge/plugin-webpack": "^7.11.1",
-    "@electron/windows-sign": "^1.2.2",
+    "@electron/windows-sign": "^2.0.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/d3-force": "^3.0.10",
     "@types/express": "^5.0.6",
@@ -118,7 +118,7 @@
     "@types/uuid": "^11.0.0",
     "autoprefixer": "^10.4.27",
     "css-loader": "^7.1.4",
-    "dotenv-cli": "^8.0.0",
+    "dotenv-cli": "^11.0.0",
     "electron": "^41.0.3",
     "fork-ts-checker-webpack-plugin": "^9.1.0",
     "html-webpack-plugin": "^5.6.6",
