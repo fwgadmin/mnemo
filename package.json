@@ -142,7 +142,7 @@
     "@tootallnate/once": "^3.0.1",
     "webpack-dev-server": "^5.2.3",
     "tailwindcss": "^3.4.19",
-    "hono": "^4.12.14",
+    "hono": "^4.12.23",
     "dompurify": "^3.4.0"
   }
 }
