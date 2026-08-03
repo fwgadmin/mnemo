@@ -16,16 +16,22 @@ export async function recomputeAutolinks(
   dryRun: boolean,
   tenantId?: string,
 ): Promise<AutolinkRecomputeResult> {
-  const list = await store.list(tenantId);
-  const index = list.map((n) => ({ id: n.id, title: n.title, ref: n.ref }));
+  const debug = process.env.MNEMO_AUTOLINK_DEBUG === '1';
+  const started = Date.now();
+  const notes = await store.listNotes(tenantId);
+  if (debug) console.error(`[autolink] loaded ${notes.length} notes in ${Date.now() - started}ms`);
+  const index = notes.map((n) => ({ id: n.id, title: n.title, ref: n.ref }));
+  const titleToId = new Map<string, string>();
+  for (const note of notes) {
+    if (!titleToId.has(note.title)) titleToId.set(note.title, note.id);
+  }
   let notesChanged = 0;
   let newEdges = 0;
-  for (const item of list) {
-    const note = await store.read(item.id);
-    if (!note) continue;
+  const updates: Array<{ sourceId: string; targetIds: string[] }> = [];
+  for (const [position, note] of notes.entries()) {
     const explicitIds: string[] = [];
     for (const t of extractWikilinks(note.body)) {
-      const r = await store.resolveTitle(t, tenantId);
+      const r = titleToId.get(t);
       if (r) explicitIds.push(r);
     }
     const inferredIds = inferLinkTargetIds(note.body, note.id, index);
@@ -37,7 +43,12 @@ export async function recomputeAutolinks(
     if (same) continue;
     newEdges += merged.filter((id) => !prev.has(id)).length;
     notesChanged++;
-    if (!dryRun) await store.updateLinks(note.id, merged);
+    updates.push({ sourceId: note.id, targetIds: merged });
+    if (debug && (position + 1) % 10 === 0) {
+      console.error(`[autolink] scanned ${position + 1}/${notes.length} in ${Date.now() - started}ms`);
+    }
   }
+  if (!dryRun) await store.updateLinksBatch(updates);
+  if (debug) console.error(`[autolink] completed in ${Date.now() - started}ms`);
   return { dryRun, notesChanged, newEdges };
 }

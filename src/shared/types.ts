@@ -231,9 +231,13 @@ export interface INoteStore {
   update(input: UpdateNoteInput): Promise<Note | null>;
   delete(id: string): Promise<boolean>;
   list(tenantId?: string): Promise<NoteListItem[]>;
+  /** Load every full note and its outgoing links in a bounded number of store round trips. */
+  listNotes(tenantId?: string): Promise<Note[]>;
   search(query: string, tenantId?: string): Promise<SearchResult[]>;
   getBacklinks(noteId: string): Promise<NoteListItem[]>;
   updateLinks(sourceId: string, targetIds: string[]): Promise<void>;
+  /** Replace outgoing links for multiple source notes without one remote round trip per note. */
+  updateLinksBatch(updates: Array<{ sourceId: string; targetIds: string[] }>): Promise<void>;
   resolveTitle(title: string, tenantId?: string): Promise<string | null>;
   getAllLinks(tenantId?: string): Promise<Array<{ source: string; target: string }>>;
   /** Single round-trip: counts + max(updated_at) for vault change detection. */

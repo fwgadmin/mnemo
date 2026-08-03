@@ -204,6 +204,27 @@ export class LocalNoteStore implements INoteStore {
     })));
   }
 
+  listNotes(tenantId: string = 'default'): Promise<Note[]> {
+    const rows = this.db
+      .prepare('SELECT * FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC')
+      .all(tenantId) as any[];
+    const links = this.db
+      .prepare(`
+        SELECT nl.source_id, nl.target_id
+        FROM note_links nl
+        JOIN notes n ON n.id = nl.source_id
+        WHERE n.tenant_id = ?
+      `)
+      .all(tenantId) as Array<{ source_id: string; target_id: string }>;
+    const bySource = new Map<string, string[]>();
+    for (const link of links) {
+      const targets = bySource.get(link.source_id) ?? [];
+      targets.push(link.target_id);
+      bySource.set(link.source_id, targets);
+    }
+    return Promise.resolve(rows.map(row => this.rowToNote(row, bySource.get(row.id) ?? [])));
+  }
+
   search(query: string, tenantId: string = 'default'): Promise<SearchResult[]> {
     if (!query.trim()) return Promise.resolve([]);
     const fts = ftsMatchFromUserQuery(query);
@@ -270,13 +291,20 @@ export class LocalNoteStore implements INoteStore {
   }
 
   updateLinks(sourceId: string, targetIds: string[]): Promise<void> {
+    return this.updateLinksBatch([{ sourceId, targetIds }]);
+  }
+
+  updateLinksBatch(updates: Array<{ sourceId: string; targetIds: string[] }>): Promise<void> {
+    if (updates.length === 0) return Promise.resolve();
     const del = this.db.prepare('DELETE FROM note_links WHERE source_id = ?');
     const ins = this.db.prepare('INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)');
 
     const transaction = this.db.transaction(() => {
-      del.run(sourceId);
-      for (const targetId of targetIds) {
-        ins.run(sourceId, targetId);
+      for (const { sourceId, targetIds } of updates) {
+        del.run(sourceId);
+        for (const targetId of targetIds) {
+          ins.run(sourceId, targetId);
+        }
       }
     });
     transaction();
@@ -445,7 +473,7 @@ export class LocalNoteStore implements INoteStore {
 
   // --- Private helpers ---
 
-  private rowToNote(row: any): Note {
+  private rowToNote(row: any, links?: string[]): Note {
     return {
       id: row.id,
       ref: row.ref as number,
@@ -455,7 +483,7 @@ export class LocalNoteStore implements INoteStore {
       created: row.created_at,
       modified: row.updated_at,
       tenantId: row.tenant_id,
-      links: this.getLinksForNote(row.id),
+      links: links ?? this.getLinksForNote(row.id),
       hideHeader: (row.hide_header ?? 0) === 1,
     };
   }
