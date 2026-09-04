@@ -3,9 +3,8 @@ import type { CategorySortMode, NoteListItem } from '../../shared/types';
 import {
   GENERAL_PATH,
   UNASSIGNED_PATH,
-  buildCategoryTree,
+  buildCategoryModel,
   categoryColorStorageKey,
-  categoryPathFromTags,
   countNotesInCategorySubtree,
   distinctCategoryPaths,
   filterNotesByCategory,
@@ -15,6 +14,7 @@ import {
   normalizePath,
   promoteCategoryPath,
   pruneCategoryTree,
+  resolveCategoryPath,
   sortPathsByTreeOrder,
   splitPath,
   categoryDisplayDepth,
@@ -204,8 +204,12 @@ export default function Sidebar({
     };
   }, [folderDemote]);
 
-
-  const categoryPathsList = useMemo(() => distinctCategoryPaths(vaultNotes), [vaultNotes]);
+  const categoryModel = useMemo(() => buildCategoryModel(vaultNotes), [vaultNotes]);
+  const tree = categoryModel.root;
+  const categoryPathsList = useMemo(
+    () => distinctCategoryPaths(vaultNotes, categoryModel),
+    [vaultNotes, categoryModel],
+  );
 
   const demoteParentPaths = useMemo(() => {
     if (!folderDemote) return [];
@@ -219,21 +223,21 @@ export default function Sidebar({
 
   const folderSubtreeNoteCount = useMemo(() => {
     if (!folderColorMenu) return 0;
-    return countNotesInCategorySubtree(vaultNotes, folderColorMenu.path);
-  }, [folderColorMenu, vaultNotes]);
-
-  const tree = useMemo(() => buildCategoryTree(vaultNotes), [vaultNotes]);
+    return countNotesInCategorySubtree(vaultNotes, folderColorMenu.path, categoryModel);
+  }, [folderColorMenu, vaultNotes, categoryModel]);
 
   const displayedNotes = useMemo(() => {
     if (searchQuery.trim()) return notes;
     if (selectedFolder === null) return notes;
-    return filterNotesByCategory(vaultNotes, selectedFolder, includeSubfolders);
-  }, [notes, vaultNotes, searchQuery, selectedFolder, includeSubfolders]);
+    return filterNotesByCategory(vaultNotes, selectedFolder, includeSubfolders, categoryModel);
+  }, [notes, vaultNotes, searchQuery, selectedFolder, includeSubfolders, categoryModel]);
 
   const notesByPath = useMemo(() => {
     const m = new Map<string, NoteListItem[]>();
     for (const n of displayedNotes) {
-      const p = categoryPathFromTags(n.tags, vaultNotes);
+      const p =
+        categoryModel.pathByNoteId.get(n.id) ??
+        resolveCategoryPath(n.tags, categoryModel.hasAssignedCategories);
       if (!m.has(p)) m.set(p, []);
       m.get(p)!.push(n);
     }
@@ -241,7 +245,7 @@ export default function Sidebar({
       m.set(path, sortNotesForCategory(arr, path, categorySortModes));
     }
     return m;
-  }, [displayedNotes, vaultNotes, categorySortModes]);
+  }, [displayedNotes, categoryModel, categorySortModes]);
 
   const prunedTreeRoot = useMemo(
     () => pruneCategoryTree(tree, notesByPath),
@@ -322,7 +326,9 @@ export default function Sidebar({
   const noteRowPad = layout === 'top' ? 'py-1.5' : 'py-2';
 
   const renderNoteItem = (note: NoteListItem, hideCategory = false, treeDepth?: number) => {
-    const notePath = categoryPathFromTags(note.tags, vaultNotes);
+    const notePath =
+      categoryModel.pathByNoteId.get(note.id) ??
+      resolveCategoryPath(note.tags, categoryModel.hasAssignedCategories);
     const rowAccent = colorForCategoryPath(notePath, resolvedCategoryColors);
     /** Under grouped / tree, category color belongs on folder headers only — notes stay neutral for contrast with headers. */
     const useAccentOnTitle = !hideCategory;
@@ -433,7 +439,7 @@ export default function Sidebar({
         <div className="mx-2 mb-1 px-2" onClick={e => e.stopPropagation()}>
           <CategoryCombobox
             paths={categoryPathsList}
-            value={categoryPathFromTags(note.tags, vaultNotes)}
+            value={notePath}
             onChange={path => commitCategory(note.id, path)}
             placeholder="e.g. Work/Meetings"
             className="mt-1"
@@ -591,10 +597,9 @@ export default function Sidebar({
       <IdeSolutionTree
         root={prunedTreeRoot}
         notesByPath={notesByPath}
+        pathByNoteId={categoryModel.pathByNoteId}
         activeNoteId={activeNoteId}
-        vaultNotes={vaultNotes}
         categoryColors={resolvedCategoryColors}
-        categorySortModes={categorySortModes}
         onFolderContextMenu={openFolderContextMenu}
         dragOverCategory={dragOverCategory}
         onDragOver={handleDragOver}
