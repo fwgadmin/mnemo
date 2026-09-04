@@ -553,18 +553,7 @@ export default function App() {
       const q = searchQueryRef.current.trim();
       if (q) {
         const results = await window.mnemo.notes.search(q);
-        setNotes(
-          results.map(r => ({
-            ref: r.ref,
-            id: r.id,
-            title: r.title,
-            tags: [],
-            created: '',
-            modified: '',
-            snippet: r.snippet,
-            hideHeader: r.hideHeader,
-          })),
-        );
+        setNotes(results);
       } else {
         setNotes(list);
       }
@@ -1491,16 +1480,7 @@ export default function App() {
       return;
     }
     const results = await window.mnemo.notes.search(query);
-    setNotes(results.map(r => ({
-      ref: r.ref,
-      id: r.id,
-      title: r.title,
-      tags: [],
-      created: '',
-      modified: '',
-      snippet: r.snippet,
-      hideHeader: r.hideHeader,
-    })));
+    setNotes(results);
   }, [loadNotes]);
 
   /** Navigate to a note by title (for wikilink clicks). Creates note if not found. */

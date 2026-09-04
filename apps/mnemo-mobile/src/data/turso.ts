@@ -6,6 +6,7 @@ import { createClient, type Client } from '@libsql/client/web';
 import { randomUUID } from '../lib/randomUUID';
 import type { CreateNoteInput, Note, NoteListItem, SearchResult, UpdateNoteInput } from '../types';
 import { ftsMatchFromUserQuery, likeWordsFromUserQuery, snippetForSearchResult } from '../lib/searchQuery';
+import { parseStoredTags } from '../lib/noteTags';
 
 function isTenantRefUniqueConstraint(err: unknown): boolean {
   const parts: string[] = [];
@@ -36,7 +37,7 @@ function rowToNote(id: string, row: Record<string, unknown>, links: string[]): N
     ref: row['ref'] as number,
     title: row['title'] as string,
     body: row['body'] as string,
-    tags: JSON.parse(row['tags'] as string),
+    tags: parseStoredTags(row['tags']),
     created: row['created_at'] as string,
     modified: row['updated_at'] as string,
     tenantId: row['tenant_id'] as string,
@@ -58,7 +59,7 @@ export async function getNote(client: Client, id: string): Promise<Note | null> 
 
 export async function listNotes(client: Client, tenantId: string = 'default'): Promise<NoteListItem[]> {
   const result = await client.execute({
-    sql: `SELECT ref, id, title, body, tags, updated_at, hide_header
+    sql: `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header
           FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC`,
     args: [tenantId],
   });
@@ -66,7 +67,8 @@ export async function listNotes(client: Client, tenantId: string = 'default'): P
     ref: row['ref'] as number,
     id: row['id'] as string,
     title: row['title'] as string,
-    tags: JSON.parse(row['tags'] as string),
+    tags: parseStoredTags(row['tags']),
+    created: row['created_at'] as string,
     modified: row['updated_at'] as string,
     snippet: (row['body'] as string).substring(0, 120),
     hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
@@ -99,6 +101,9 @@ export async function searchNotes(
     ref: row['ref'] as number,
     id: row['id'] as string,
     title: row['title'] as string,
+    tags: parseStoredTags(row['tags']),
+    created: row['created_at'] as string,
+    modified: row['updated_at'] as string,
     snippet: snippetForSearchResult(
       row['title'] as string,
       row['body'] as string,
@@ -110,7 +115,8 @@ export async function searchNotes(
 
   try {
     const result = await client.execute({
-      sql: `SELECT n.ref, n.id, n.title, n.body, n.hide_header, notes_fts.rank
+      sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at,
+                   n.hide_header, notes_fts.rank
             FROM notes_fts
             JOIN notes n ON n.rowid = notes_fts.rowid
             WHERE notes_fts MATCH ?
@@ -131,7 +137,7 @@ export async function searchNotes(
       args.push(w, w);
     }
     const result = await client.execute({
-      sql: `SELECT ref, id, title, body, hide_header FROM notes
+      sql: `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header FROM notes
             WHERE tenant_id = ? AND ${conds}
             LIMIT 50`,
       args,
@@ -142,7 +148,7 @@ export async function searchNotes(
 
 export async function getBacklinks(client: Client, noteId: string): Promise<NoteListItem[]> {
   const result = await client.execute({
-    sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.updated_at
+    sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at
           FROM note_links nl
           JOIN notes n ON n.id = nl.source_id
           WHERE nl.target_id = ?
@@ -153,7 +159,8 @@ export async function getBacklinks(client: Client, noteId: string): Promise<Note
     ref: row['ref'] as number,
     id: row['id'] as string,
     title: row['title'] as string,
-    tags: JSON.parse(row['tags'] as string),
+    tags: parseStoredTags(row['tags']),
+    created: row['created_at'] as string,
     modified: row['updated_at'] as string,
     snippet: (row['body'] as string).substring(0, 120),
   }));

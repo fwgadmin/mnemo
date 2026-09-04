@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Data contracts:** Search results now retain tags and creation/modification timestamps, so category grouping and per-category creation-date sorting remain correct while searching. Stored tag JSON is decoded defensively across desktop and mobile list/read/search/backlink paths.
 - **Editor / media:** Fixed persisted media widths being read as the default 80% because the preview parser did not recognize Mnemo's own `mnemo:w=…` title prefix.
 - **Quality:** Added desktop unit and Electron-ABI integration test suites plus pull-request validation for desktop/mobile typechecks and CLI, MCP, and renderer builds.
 - **MCP / workspaces:** Each stdio MCP connection now owns its workspace selection. `--workspace` pins an agent to a vault, and `switch_workspace` retargets only that connection instead of changing `workspace-profiles.json` or another Codex window's target.

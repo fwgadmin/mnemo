@@ -41,13 +41,8 @@ export interface NoteListItem {
   hideHeader?: boolean;
 }
 
-export interface SearchResult {
-  ref: number;
-  id: string;
-  title: string;
-  snippet: string;
+export interface SearchResult extends NoteListItem {
   rank: number;
-  hideHeader?: boolean;
 }
 
 export interface CreateNoteInput {
