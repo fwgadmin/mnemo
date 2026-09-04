@@ -1,13 +1,16 @@
 /** Shared types for Mnemo */
 
+/** Renderer-safe stand-in for an at-rest secret that is already configured. */
+export const STORED_SECRET_PLACEHOLDER = '••••••••';
+
 export interface NoteFrontmatter {
   id: string;
   title: string;
   tags: string[];
-  created: string;   // ISO 8601
-  modified: string;   // ISO 8601
+  created: string; // ISO 8601
+  modified: string; // ISO 8601
   tenantId: string;
-  links: string[];    // IDs of linked notes
+  links: string[]; // IDs of linked notes
 }
 
 export interface Note {
@@ -15,7 +18,7 @@ export interface Note {
   /** Stable human-friendly index per tenant (1-based), for CLI / links */
   ref: number;
   title: string;
-  body: string;       // Markdown content (without frontmatter)
+  body: string; // Markdown content (without frontmatter)
   tags: string[];
   created: string;
   modified: string;
@@ -37,7 +40,7 @@ export interface NoteListItem {
   tags: string[];
   created: string;
   modified: string;
-  snippet: string;    // First ~100 chars of body
+  snippet: string; // First ~100 chars of body
   hideHeader?: boolean;
 }
 
@@ -292,7 +295,8 @@ export const IPC = {
   // File operations
   FILE_SAVE_AS: 'file:saveAs',
   FILE_OPEN: 'file:open',
-  /** Read/write a single file by absolute path (IDE filesystem-backed tabs; local-first). */
+  /** Reauthorize a persisted filesystem tab; access itself uses an opaque main-process capability. */
+  FILE_AUTHORIZE_PATH: 'file:authorizePath',
   FILE_READ_PATH: 'file:readPath',
   FILE_WRITE_PATH: 'file:writePath',
   FILE_OPENED_EXTERNALLY: 'file:openedExternally',

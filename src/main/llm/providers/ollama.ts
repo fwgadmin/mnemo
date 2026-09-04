@@ -1,3 +1,5 @@
+import { fetchLlm } from '../requestTimeout';
+
 export async function summarizeOllama(opts: {
   baseUrl: string;
   model: string;
@@ -6,7 +8,7 @@ export async function summarizeOllama(opts: {
 }): Promise<string> {
   const b = opts.baseUrl.trim().replace(/\/$/, '');
   const url = b.endsWith('/api/chat') ? b : `${b}/api/chat`;
-  const res = await fetch(url, {
+  const res = await fetchLlm(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -22,7 +24,10 @@ export async function summarizeOllama(opts: {
     const t = await res.text().catch(() => '');
     throw new Error(`Ollama HTTP ${res.status}${t ? `: ${t.slice(0, 400)}` : ''}`);
   }
-  const data = (await res.json()) as { message?: { content?: string }; response?: string };
+  const data = (await res.json()) as {
+    message?: { content?: string };
+    response?: string;
+  };
   const content = data.message?.content ?? data.response;
   if (typeof content !== 'string' || !content.trim()) {
     throw new Error('Empty response from Ollama');

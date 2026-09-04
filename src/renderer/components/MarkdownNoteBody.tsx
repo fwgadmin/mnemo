@@ -4,12 +4,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { defaultSchema } from 'rehype-sanitize';
 import mermaid from 'mermaid';
-import {
-  mediaTitle,
-  parseMediaDataType,
-  parseMediaDisplayOptions,
-  type MediaAlign,
-} from '../editor/mediaMarkdown';
+import { mediaTitle, parseMediaDataType, parseMediaDisplayOptions, type MediaAlign } from '../editor/mediaMarkdown';
 
 let mermaidConfigured = false;
 function ensureMermaidTheme() {
@@ -17,7 +12,7 @@ function ensureMermaidTheme() {
   mermaid.initialize({
     startOnLoad: false,
     theme: 'dark',
-    securityLevel: 'loose',
+    securityLevel: 'strict',
   });
   mermaidConfigured = true;
 }
@@ -33,7 +28,26 @@ function MermaidBlock({ code }: { code: string }) {
     void (async () => {
       try {
         const { svg } = await mermaid.render(id, code);
-        if (!cancelled && ref.current) ref.current.innerHTML = svg;
+        if (!cancelled && ref.current) {
+          const template = document.createElement('template');
+          template.innerHTML = svg;
+          template.content
+            .querySelectorAll('script, iframe, object, embed, foreignObject')
+            .forEach((node) => node.remove());
+          template.content.querySelectorAll('*').forEach((node) => {
+            for (const attribute of [...node.attributes]) {
+              const name = attribute.name.toLowerCase();
+              const value = attribute.value.trim();
+              if (
+                name.startsWith('on') ||
+                ((name === 'href' || name === 'xlink:href') && /^javascript:/i.test(value))
+              ) {
+                node.removeAttribute(attribute.name);
+              }
+            }
+          });
+          ref.current.replaceChildren(template.content.cloneNode(true));
+        }
       } catch {
         if (!cancelled && ref.current) {
           ref.current.textContent = 'Invalid Mermaid diagram';
@@ -64,7 +78,8 @@ const sanitizeSchema = {
   },
 };
 
-const SAFE_DATA_URL = /^data:(?:image\/(?:png|jpe?g|gif|webp|bmp)|audio\/(?:mpeg|mp4|ogg|wav|webm)|video\/(?:mp4|ogg|webm|quicktime)|application\/pdf|text\/plain);base64,/i;
+const SAFE_DATA_URL =
+  /^data:(?:image\/(?:png|jpe?g|gif|webp|bmp)|audio\/(?:mpeg|mp4|ogg|wav|webm)|video\/(?:mp4|ogg|webm|quicktime)|application\/pdf|text\/plain);base64,/i;
 
 function markdownUrlTransform(url: string): string {
   if (/^data:/i.test(url)) return SAFE_DATA_URL.test(url) ? url : '';
@@ -116,30 +131,54 @@ function MediaBlock({
   };
 
   return (
-    <span className="group/media relative my-3 flex max-w-full flex-col gap-1" style={{ alignItems: justify }} role="figure">
+    <span
+      className="group/media relative my-3 flex max-w-full flex-col gap-1"
+      style={{ alignItems: justify }}
+      role="figure"
+    >
       {mime?.startsWith('audio/') ? (
         <audio controls src={src} className="max-w-full" style={{ width: `${options.width}%` }}>
           {alt}
         </audio>
       ) : mime?.startsWith('video/') ? (
-        <video controls src={src} className="max-w-full rounded border border-mnemo-border" style={{ width: `${options.width}%` }}>
+        <video
+          controls
+          src={src}
+          className="max-w-full rounded border border-mnemo-border"
+          style={{ width: `${options.width}%` }}
+        >
           {alt}
         </video>
       ) : (
-        <img src={src} alt={alt} className="h-auto max-w-full rounded border border-mnemo-border object-contain" style={{ width: `${options.width}%` }} />
+        <img
+          src={src}
+          alt={alt}
+          className="h-auto max-w-full rounded border border-mnemo-border object-contain"
+          style={{ width: `${options.width}%` }}
+        />
       )}
       {alt && <span className="max-w-full truncate text-[10px] text-mnemo-dim">{alt}</span>}
       {editable && range && (
         <span className="flex max-w-full flex-wrap items-center gap-1 rounded border border-mnemo-border bg-mnemo-panel-elevated/95 p-1 text-[10px] text-mnemo-muted opacity-40 transition-opacity group-hover/media:opacity-100 group-focus-within/media:opacity-100">
-          <button type="button" title="Move media up" onClick={() => onAction(range, { type: 'move', direction: -1 })}>↑</button>
-          <button type="button" title="Move media down" onClick={() => onAction(range, { type: 'move', direction: 1 })}>↓</button>
-          {(['left', 'center', 'right'] as const).map(align => (
+          <button type="button" title="Move media up" onClick={() => onAction(range, { type: 'move', direction: -1 })}>
+            ↑
+          </button>
+          <button type="button" title="Move media down" onClick={() => onAction(range, { type: 'move', direction: 1 })}>
+            ↓
+          </button>
+          {(['left', 'center', 'right'] as const).map((align) => (
             <button
               type="button"
               key={align}
               title={`Align ${align}`}
               className={options.align === align ? 'text-mnemo-accent' : ''}
-              onClick={() => onAction(range, { type: 'display', width: options.width, align })}
+              onClick={() =>
+                onAction(range, {
+                  type: 'display',
+                  width: options.width,
+                  align,
+                })
+              }
             >
               {align === 'left' ? '⇤' : align === 'right' ? '⇥' : '↔'}
             </button>
@@ -153,10 +192,18 @@ function MediaBlock({
             title={`Width ${options.width}%`}
             aria-label="Media width"
             className="w-24 accent-[var(--mnemo-accent)]"
-            onChange={e => onAction(range, { type: 'display', width: Number(e.target.value), align: options.align })}
+            onChange={(e) =>
+              onAction(range, {
+                type: 'display',
+                width: Number(e.target.value),
+                align: options.align,
+              })
+            }
           />
           <span className="w-7 text-right">{options.width}%</span>
-          <button type="button" onClick={() => void copy()}>Copy</button>
+          <button type="button" onClick={() => void copy()}>
+            Copy
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -174,7 +221,9 @@ function MediaBlock({
           >
             Modify
           </button>
-          <button type="button" className="text-red-400" onClick={() => onAction(range, { type: 'delete' })}>Delete</button>
+          <button type="button" className="text-red-400" onClick={() => onAction(range, { type: 'delete' })}>
+            Delete
+          </button>
         </span>
       )}
     </span>
@@ -246,9 +295,10 @@ export default function MarkdownNoteBody({ body, className = '', onBodyChange }:
         components={{
           img: ({ src, alt, title, node }) => {
             const position = node?.position;
-            const range = position?.start.offset !== undefined && position.end.offset !== undefined
-              ? { start: position.start.offset, end: position.end.offset }
-              : undefined;
+            const range =
+              position?.start.offset !== undefined && position.end.offset !== undefined
+                ? { start: position.start.offset, end: position.end.offset }
+                : undefined;
             return (
               <MediaBlock
                 src={src ?? ''}

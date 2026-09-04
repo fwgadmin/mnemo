@@ -80,7 +80,7 @@ To Be Shipped: Native iOS / Android lives under **`apps/mnemo-mobile`**. From th
 - **MCP stdio** — add `mnemo` / `mcp` to your IDE’s MCP config ([examples/mcp-stdio.md](examples/mcp-stdio.md))
 - **MCP HTTP** — for hosted setups with Turso + API key ([examples/mcp-http.md](examples/mcp-http.md))
 - **Deterministic refs** — cite `ref` or titles in prompts; no vector DB required
-- **Desktop summarization** — the GUI can send selected or clipboard text to OpenAI-compatible APIs, Ollama, Anthropic, or Gemini using **Settings → Summary & LLM**; keys stay in `llm-config.json` under app data. Use **Ctrl+Shift+C/V** in the note editor for plain summaries (when configured), **Ctrl+Alt+C/V** for Markdown-formatted summaries; **Ctrl+Shift+V** still toggles Markdown preview when summarization does not apply (see **Help → Documentation**)
+- **Desktop summarization** — the GUI can send selected or clipboard text to OpenAI-compatible APIs, Ollama, Anthropic, or Gemini using **Settings → Summary & LLM**; keys stay local, are encrypted with the OS-backed Electron `safeStorage` service when available, and are never returned in full to the renderer. Use **Ctrl+Shift+C/V** in the note editor for plain summaries (when configured), **Ctrl+Alt+C/V** for Markdown-formatted summaries; **Ctrl+Shift+V** still toggles Markdown preview when summarization does not apply (see **Help → Documentation**)
 
 ## Philosophy
 
