@@ -93,7 +93,7 @@ export async function runMcpStdioServer(argv: string[]): Promise<void> {
         }
         const id = pickWorkspaceId(profiles, wsRes);
         const workspaceSession = createWorkspaceContextSession(id);
-        return createMcpServer(workspaceSession.resolve, { workspaceSession });
+        return createMcpServer(workspaceSession.resolve, { workspaceSession, bootstrapRoot: root });
       })();
 
   const transport = new StdioServerTransport();

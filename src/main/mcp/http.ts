@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-/** Authenticated HTTP/SSE MCP server backed by remote libSQL. */
-import { timingSafeEqual } from 'crypto';
+/** Authenticated Streamable HTTP MCP server backed by remote libSQL. */
+import { randomUUID, timingSafeEqual } from 'crypto';
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { Server } from 'http';
 import type { INoteStore } from '../../shared/types';
 import { TursoNoteStore } from '../store/TursoNoteStore';
@@ -46,26 +47,30 @@ export interface HttpMcpAppOptions {
   bodyLimit?: string;
 }
 
-interface SseSession {
-  transport: SSEServerTransport;
+interface StreamableSession {
+  transport: StreamableHTTPServerTransport;
   close(): Promise<void>;
 }
 
 export function createHttpMcpApp(options: HttpMcpAppOptions): {
   app: express.Express;
-  sessions: HttpSessionRegistry<SseSession>;
+  sessions: HttpSessionRegistry<StreamableSession>;
   close: () => Promise<void>;
 } {
   const maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_MS;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-  const sessions = new HttpSessionRegistry<SseSession>(maxSessions, idleTimeoutMs);
+  const sessions = new HttpSessionRegistry<StreamableSession>(maxSessions, idleTimeoutMs);
+  let pendingInitializations = 0;
+  setStoreResolverBootstrapRoot(options.bootstrapRoot);
+  setGlobalStore(options.store);
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: options.bodyLimit ?? DEFAULT_BODY_LIMIT }));
   app.use((req, res, next) => {
-    req.setTimeout(requestTimeoutMs);
-    res.setTimeout(requestTimeoutMs, () => {
+    const timeout = req.method === 'GET' && req.path === '/mcp' ? idleTimeoutMs : requestTimeoutMs;
+    req.setTimeout(timeout);
+    res.setTimeout(timeout, () => {
       if (!res.headersSent) res.status(504).json({ error: 'Request timed out' });
       else res.end();
     });
@@ -80,40 +85,80 @@ export function createHttpMcpApp(options: HttpMcpAppOptions): {
     next();
   };
 
-  app.get('/sse', requireBearer, async (_req, res) => {
+  const sessionIdFrom = (req: Request): string => {
+    const raw = req.headers['mcp-session-id'];
+    return typeof raw === 'string' ? raw : '';
+  };
+
+  app.post('/mcp', requireBearer, async (req, res) => {
+    const sessionId = sessionIdFrom(req);
+    const existing = sessionId ? sessions.get(sessionId) : undefined;
+    if (existing) {
+      await existing.transport.handleRequest(req, res, req.body);
+      return;
+    }
+    if (sessionId) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    if (!isInitializeRequest(req.body)) {
+      res.status(400).json({ error: 'An initialize request is required to create a session' });
+      return;
+    }
     sessions.sweep();
-    if (sessions.size >= maxSessions) {
+    if (sessions.size + pendingInitializations >= maxSessions) {
       res.status(503).json({ error: 'Session limit reached' });
       return;
     }
+
+    pendingInitializations++;
     const workspaceSession = createWorkspaceContextSession(options.initialWorkspaceId);
-    const mcp = createMcpServer(workspaceSession.resolve, { workspaceSession });
-    const transport = new SSEServerTransport('/messages', res);
-    const sessionId = transport.sessionId;
-    const resource: SseSession = {
-      transport,
-      close: async () => {
-        await mcp.close();
-      },
+    const mcp = createMcpServer(workspaceSession.resolve, {
+      workspaceSession,
+      bootstrapRoot: options.bootstrapRoot,
+    });
+    let registeredId = '';
+    let closing = false;
+    const closeMcp = async () => {
+      if (closing) return;
+      closing = true;
+      await mcp.close();
     };
-    if (!sessions.add(sessionId, resource)) {
-      await resource.close();
-      if (!res.headersSent) res.status(503).json({ error: 'Session limit reached' });
-      return;
-    }
-    transport.onclose = () => sessions.forget(sessionId);
+    let resource: StreamableSession;
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: randomUUID,
+      onsessioninitialized: id => {
+        registeredId = id;
+        if (!sessions.add(id, resource)) throw new Error('Session limit reached');
+      },
+      onsessionclosed: id => {
+        void sessions.remove(id);
+      },
+    });
+    resource = {
+      transport,
+      close: closeMcp,
+    };
+    transport.onclose = () => {
+      if (registeredId) sessions.forget(registeredId);
+      void closeMcp();
+    };
     try {
       await mcp.connect(transport);
+      await transport.handleRequest(req, res, req.body);
     } catch {
-      await sessions.remove(sessionId);
+      if (registeredId) await sessions.remove(registeredId);
+      else await resource.close();
       if (!res.headersSent) res.status(500).json({ error: 'Failed to initialize MCP session' });
+    } finally {
+      pendingInitializations--;
     }
   });
 
-  app.post('/messages', requireBearer, async (req, res) => {
-    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : '';
+  const handleExistingSession = async (req: Request, res: Response) => {
+    const sessionId = sessionIdFrom(req);
     if (!sessionId) {
-      res.status(400).json({ error: 'Missing sessionId query parameter' });
+      res.status(400).json({ error: 'Missing MCP-Session-Id header' });
       return;
     }
     const session = sessions.get(sessionId);
@@ -121,7 +166,13 @@ export function createHttpMcpApp(options: HttpMcpAppOptions): {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
-    await session.transport.handlePostMessage(req, res, req.body);
+    await session.transport.handleRequest(req, res);
+  };
+
+  app.get('/mcp', requireBearer, handleExistingSession);
+  app.delete('/mcp', requireBearer, handleExistingSession);
+  app.all(['/sse', '/messages'], requireBearer, (_req, res) => {
+    res.status(410).json({ error: 'Legacy SSE was removed; connect with Streamable HTTP at /mcp.' });
   });
 
   app.get('/health', requireBearer, (_req, res) => {

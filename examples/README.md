@@ -9,7 +9,7 @@ These guides assume you have built CLI/MCP bundles from a dev tree (`npm run bui
 | [CLI — local vault](cli-local.md) | Default data directory, listing/search/show, categories |
 | [CLI — libSQL / Turso](cli-libsql.md) | Same CLI against a remote database (env or flags) |
 | [MCP — stdio (Cursor, Claude Desktop)](mcp-stdio.md) | `mnemo mcp` local or remote |
-| [MCP — HTTP/SSE](mcp-http.md) | `mnemo mcp-http` for hosted platforms (Turso required) |
+| [MCP — Streamable HTTP](mcp-http.md) | `mnemo mcp-http` for hosted platforms (Turso required) |
 | [Desktop app](gui-desktop.md) | GUI, Settings, shared vault with CLI |
 
 Full command reference: run `mnemo --help` (or `node dist/mnemo-cli.js --help` from a dev build).

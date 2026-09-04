@@ -32,7 +32,7 @@ export class HttpSessionRegistry<T extends HttpSessionResource> {
     const entry = this.entries.get(id);
     if (!entry) return undefined;
     if (this.isExpired(entry)) {
-      void this.remove(id);
+      void this.remove(id).catch(() => {});
       return undefined;
     }
     entry.lastActiveAt = this.now();
@@ -54,7 +54,7 @@ export class HttpSessionRegistry<T extends HttpSessionResource> {
 
   sweep(): void {
     for (const [id, entry] of this.entries) {
-      if (this.isExpired(entry)) void this.remove(id);
+      if (this.isExpired(entry)) void this.remove(id).catch(() => {});
     }
   }
 
