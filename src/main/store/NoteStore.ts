@@ -15,7 +15,14 @@ import type {
   SyncResult,
   SyncNoteRow,
   NoteTombstoneRow,
+  CategoryMoveInput,
+  BulkMutationResult,
 } from '../../shared/types';
+import {
+  categoryPathForMutation,
+  normalizeCategoryMutationPath,
+  tagsForCategoryMove,
+} from '../../shared/categoryMutation';
 import {
   ftsMatchFromUserQuery,
   likeWordsFromUserQuery,
@@ -167,6 +174,115 @@ export class LocalNoteStore implements INoteStore {
         snippet: note.body.slice(0, 120),
         hideHeader: note.hideHeader,
       },
+    };
+  }
+
+  async moveCategoryPrefix(
+    input: CategoryMoveInput,
+    tenantId: string = 'default',
+  ): Promise<BulkMutationResult> {
+    const notes = await this.listNotes(tenantId);
+    const hasAssigned = notes.some(note => !!normalizeCategoryMutationPath(note.tags[0] ?? ''));
+    const updates = notes.flatMap(note => {
+      const currentPath = categoryPathForMutation(note.tags, hasAssigned);
+      const tags = tagsForCategoryMove(
+        note.tags,
+        currentPath,
+        input.sourcePath,
+        input.targetPath,
+        input.includeDescendants,
+      );
+      if (!tags) return [];
+      const modified = new Date(Math.max(Date.now(), Date.parse(note.modified) + 1)).toISOString();
+      return [{ note: { ...note, tags, modified } }];
+    });
+    if (updates.length === 0) return { requested: 0, affected: 0, affectedIds: [], failures: [], changes: [] };
+    const update = this.db.prepare(
+      'UPDATE notes SET tags = ?, updated_at = ? WHERE id = ? AND tenant_id = ?',
+    );
+    try {
+      this.db.transaction(() => {
+        for (const { note } of updates) {
+          const result = update.run(JSON.stringify(note.tags), note.modified, note.id, tenantId);
+          if (result.changes !== 1) throw new Error(`Note ${note.id} changed during category move.`);
+        }
+      })();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        requested: updates.length,
+        affected: 0,
+        affectedIds: [],
+        failures: updates.map(({ note }) => ({ id: note.id, error: message })),
+        changes: [],
+      };
+    }
+    const failures: BulkMutationResult['failures'] = [];
+    for (const { note } of updates) {
+      try {
+        this.writeMdFile(note);
+      } catch (error) {
+        failures.push({ id: note.id, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return {
+      requested: updates.length,
+      affected: updates.length,
+      affectedIds: updates.map(({ note }) => note.id),
+      failures,
+      changes: updates.map(({ note }) => ({ id: note.id, modified: note.modified, tags: note.tags })),
+    };
+  }
+
+  async deleteNotes(ids: string[], tenantId: string = 'default'): Promise<BulkMutationResult> {
+    const requestedIds = [...new Set(ids)];
+    if (requestedIds.length === 0) return { requested: 0, affected: 0, affectedIds: [], failures: [], changes: [] };
+    const existing = new Set(
+      (this.db.prepare('SELECT id FROM notes WHERE tenant_id = ?').all(tenantId) as Array<{ id: string }>)
+        .map(row => row.id),
+    );
+    const found = requestedIds.filter(id => existing.has(id));
+    const failures = requestedIds
+      .filter(id => !existing.has(id))
+      .map(id => ({ id, error: 'Note not found in the active workspace.' }));
+    const deletedAt = new Date().toISOString();
+    const tombstone = this.db.prepare(`
+      INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+      WHERE excluded.deleted_at > note_tombstones.deleted_at
+    `);
+    const remove = this.db.prepare('DELETE FROM notes WHERE id = ? AND tenant_id = ?');
+    try {
+      this.db.transaction(() => {
+        for (const id of found) {
+          tombstone.run(id, tenantId, deletedAt);
+          if (remove.run(id, tenantId).changes !== 1) throw new Error(`Note ${id} changed during deletion.`);
+        }
+      })();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        requested: requestedIds.length,
+        affected: 0,
+        affectedIds: [],
+        failures: [...failures, ...found.map(id => ({ id, error: message }))],
+        changes: [],
+      };
+    }
+    for (const id of found) {
+      try {
+        const filePath = path.join(this.vaultPath, `${id}.md`);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch (error) {
+        failures.push({ id, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return {
+      requested: requestedIds.length,
+      affected: found.length,
+      affectedIds: found,
+      failures,
+      changes: [],
     };
   }
 

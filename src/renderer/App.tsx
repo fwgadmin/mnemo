@@ -40,6 +40,7 @@ import { shouldShowSummaryMenuItems } from '../shared/llmProfile';
 import { vaultFingerprint } from '../shared/types';
 import { decodeFileTabPath, encodeFileTabId, fileTabBasename, isFileTabId } from '../shared/fileTabId';
 import { NoteSaveQueue, type NoteSaveStatus } from './noteSaveQueue';
+import { remapCategoryKeys } from '../shared/categoryMutation';
 
 type RightPanel = 'none' | 'graph' | 'markdown-help' | 'markdown-preview';
 
@@ -69,24 +70,6 @@ function loadPref(key: string, def: boolean): boolean {
 }
 function savePref(key: string, val: boolean): void {
   localStorage.setItem(`mnemo.${key}`, String(val));
-}
-
-function remapCategoryKeyedValues<T>(
-  values: Record<string, T>,
-  oldPath: string,
-  newPath: string,
-  includeDescendants = true,
-): Record<string, T> {
-  const next = { ...values };
-  for (const key of Object.keys(values)) {
-    if (key !== oldPath && (!includeDescendants || !key.startsWith(`${oldPath}/`))) continue;
-    const value = next[key];
-    delete next[key];
-    const suffix = key === oldPath ? '' : key.slice(oldPath.length + 1);
-    const destination = suffix ? `${newPath}/${suffix}` : newPath;
-    if (value !== undefined) next[destination] = value;
-  }
-  return next;
 }
 
 function readThemeId(): string {
@@ -709,65 +692,21 @@ export default function App() {
 
       /** Move every note in this folder and under `oldNorm/…` (rename to Unassigned only affects the exact folder). */
       const migrateSubtreePrefix = newKey !== UNASSIGNED_PATH;
+      if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) return;
 
-      const list = await window.mnemo.notes.list();
-      for (const n of list) {
-        const cur = categoryPathFromTags(n.tags, list);
-        const otherTags = n.tags.slice(1);
-        let newTags: string[];
-
-        if (cur === oldNorm) {
-          if (newKey === UNASSIGNED_PATH) {
-            newTags = otherTags;
-          } else if (newKey === GENERAL_PATH) {
-            newTags = [GENERAL_PATH, ...otherTags];
-          } else {
-            newTags = [newKey, ...otherTags];
-          }
-        } else if (migrateSubtreePrefix && cur.startsWith(`${oldNorm}/`)) {
-          const suffix = cur.slice(oldNorm.length + 1);
-          const first =
-            newKey === GENERAL_PATH
-              ? suffix
-                ? `${GENERAL_PATH}/${suffix}`
-                : GENERAL_PATH
-              : suffix
-                ? `${newKey}/${suffix}`
-                : newKey;
-          newTags = [first, ...otherTags];
-        } else {
-          continue;
-        }
-
-        await window.mnemo.notes.update({ id: n.id, tags: newTags });
+      const result = await window.mnemo.notes.moveCategory({
+        sourcePath: oldNorm,
+        targetPath: newKey,
+        includeDescendants: migrateSubtreePrefix,
+      });
+      if (result.failures.length) {
+        window.alert(`${result.failures.length} of ${result.requested} notes could not be fully updated.`);
       }
 
       setCategoryColors((prev) => {
-        const next = { ...prev };
-        if (newKey === UNASSIGNED_PATH) {
-          const c = next[oldKey];
-          if (c && oldKey !== newKey) {
-            delete next[oldKey];
-            next[newKey] = c;
-          }
-        } else {
-          const keys = Object.keys(next);
-          for (const k of keys) {
-            if (k !== oldKey && !k.startsWith(`${oldKey}/`)) continue;
-            const c = next[k];
-            delete next[k];
-            const rest = k === oldKey ? '' : k.slice(oldKey.length + 1);
-            const nk =
-              newKey === GENERAL_PATH
-                ? rest
-                  ? `${GENERAL_PATH}/${rest}`
-                  : GENERAL_PATH
-                : rest
-                  ? `${newKey}/${rest}`
-                  : newKey;
-            next[nk] = c;
-          }
-        }
+        const next = remapCategoryKeys(
+          prev, oldKey, newKey, migrateSubtreePrefix, result.affected !== result.requested,
+        );
         try {
           localStorage.setItem('mnemo.categoryColors', JSON.stringify(next));
         } catch {
@@ -777,31 +716,9 @@ export default function App() {
       });
 
       setCategoryColorStamps((prev) => {
-        const next = { ...prev };
-        if (newKey === UNASSIGNED_PATH) {
-          const t = next[oldKey];
-          if (t !== undefined && oldKey !== newKey) {
-            delete next[oldKey];
-            next[newKey] = t;
-          }
-        } else {
-          const keys = Object.keys(next);
-          for (const k of keys) {
-            if (k !== oldKey && !k.startsWith(`${oldKey}/`)) continue;
-            const t = next[k];
-            delete next[k];
-            const rest = k === oldKey ? '' : k.slice(oldKey.length + 1);
-            const nk =
-              newKey === GENERAL_PATH
-                ? rest
-                  ? `${GENERAL_PATH}/${rest}`
-                  : GENERAL_PATH
-                : rest
-                  ? `${newKey}/${rest}`
-                  : newKey;
-            next[nk] = t;
-          }
-        }
+        const next = remapCategoryKeys(
+          prev, oldKey, newKey, migrateSubtreePrefix, result.affected !== result.requested,
+        );
         try {
           localStorage.setItem('mnemo.categoryColorStamps', JSON.stringify(next));
         } catch {
@@ -810,15 +727,20 @@ export default function App() {
         return next;
       });
 
-      setCategorySortModes((prev) => remapCategoryKeyedValues(prev, oldKey, newKey, migrateSubtreePrefix));
+      setCategorySortModes((prev) => remapCategoryKeys(
+        prev, oldKey, newKey, migrateSubtreePrefix, result.affected !== result.requested,
+      ));
 
       await loadNotes();
-      if (activeNote) {
-        const n = await window.mnemo.notes.read(activeNote.id);
-        if (n) setActiveNote(n);
+      const activeId = activeNoteRef.current?.id;
+      const activeChange = result.changes.find(change => change.id === activeId);
+      if (activeChange) {
+        setActiveNote(prev => prev && prev.id === activeChange.id
+          ? { ...prev, tags: activeChange.tags, modified: activeChange.modified }
+          : prev);
       }
     },
-    [loadNotes, activeNote],
+    [loadNotes],
   );
 
   const handlePromoteCategory = useCallback(
@@ -902,33 +824,24 @@ export default function App() {
     async (folderPath: string) => {
       const fp = normalizePath(folderPath) || GENERAL_PATH;
       if (isArchiveCategoryPath(fp)) return;
-      const list = await window.mnemo.notes.list();
-      const nMove = countNotesInCategorySubtree(list, fp);
+      const nMove = countNotesInCategorySubtree(vaultNotesRef.current, fp);
       if (nMove === 0) return;
       if (!window.confirm(`Move ${nMove} note(s) from “${fp}” (including subfolders) under Archive/…?`)) {
         return;
       }
-      for (const n of list) {
-        const cur = categoryPathFromTags(n.tags, list);
-        if (cur !== fp && !cur.startsWith(`${fp}/`)) continue;
-        const otherTags = n.tags.slice(1);
-        const newFirst = `Archive/${cur}`;
-        await window.mnemo.notes.update({
-          id: n.id,
-          tags: [newFirst, ...otherTags],
-        });
+      if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) return;
+      const targetPath = `Archive/${fp}`;
+      const result = await window.mnemo.notes.moveCategory({
+        sourcePath: fp,
+        targetPath,
+        includeDescendants: true,
+      });
+      if (result.failures.length) {
+        window.alert(`${result.failures.length} of ${result.requested} notes could not be fully archived.`);
       }
 
       setCategoryColors((prev) => {
-        const next = { ...prev };
-        const keys = Object.keys(next);
-        for (const k of keys) {
-          if (k !== fp && !k.startsWith(`${fp}/`)) continue;
-          const c = next[k];
-          delete next[k];
-          const nk = categoryColorStorageKey(`Archive/${k}`);
-          next[nk] = c;
-        }
+        const next = remapCategoryKeys(prev, fp, targetPath, true, result.affected !== result.requested);
         try {
           localStorage.setItem('mnemo.categoryColors', JSON.stringify(next));
         } catch {
@@ -937,15 +850,7 @@ export default function App() {
         return next;
       });
       setCategoryColorStamps((prev) => {
-        const next = { ...prev };
-        const keys = Object.keys(next);
-        for (const k of keys) {
-          if (k !== fp && !k.startsWith(`${fp}/`)) continue;
-          const t = next[k];
-          delete next[k];
-          const nk = categoryColorStorageKey(`Archive/${k}`);
-          next[nk] = t;
-        }
+        const next = remapCategoryKeys(prev, fp, targetPath, true, result.affected !== result.requested);
         try {
           localStorage.setItem('mnemo.categoryColorStamps', JSON.stringify(next));
         } catch {
@@ -953,13 +858,17 @@ export default function App() {
         }
         return next;
       });
-      setCategorySortModes((prev) => remapCategoryKeyedValues(prev, fp, `Archive/${fp}`));
+      setCategorySortModes((prev) =>
+        remapCategoryKeys(prev, fp, targetPath, true, result.affected !== result.requested),
+      );
 
       await loadNotes();
-      const curId = activeNoteRef.current?.id;
-      if (curId) {
-        const n = await window.mnemo.notes.read(curId);
-        if (n) setActiveNote(n);
+      const activeId = activeNoteRef.current?.id;
+      const activeChange = result.changes.find(change => change.id === activeId);
+      if (activeChange) {
+        setActiveNote(prev => prev && prev.id === activeChange.id
+          ? { ...prev, tags: activeChange.tags, modified: activeChange.modified }
+          : prev);
       }
     },
     [loadNotes],
@@ -968,7 +877,7 @@ export default function App() {
   const handleDeleteCategory = useCallback(
     async (folderPath: string) => {
       const fp = normalizePath(folderPath) || GENERAL_PATH;
-      const list = await window.mnemo.notes.list();
+      const list = vaultNotesRef.current;
       const ids: string[] = [];
       for (const n of list) {
         const cur = categoryPathFromTags(n.tags, list);
@@ -980,20 +889,17 @@ export default function App() {
       ) {
         return;
       }
-      const del = new Set(ids);
+      const result = await window.mnemo.notes.deleteMany(ids);
+      if (result.failures.length) {
+        window.alert(`${result.failures.length} of ${result.requested} notes could not be fully deleted.`);
+      }
+      const del = new Set(result.affectedIds);
       const beforeTabs = openTabIdsRef.current;
       const nextTabIds = beforeTabs.filter((x) => !del.has(x));
       setOpenTabIds(nextTabIds);
 
-      for (const id of ids) {
-        await window.mnemo.notes.delete(id);
-      }
-
       setCategoryColors((prev) => {
-        const next = { ...prev };
-        for (const k of Object.keys(next)) {
-          if (k === fp || k.startsWith(`${fp}/`)) delete next[k];
-        }
+        const next = result.affected === result.requested ? remapCategoryKeys(prev, fp, null) : prev;
         try {
           localStorage.setItem('mnemo.categoryColors', JSON.stringify(next));
         } catch {
@@ -1002,10 +908,7 @@ export default function App() {
         return next;
       });
       setCategoryColorStamps((prev) => {
-        const next = { ...prev };
-        for (const k of Object.keys(next)) {
-          if (k === fp || k.startsWith(`${fp}/`)) delete next[k];
-        }
+        const next = result.affected === result.requested ? remapCategoryKeys(prev, fp, null) : prev;
         try {
           localStorage.setItem('mnemo.categoryColorStamps', JSON.stringify(next));
         } catch {
@@ -1013,23 +916,19 @@ export default function App() {
         }
         return next;
       });
-      setCategorySortModes((prev) => {
-        const next = { ...prev };
-        for (const key of Object.keys(next)) {
-          if (key === fp || key.startsWith(`${fp}/`)) delete next[key];
-        }
-        return next;
-      });
+      setCategorySortModes((prev) =>
+        result.affected === result.requested ? remapCategoryKeys(prev, fp, null) : prev,
+      );
 
       await loadNotes();
       const activeId = activeNoteRef.current?.id;
       if (activeId && del.has(activeId)) {
+        activeNoteRef.current = null;
+        setActiveNote(null);
         if (effectiveLayoutRef.current === 'ide' && nextTabIds.length > 0) {
           const tidx = beforeTabs.indexOf(activeId);
           const pickIdx = Math.min(Math.max(0, tidx <= 0 ? 0 : tidx - 1), nextTabIds.length - 1);
           await handleSelectNote(nextTabIds[pickIdx]!);
-        } else {
-          setActiveNote(null);
         }
       }
     },

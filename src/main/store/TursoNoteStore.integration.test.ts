@@ -81,4 +81,35 @@ describe('TursoNoteStore data contracts', () => {
       store.close();
     }
   });
+
+  it('moves and deletes notes across bounded remote batches', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mnemo-turso-bulk-test-'));
+    cleanupDirectories.push(root);
+    const url = `file:${path.join(root, 'mnemo.db')}`;
+    const store = new TursoNoteStore(url, '');
+    await store.initSchema();
+    const client = createClient({ url });
+    const now = '2026-01-01T00:00:00.000Z';
+    try {
+      await client.batch(Array.from({ length: 205 }, (_, index) => ({
+        sql: `INSERT INTO notes
+              (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+              VALUES (?, ?, '', ?, 'default', ?, ?, ?, 0)`,
+        args: [`bulk-${index}`, `Bulk ${index}`, JSON.stringify([`Work/Batch-${index % 5}`]), now, now, index + 1],
+      })), 'write');
+
+      const moved = await store.moveCategoryPrefix(
+        { sourcePath: 'Work', targetPath: 'Archive/Work', includeDescendants: true },
+      );
+      expect(moved).toMatchObject({ requested: 205, affected: 205, failures: [] });
+      expect((await store.list()).every(note => note.tags[0]?.startsWith('Archive/Work/'))).toBe(true);
+
+      const deleted = await store.deleteNotes(Array.from({ length: 205 }, (_, index) => `bulk-${index}`));
+      expect(deleted).toMatchObject({ requested: 205, affected: 205, failures: [] });
+      expect(await store.list()).toHaveLength(0);
+    } finally {
+      client.close();
+      store.close();
+    }
+  });
 });

@@ -79,6 +79,25 @@ export type SaveNoteResult =
   | { status: 'conflict'; current: Note }
   | { status: 'not-found' };
 
+export interface CategoryMoveInput {
+  sourcePath: string;
+  targetPath: string;
+  includeDescendants: boolean;
+}
+
+export interface BulkMutationFailure {
+  id: string;
+  error: string;
+}
+
+export interface BulkMutationResult {
+  requested: number;
+  affected: number;
+  affectedIds: string[];
+  failures: BulkMutationFailure[];
+  changes: Array<{ id: string; modified: string; tags: string[] }>;
+}
+
 export interface GraphData {
   nodes: Array<{ id: string; title: string; ref: number }>;
   links: Array<{ source: string; target: string }>;
@@ -272,6 +291,8 @@ export interface INoteStore {
   update(input: UpdateNoteInput): Promise<Note | null>;
   /** Atomically persist note fields and replace its outgoing links. */
   save(input: SaveNoteInput, targetIds: string[]): Promise<SaveNoteResult>;
+  moveCategoryPrefix(input: CategoryMoveInput, tenantId?: string): Promise<BulkMutationResult>;
+  deleteNotes(ids: string[], tenantId?: string): Promise<BulkMutationResult>;
   delete(id: string): Promise<boolean>;
   list(tenantId?: string): Promise<NoteListItem[]>;
   /** Load every full note and its outgoing links in a bounded number of store round trips. */
@@ -300,6 +321,8 @@ export const IPC = {
   NOTE_READ: 'note:read',
   NOTE_UPDATE: 'note:update',
   NOTE_SAVE: 'note:save',
+  NOTE_MOVE_CATEGORY: 'note:moveCategory',
+  NOTE_DELETE_MANY: 'note:deleteMany',
   NOTE_DELETE: 'note:delete',
   NOTE_LIST: 'note:list',
   NOTE_VAULT_SNAPSHOT: 'note:vaultSnapshot',

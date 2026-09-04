@@ -158,4 +158,27 @@ describe('LocalNoteStore', () => {
       store.close();
     }
   });
+
+  it('moves and deletes 500 notes through bulk transactions', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mnemo-store-bulk-test-'));
+    cleanupDirectories.push(root);
+    const store = new LocalNoteStore(path.join(root, 'mnemo.db'), path.join(root, 'vault'));
+    try {
+      const notes = await Promise.all(Array.from({ length: 500 }, (_, index) =>
+        store.create({ title: `Bulk ${index}`, body: '', tags: [`Work/Batch-${index % 5}`, 'keep'] }),
+      ));
+      const moved = await store.moveCategoryPrefix(
+        { sourcePath: 'Work', targetPath: 'Archive/Work', includeDescendants: true },
+      );
+      expect(moved).toMatchObject({ requested: 500, affected: 500, failures: [] });
+      expect((await store.list()).every(note => note.tags[0]?.startsWith('Archive/Work/'))).toBe(true);
+      expect((await store.list()).every(note => note.tags[1] === 'keep')).toBe(true);
+
+      const deleted = await store.deleteNotes(notes.map(note => note.id));
+      expect(deleted).toMatchObject({ requested: 500, affected: 500, failures: [] });
+      expect(await store.list()).toHaveLength(0);
+    } finally {
+      store.close();
+    }
+  });
 });

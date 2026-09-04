@@ -8,6 +8,8 @@ import type {
   UpdateNoteInput,
   SaveNoteInput,
   SaveNoteResult,
+  CategoryMoveInput,
+  BulkMutationResult,
   GraphData,
   AppConfig,
   SyncResult,
@@ -24,6 +26,8 @@ export interface MnemoAPI {
     read(id: string): Promise<Note | null>;
     update(input: UpdateNoteInput): Promise<Note | null>;
     save(input: SaveNoteInput): Promise<SaveNoteResult>;
+    moveCategory(input: CategoryMoveInput): Promise<BulkMutationResult>;
+    deleteMany(ids: string[]): Promise<BulkMutationResult>;
     delete(id: string): Promise<boolean>;
     list(tenantId?: string): Promise<NoteListItem[]>;
     vaultSnapshot(tenantId?: string): Promise<VaultSnapshot>;
@@ -119,6 +123,8 @@ const api: MnemoAPI = {
     read: (id) => ipcRenderer.invoke(IPC.NOTE_READ, id),
     update: (input) => ipcRenderer.invoke(IPC.NOTE_UPDATE, input),
     save: (input) => ipcRenderer.invoke(IPC.NOTE_SAVE, input),
+    moveCategory: (input) => ipcRenderer.invoke(IPC.NOTE_MOVE_CATEGORY, input),
+    deleteMany: (ids) => ipcRenderer.invoke(IPC.NOTE_DELETE_MANY, ids),
     delete: (id) => ipcRenderer.invoke(IPC.NOTE_DELETE, id),
     list: (tenantId) => ipcRenderer.invoke(IPC.NOTE_LIST, tenantId),
     vaultSnapshot: (tenantId) => ipcRenderer.invoke(IPC.NOTE_VAULT_SNAPSHOT, tenantId),
