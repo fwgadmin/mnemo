@@ -12,6 +12,8 @@ import type {
   NoteListItem,
   CreateNoteInput,
   UpdateNoteInput,
+  SaveNoteInput,
+  SaveNoteResult,
   SearchResult,
   INoteStore,
   VaultSnapshot,
@@ -140,6 +142,69 @@ export class TursoNoteStore implements INoteStore {
     const note: Note = { ...existing, ref: existing.ref, title, body, tags, modified: now, hideHeader };
     this.writeMdFile(note);
     return note;
+  }
+
+  async save(input: SaveNoteInput, targetIds: string[]): Promise<SaveNoteResult> {
+    const existing = await this.read(input.id);
+    if (!existing) return { status: 'not-found' };
+    if (existing.modified !== input.expectedModified) return { status: 'conflict', current: existing };
+
+    const modified = new Date(Math.max(Date.now(), Date.parse(existing.modified) + 1)).toISOString();
+    const links = [...new Set(targetIds)].filter(id => id !== input.id);
+    const note: Note = {
+      ...existing,
+      title: input.title ?? existing.title,
+      body: input.body ?? existing.body,
+      tags: input.tags ?? existing.tags,
+      hideHeader: input.hideHeader ?? existing.hideHeader,
+      modified,
+      links,
+    };
+    const statements: import('@libsql/client').InStatement[] = [
+      {
+        sql: `UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ?, hide_header = ?
+              WHERE id = ? AND updated_at = ?`,
+        args: [
+          note.title,
+          note.body,
+          JSON.stringify(note.tags),
+          modified,
+          note.hideHeader ? 1 : 0,
+          note.id,
+          input.expectedModified,
+        ],
+      },
+      {
+        sql: `DELETE FROM note_links WHERE source_id = ?
+              AND EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at = ?)`,
+        args: [note.id, note.id, modified],
+      },
+      ...links.map(targetId => ({
+        sql: `INSERT OR IGNORE INTO note_links (source_id, target_id)
+              SELECT ?, ? WHERE EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at = ?)`,
+        args: [note.id, targetId, note.id, modified],
+      })),
+    ];
+    const results = await this.client.batch(statements, 'write');
+    if ((results[0]?.rowsAffected ?? 0) !== 1) {
+      const current = await this.read(input.id);
+      return current ? { status: 'conflict', current } : { status: 'not-found' };
+    }
+    this.writeMdFile(note);
+    return {
+      status: 'saved',
+      note,
+      listItem: {
+        ref: note.ref,
+        id: note.id,
+        title: note.title,
+        tags: note.tags,
+        created: note.created,
+        modified: note.modified,
+        snippet: note.body.slice(0, 120),
+        hideHeader: note.hideHeader,
+      },
+    };
   }
 
   async delete(id: string): Promise<boolean> {

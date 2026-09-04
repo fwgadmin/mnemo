@@ -233,6 +233,8 @@ export interface EditorHandle {
   getBody: () => string;
   /** True when the buffer differs from the last server body applied (unsaved local edits). */
   isDirty: () => boolean;
+  /** Send the current buffer immediately and wait for its serialized save queue. */
+  flush: () => Promise<boolean>;
   scrollToLine: (line: number) => void;
   focus: () => void;
   /** When the title header is shown, move focus to the title field (e.g. after New Note). */
@@ -245,7 +247,8 @@ export interface EditorHandle {
 
 interface EditorProps {
   note: Note;
-  onUpdate: (id: string, title: string, body: string) => void;
+  onUpdate: (id: string, title: string, body: string) => Promise<boolean>;
+  onDirty?: (id: string) => void;
   onNavigate: (title: string) => void;
   showHeader?: boolean;
   saveSignal?: number;
@@ -267,6 +270,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   {
     note,
     onUpdate,
+    onDirty,
     onNavigate,
     showHeader = true,
     saveSignal,
@@ -286,13 +290,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const titleRef = useRef<HTMLInputElement>(null);
   const noteIdRef = useRef(note.id);
   const titleValueRef = useRef(note.title);
+  const syncedTitleRef = useRef(note.title);
   /** Last server body applied to the editor (normalized); used for dirty checks + remote sync. */
   const syncedBodyRef = useRef(normalizeLineSeparators(note.body));
   /** Last reloadNonce seen for the current note id — avoids re-applying when only `note` updates. */
   const reloadNonceSeenRef = useRef(0);
+  const applyingServerRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onUpdateRef = useRef(onUpdate);
+  const onDirtyRef = useRef(onDirty);
   const onEditorLiveBodyRef = useRef(onEditorLiveBody);
   const lineNumbersCompartment = useRef(new Compartment());
   const spellcheckCompartment = useRef(new Compartment());
@@ -310,6 +317,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     onUpdateRef.current = onUpdate;
   }, [onUpdate]);
   useEffect(() => {
+    onDirtyRef.current = onDirty;
+  }, [onDirty]);
+  useEffect(() => {
     onEditorLiveBodyRef.current = onEditorLiveBody;
   }, [onEditorLiveBody]);
 
@@ -324,13 +334,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     setPreviewLiveBody(normalizeLineSeparators(note.body));
   }, [note.id, note.body]);
 
-  const saveNow = useCallback(() => {
+  const saveNow = useCallback(async () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    onUpdateRef.current(
-      noteIdRef.current,
-      titleValueRef.current,
-      viewRef.current?.state.doc.toString() ?? note.body,
-    );
+    saveTimerRef.current = null;
+    const title = titleValueRef.current;
+    const body = viewRef.current?.state.doc.toString() ?? note.body;
+    const saved = await onUpdateRef.current(noteIdRef.current, title, body);
+    if (saved) {
+      syncedTitleRef.current = title;
+      syncedBodyRef.current = normalizeLineSeparators(body);
+    }
+    return saved;
   }, [note.body]);
 
   useEffect(() => {
@@ -341,7 +355,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const debouncedSave = useCallback((title: string, body: string) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      onUpdateRef.current(noteIdRef.current, title, body);
+      saveTimerRef.current = null;
+      void onUpdateRef.current(noteIdRef.current, title, body);
     }, 500);
   }, []);
 
@@ -386,10 +401,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const v = viewRef.current;
         if (!v) return false;
         return (
+          titleValueRef.current !== syncedTitleRef.current ||
           normalizeLineSeparators(v.state.doc.toString()) !==
           normalizeLineSeparators(syncedBodyRef.current)
         );
       },
+      flush: saveNow,
       scrollToLine: (line: number) => {
         const v = viewRef.current;
         if (!v) return;
@@ -457,9 +474,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     noteIdRef.current = note.id;
     titleValueRef.current = note.title;
+    syncedTitleRef.current = note.title;
 
     const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
+      if (update.docChanged && !applyingServerRef.current) {
+        onDirtyRef.current?.(noteIdRef.current);
         debouncedSave(titleValueRef.current, update.state.doc.toString());
         const cb = onEditorLiveBodyRef.current;
         if (cb) {
@@ -628,9 +647,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       return;
     }
     if (doc === normalizeLineSeparators(syncedBodyRef.current)) {
+      applyingServerRef.current = true;
       v.dispatch({
         changes: { from: 0, to: v.state.doc.length, insert: server },
       });
+      applyingServerRef.current = false;
       syncedBodyRef.current = server;
       onEditorLiveBodyRef.current?.(server);
     }
@@ -648,11 +669,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const server = normalizeLineSeparators(note.body);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     if (previewThrottleRef.current) clearTimeout(previewThrottleRef.current);
-    v.dispatch({
-      changes: { from: 0, to: v.state.doc.length, insert: server },
-    });
+    applyingServerRef.current = true;
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: server } });
+    applyingServerRef.current = false;
     syncedBodyRef.current = server;
     titleValueRef.current = note.title;
+    syncedTitleRef.current = note.title;
     const t = titleRef.current;
     if (t && document.activeElement !== t) {
       t.value = note.title;
@@ -670,6 +692,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       t.value = note.title;
       titleValueRef.current = note.title;
     }
+    if (titleValueRef.current === note.title) syncedTitleRef.current = note.title;
   }, [note.id, note.title, note.modified]);
 
   useEffect(() => {
@@ -693,6 +716,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
   const handleTitleChange = (newTitle: string) => {
     titleValueRef.current = newTitle;
+    onDirtyRef.current?.(noteIdRef.current);
     debouncedSave(newTitle, viewRef.current?.state.doc.toString() ?? note.body);
   };
 

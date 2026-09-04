@@ -53,4 +53,32 @@ describe('TursoNoteStore data contracts', () => {
       store.close();
     }
   });
+
+  it('saves note content and links in one guarded write batch', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mnemo-turso-save-test-'));
+    cleanupDirectories.push(root);
+    const store = new TursoNoteStore(`file:${path.join(root, 'mnemo.db')}`, '');
+    await store.initSchema();
+    try {
+      const target = await store.create({ title: 'Target', body: '', tags: [] });
+      const source = await store.create({ title: 'Source', body: 'old', tags: [] });
+      const result = await store.save(
+        { id: source.id, title: source.title, body: 'new', expectedModified: source.modified },
+        [target.id],
+      );
+      expect(result.status).toBe('saved');
+      expect((await store.read(source.id))?.body).toBe('new');
+      expect((await store.getBacklinks(target.id)).map(note => note.id)).toEqual([source.id]);
+
+      const stale = await store.save(
+        { id: source.id, title: source.title, body: 'stale', expectedModified: source.modified },
+        [],
+      );
+      expect(stale.status).toBe('conflict');
+      expect((await store.read(source.id))?.body).toBe('new');
+      expect((await store.getBacklinks(target.id)).map(note => note.id)).toEqual([source.id]);
+    } finally {
+      store.close();
+    }
+  });
 });
