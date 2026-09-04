@@ -32,11 +32,12 @@ import {
   UNASSIGNED_PATH,
 } from './categoryPath';
 import { colorForCategoryPath, readCategoryColors, readCategoryColorStamps } from './categoryColors';
+import { readCategorySortModes } from './categorySort';
 import { buildEffectiveCategoryColors, getSuggestedCategorySwatches } from './categoryColorPalette';
 import { gatherLocalStoragePreferences } from './uiPreferencesSync';
 import { applyThemeToDocument, DEFAULT_THEME_ID, getTheme } from './theme/themes';
 import { applyMarkdownOverridesToDocument, mergeMarkdownLayers } from './editor/markdownOverrides';
-import type { LlmSettingsFile, MnemoUiPreferences, Note, NoteListItem } from '../shared/types';
+import type { CategorySortMode, LlmSettingsFile, MnemoUiPreferences, Note, NoteListItem } from '../shared/types';
 import { shouldShowSummaryMenuItems } from '../shared/llmProfile';
 import { vaultFingerprint } from '../shared/types';
 import {
@@ -76,6 +77,24 @@ function savePref(key: string, val: boolean): void {
   localStorage.setItem(`mnemo.${key}`, String(val));
 }
 
+function remapCategoryKeyedValues<T>(
+  values: Record<string, T>,
+  oldPath: string,
+  newPath: string,
+  includeDescendants = true,
+): Record<string, T> {
+  const next = { ...values };
+  for (const key of Object.keys(values)) {
+    if (key !== oldPath && (!includeDescendants || !key.startsWith(`${oldPath}/`))) continue;
+    const value = next[key];
+    delete next[key];
+    const suffix = key === oldPath ? '' : key.slice(oldPath.length + 1);
+    const destination = suffix ? `${newPath}/${suffix}` : newPath;
+    if (value !== undefined) next[destination] = value;
+  }
+  return next;
+}
+
 function readThemeId(): string {
   return localStorage.getItem('mnemo.themeId') ?? DEFAULT_THEME_ID;
 }
@@ -100,6 +119,7 @@ export default function App() {
   const [showNoteRefs, setShowNoteRefs] = useState(() => loadPref('showNoteRefs', false));
   const [categoryColors, setCategoryColors] = useState<Record<string, string>>(readCategoryColors);
   const [categoryColorStamps, setCategoryColorStamps] = useState<Record<string, number>>(readCategoryColorStamps);
+  const [categorySortModes, setCategorySortModes] = useState<Record<string, CategorySortMode>>(readCategorySortModes);
   const [activeTab, setActiveTab] = useState<ActiveTab>('note');
   const [saveSignal, setSaveSignal] = useState(0);
   /** Bumps on explicit ↻ / Reload Note List so the editor replaces its buffer from DB. */
@@ -116,6 +136,9 @@ export default function App() {
   const [sidebarIncludeSubfolders, setSidebarIncludeSubfolders] = useState(
     () => localStorage.getItem('mnemo.categoryScopeSubtree') !== 'false',
   );
+  const [autoColorCategories, setAutoColorCategories] = useState(
+    () => localStorage.getItem('mnemo.autoColorCategories') !== 'false',
+  );
   const [prefsReady, setPrefsReady] = useState(false);
   const [markdownGlobal, setMarkdownGlobal] = useState<Record<string, string>>({});
   const [markdownByTheme, setMarkdownByTheme] = useState<Record<string, Record<string, string>>>({});
@@ -130,9 +153,14 @@ export default function App() {
     return layoutOverride;
   }, [layoutOverride, themeDef.layout]);
 
+  const categoryPathsForColors = useMemo(
+    () => vaultNotes.map(n => categoryPathFromTags(n.tags, vaultNotes)),
+    [vaultNotes],
+  );
+
   const resolvedCategoryColors = useMemo(
-    () => buildEffectiveCategoryColors(categoryColors, themeDef),
-    [categoryColors, themeDef],
+    () => buildEffectiveCategoryColors(categoryColors, themeDef, categoryPathsForColors, autoColorCategories),
+    [categoryColors, themeDef, categoryPathsForColors, autoColorCategories],
   );
 
   const categoryColorSwatches = useMemo(() => getSuggestedCategorySwatches(themeDef), [themeDef]);
@@ -234,6 +262,14 @@ export default function App() {
   }, [sidebarIncludeSubfolders]);
 
   useEffect(() => {
+    localStorage.setItem('mnemo.autoColorCategories', String(autoColorCategories));
+  }, [autoColorCategories]);
+
+  useEffect(() => {
+    localStorage.setItem('mnemo.categorySortModes', JSON.stringify(categorySortModes));
+  }, [categorySortModes]);
+
+  useEffect(() => {
     try {
       localStorage.setItem('mnemo.ideTabIds', JSON.stringify(openTabIds));
     } catch {
@@ -251,6 +287,8 @@ export default function App() {
     if (file.showNoteRefs !== undefined) setShowNoteRefs(file.showNoteRefs);
     if (file.grouped !== undefined) setSidebarGrouped(file.grouped);
     if (file.categoryScopeSubtree !== undefined) setSidebarIncludeSubfolders(file.categoryScopeSubtree);
+    if (file.autoColorCategories !== undefined) setAutoColorCategories(file.autoColorCategories);
+    if (file.categorySortModes !== undefined) setCategorySortModes(file.categorySortModes);
     if (file.categoryColors !== undefined) {
       try {
         localStorage.setItem('mnemo.categoryColors', JSON.stringify(file.categoryColors));
@@ -379,8 +417,10 @@ export default function App() {
         editorAutocomplete,
         grouped: sidebarGrouped,
         categoryScopeSubtree: sidebarIncludeSubfolders,
+        autoColorCategories,
         categoryColors,
         categoryColorStamps,
+        categorySortModes,
         markdownGlobal,
         markdownByTheme,
         ideTabIds: openTabIds,
@@ -399,8 +439,10 @@ export default function App() {
     editorAutocomplete,
     sidebarGrouped,
     sidebarIncludeSubfolders,
+    autoColorCategories,
     categoryColors,
     categoryColorStamps,
+    categorySortModes,
     markdownGlobal,
     markdownByTheme,
     openTabIds,
@@ -439,6 +481,16 @@ export default function App() {
       } catch {
         /* ignore quota */
       }
+      return next;
+    });
+  }, []);
+
+  const handleSetCategorySortMode = useCallback((path: string, mode: CategorySortMode | null) => {
+    const key = categoryColorStorageKey(path);
+    setCategorySortModes(prev => {
+      const next = { ...prev };
+      if (mode === null) delete next[key];
+      else next[key] = mode;
       return next;
     });
   }, []);
@@ -507,6 +559,7 @@ export default function App() {
             id: r.id,
             title: r.title,
             tags: [],
+            created: '',
             modified: '',
             snippet: r.snippet,
             hideHeader: r.hideHeader,
@@ -686,6 +739,10 @@ export default function App() {
         return next;
       });
 
+      setCategorySortModes(prev =>
+        remapCategoryKeyedValues(prev, oldKey, newKey, migrateSubtreePrefix),
+      );
+
       await loadNotes();
       if (activeNote) {
         const n = await window.mnemo.notes.read(activeNote.id);
@@ -819,6 +876,7 @@ export default function App() {
         }
         return next;
       });
+      setCategorySortModes(prev => remapCategoryKeyedValues(prev, fp, `Archive/${fp}`));
 
       await loadNotes();
       const curId = activeNoteRef.current?.id;
@@ -877,6 +935,13 @@ export default function App() {
           localStorage.setItem('mnemo.categoryColorStamps', JSON.stringify(next));
         } catch {
           /* ignore */
+        }
+        return next;
+      });
+      setCategorySortModes(prev => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (key === fp || key.startsWith(`${fp}/`)) delete next[key];
         }
         return next;
       });
@@ -1431,6 +1496,7 @@ export default function App() {
       id: r.id,
       title: r.title,
       tags: [],
+      created: '',
       modified: '',
       snippet: r.snippet,
       hideHeader: r.hideHeader,
@@ -1573,6 +1639,8 @@ export default function App() {
     categoryColors,
     resolvedCategoryColors,
     categoryColorSwatches,
+    categorySortModes,
+    onSetCategorySortMode: handleSetCategorySortMode,
     onSetCategoryColor: handleSetCategoryColor,
     onRenameCategory: handleRenameCategory,
     onPromoteCategory: handlePromoteCategory,
@@ -1690,6 +1758,8 @@ export default function App() {
         onLayoutOverrideChange={setLayoutOverride}
         showNoteRefs={showNoteRefs}
         onShowNoteRefsChange={setShowNoteRefs}
+        autoColorCategories={autoColorCategories}
+        onAutoColorCategoriesChange={setAutoColorCategories}
         editorSpellcheck={editorSpellcheck}
         editorAutocomplete={editorAutocomplete}
         onEditorSpellcheckChange={handleEditorSpellcheckChange}

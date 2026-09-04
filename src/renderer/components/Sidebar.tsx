@@ -1,5 +1,5 @@
-import { Fragment, useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from 'react';
-import type { NoteListItem } from '../../shared/types';
+import { Fragment, useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, type ReactNode } from 'react';
+import type { CategorySortMode, NoteListItem } from '../../shared/types';
 import {
   GENERAL_PATH,
   UNASSIGNED_PATH,
@@ -23,6 +23,8 @@ import { colorForCategoryPath } from '../categoryColors';
 import CategoryCombobox from './CategoryCombobox';
 import IdeSolutionTree from './IdeSolutionTree';
 import CategoryFolderColorMenu, { type FolderColorMenuState } from './CategoryFolderColorMenu';
+import { clampFixedContextMenu } from '../fixedMenuPosition';
+import { resolveCategorySortMode, sortNotesForCategory } from '../categorySort';
 
 export interface SidebarProps {
   /** Full vault list (for tree paths and combobox) */
@@ -61,6 +63,9 @@ export interface SidebarProps {
   /** Theme-based suggested swatches for folder color menu. */
   categoryColorSwatches?: string[];
   onSetCategoryColor?: (path: string, color: string | null) => void;
+  /** Exact per-folder overrides; descendants inherit their closest parent's mode. */
+  categorySortModes?: Record<string, CategorySortMode>;
+  onSetCategorySortMode?: (path: string, mode: CategorySortMode | null) => void;
   /** Right-click category folder → rename (updates all notes in that exact category) */
   onRenameCategory?: (oldPath: string, newPath: string) => void | Promise<void>;
   onPromoteCategory?: (path: string) => void | Promise<void>;
@@ -97,6 +102,8 @@ export default function Sidebar({
   resolvedCategoryColors: resolvedCategoryColorsProp,
   categoryColorSwatches = [],
   onSetCategoryColor = () => {},
+  categorySortModes = {},
+  onSetCategorySortMode = () => {},
   onRenameCategory,
   onPromoteCategory,
   onDemoteCategory,
@@ -108,7 +115,9 @@ export default function Sidebar({
   onIncludeSubfoldersChange,
 }: SidebarProps) {
   const resolvedCategoryColors = resolvedCategoryColorsProp ?? categoryColors;
-  const [contextMenuId, setContextMenuId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ noteId: string; x: number; y: number } | null>(null);
+  const [contextMenuPos, setContextMenuPos] = useState({ left: 0, top: 0 });
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   const [categoryEditId, setCategoryEditId] = useState<string | null>(null);
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -125,13 +134,39 @@ export default function Sidebar({
   const [folderDemote, setFolderDemote] = useState<{ path: string; x: number; y: number } | null>(null);
   const folderRenameRef = useRef<HTMLDivElement>(null);
   const folderDemoteRef = useRef<HTMLDivElement>(null);
+  const [folderRenamePos, setFolderRenamePos] = useState({ left: 0, top: 0 });
+  const [folderDemotePos, setFolderDemotePos] = useState({ left: 0, top: 0 });
 
   useEffect(() => {
-    if (!contextMenuId) return;
-    const handler = () => setContextMenuId(null);
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
     window.addEventListener('click', handler);
     return () => window.removeEventListener('click', handler);
-  }, [contextMenuId]);
+  }, [contextMenu]);
+
+  useLayoutEffect(() => {
+    if (!contextMenu) return;
+    const el = contextMenuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setContextMenuPos(clampFixedContextMenu(contextMenu.x, contextMenu.y, width, height));
+  }, [contextMenu]);
+
+  useLayoutEffect(() => {
+    if (!folderRename) return;
+    const el = folderRenameRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setFolderRenamePos(clampFixedContextMenu(folderRename.x, folderRename.y + 4, width, height));
+  }, [folderRename]);
+
+  useLayoutEffect(() => {
+    if (!folderDemote) return;
+    const el = folderDemoteRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setFolderDemotePos(clampFixedContextMenu(folderDemote.x, folderDemote.y + 4, width, height));
+  }, [folderDemote]);
 
   useEffect(() => {
     if (!folderRename) return;
@@ -202,13 +237,11 @@ export default function Sidebar({
       if (!m.has(p)) m.set(p, []);
       m.get(p)!.push(n);
     }
-    for (const arr of m.values()) {
-      arr.sort((a, b) =>
-        (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }),
-      );
+    for (const [path, arr] of m) {
+      m.set(path, sortNotesForCategory(arr, path, categorySortModes));
     }
     return m;
-  }, [displayedNotes, vaultNotes]);
+  }, [displayedNotes, vaultNotes, categorySortModes]);
 
   const prunedTreeRoot = useMemo(
     () => pruneCategoryTree(tree, notesByPath),
@@ -226,12 +259,15 @@ export default function Sidebar({
 
   const handleContextMenu = useCallback((e: React.MouseEvent, noteId: string) => {
     e.preventDefault();
-    setContextMenuId(noteId === contextMenuId ? null : noteId);
+    e.stopPropagation();
+    setContextMenu(prev =>
+      prev?.noteId === noteId ? null : { noteId, x: e.clientX, y: e.clientY },
+    );
     setCategoryEditId(null);
-  }, [contextMenuId]);
+  }, []);
 
   const openCategoryEdit = useCallback((noteId: string, currentCategory: string) => {
-    setContextMenuId(null);
+    setContextMenu(null);
     setCategoryEditId(noteId);
   }, []);
 
@@ -279,7 +315,7 @@ export default function Sidebar({
 
   const openFolderContextMenu = useCallback((e: React.MouseEvent, path: string) => {
     e.preventDefault();
-    setContextMenuId(null);
+    setContextMenu(null);
     setFolderColorMenu({ path, x: e.clientX, y: e.clientY });
   }, []);
 
@@ -302,7 +338,7 @@ export default function Sidebar({
         onDragStart={e => handleDragStart(e, note.id)}
         onClick={() => {
           onSelectNote(note.id);
-          setContextMenuId(null);
+          setContextMenu(null);
         }}
         onContextMenu={e => handleContextMenu(e, note.id)}
         className={`
@@ -338,10 +374,14 @@ export default function Sidebar({
           </div>
         )}
 
-        {contextMenuId === note.id && (
+        {contextMenu?.noteId === note.id && (
           <div
-            className="absolute right-2 top-8 z-20 bg-mnemo-panel-elevated border border-mnemo-border rounded-md shadow-lg py-1 min-w-[180px]"
+            ref={contextMenuRef}
+            role="menu"
+            className="fixed z-[100] bg-mnemo-panel-elevated border border-mnemo-border rounded-md shadow-lg py-1 min-w-[180px]"
+            style={{ left: contextMenuPos.left, top: contextMenuPos.top }}
             onClick={e => e.stopPropagation()}
+            onContextMenu={e => e.preventDefault()}
           >
             <button
               type="button"
@@ -355,7 +395,7 @@ export default function Sidebar({
                 type="button"
                 onClick={() => {
                   onRenameNote(note.id);
-                  setContextMenuId(null);
+                  setContextMenu(null);
                 }}
                 className="w-full px-3 py-1.5 text-xs text-left text-mnemo-muted hover:bg-mnemo-hover cursor-pointer"
               >
@@ -367,7 +407,7 @@ export default function Sidebar({
                 type="button"
                 onClick={() => {
                   onToggleHideNoteHeader(note.id);
-                  setContextMenuId(null);
+                  setContextMenu(null);
                 }}
                 className="w-full px-3 py-1.5 text-xs text-left text-mnemo-muted hover:bg-mnemo-hover cursor-pointer"
               >
@@ -379,7 +419,7 @@ export default function Sidebar({
               type="button"
               onClick={() => {
                 onDeleteNote(note.id);
-                setContextMenuId(null);
+                setContextMenu(null);
               }}
               className="w-full px-3 py-1.5 text-xs text-left text-red-400 hover:bg-mnemo-hover cursor-pointer"
             >
@@ -553,7 +593,8 @@ export default function Sidebar({
         notesByPath={notesByPath}
         activeNoteId={activeNoteId}
         vaultNotes={vaultNotes}
-                categoryColors={resolvedCategoryColors}
+        categoryColors={resolvedCategoryColors}
+        categorySortModes={categorySortModes}
         onFolderContextMenu={openFolderContextMenu}
         dragOverCategory={dragOverCategory}
         onDragOver={handleDragOver}
@@ -686,6 +727,15 @@ export default function Sidebar({
             resolvedCategoryColors[categoryColorStorageKey(folderColorMenu.path)]
           : undefined
       }
+      sortMode={folderColorMenu ? resolveCategorySortMode(folderColorMenu.path, categorySortModes) : 'alphabetical'}
+      hasSortOverride={Boolean(
+        folderColorMenu && Object.prototype.hasOwnProperty.call(categorySortModes, categoryColorStorageKey(folderColorMenu.path))
+      )}
+      onSetSortMode={mode => {
+        if (!folderColorMenu) return;
+        onSetCategorySortMode(folderColorMenu.path, mode);
+        setFolderColorMenu(null);
+      }}
       onPickCustomColor={hex => {
         if (!folderColorMenu) return;
         onSetCategoryColor(folderColorMenu.path, hex);
@@ -756,7 +806,7 @@ export default function Sidebar({
       <div
         ref={folderRenameRef}
         className="fixed z-[110] w-[min(90vw,280px)]"
-        style={{ left: folderRename.x, top: folderRename.y + 4 }}
+        style={{ left: folderRenamePos.left, top: folderRenamePos.top }}
       >
         <div
           className="bg-mnemo-panel-elevated border border-mnemo-border rounded-md shadow-lg p-2"
@@ -791,7 +841,7 @@ export default function Sidebar({
       <div
         ref={folderDemoteRef}
         className="fixed z-[110] w-[min(90vw,280px)]"
-        style={{ left: folderDemote.x, top: folderDemote.y + 4 }}
+        style={{ left: folderDemotePos.left, top: folderDemotePos.top }}
       >
         <div
           className="bg-mnemo-panel-elevated border border-mnemo-border rounded-md shadow-lg p-2"

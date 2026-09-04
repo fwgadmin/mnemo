@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type DragEvent, type MouseEvent } from 'react';
-import type { NoteListItem } from '../../shared/types';
+import type { CategorySortMode, NoteListItem } from '../../shared/types';
 import {
   ancestorPaths,
   categoryPathFromTags,
@@ -8,6 +8,7 @@ import {
   type CategoryTreeNode,
 } from '../categoryPath';
 import { colorForCategoryPath } from '../categoryColors';
+import { sortNotesForCategory } from '../categorySort';
 
 const EXPANDED_KEY = 'mnemo.ideExplorerExpanded';
 
@@ -59,6 +60,7 @@ interface IdeSolutionTreeProps {
   activeNoteId: string | null;
   vaultNotes: NoteListItem[];
   categoryColors: Record<string, string>;
+  categorySortModes: Record<string, CategorySortMode>;
   onFolderContextMenu: (e: MouseEvent, path: string) => void;
   dragOverCategory: string | null;
   onDragOver: (e: DragEvent, path: string) => void;
@@ -73,6 +75,7 @@ export default function IdeSolutionTree({
   activeNoteId,
   vaultNotes,
   categoryColors,
+  categorySortModes,
   onFolderContextMenu,
   dragOverCategory,
   onDragOver,
@@ -122,9 +125,7 @@ export default function IdeSolutionTree({
   }, []);
 
   const renderNode = (node: CategoryTreeNode, depth: number): React.ReactNode => {
-    const notesHere = [...(notesByPath.get(node.path) ?? [])].sort((a, b) =>
-      (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }),
-    );
+    const notesHere = sortNotesForCategory(notesByPath.get(node.path) ?? [], node.path, categorySortModes);
     const childFolders = [...node.children].sort((a, b) =>
       a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
     );

@@ -134,6 +134,15 @@ export function sanitizePrefs(raw: unknown): MnemoUiPreferences {
   if (typeof o.editorAutocomplete === 'boolean') out.editorAutocomplete = o.editorAutocomplete;
   if (typeof o.grouped === 'boolean') out.grouped = o.grouped;
   if (typeof o.categoryScopeSubtree === 'boolean') out.categoryScopeSubtree = o.categoryScopeSubtree;
+  if (typeof o.autoColorCategories === 'boolean') out.autoColorCategories = o.autoColorCategories;
+
+  if (o.categorySortModes && typeof o.categorySortModes === 'object' && !Array.isArray(o.categorySortModes)) {
+    const modes: NonNullable<MnemoUiPreferences['categorySortModes']> = {};
+    for (const [path, mode] of Object.entries(o.categorySortModes)) {
+      if (mode === 'alphabetical' || mode === 'created-desc' || mode === 'created-asc') modes[path] = mode;
+    }
+    out.categorySortModes = modes;
+  }
 
   if (o.categoryColors && typeof o.categoryColors === 'object' && !Array.isArray(o.categoryColors)) {
     const cc: Record<string, string> = {};

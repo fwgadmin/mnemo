@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **MCP / workspaces:** Each stdio MCP connection now owns its workspace selection. `--workspace` pins an agent to a vault, and `switch_workspace` retargets only that connection instead of changing `workspace-profiles.json` or another Codex window's target.
+- **Editor / media:** Paste, drop, or choose images, audio, video, PDF, and text attachments directly in note bodies. Rendered Preview provides controls for width, alignment, vertical movement, copy/cut, description changes, and deletion; embedded data stays with the Markdown note across local or remote databases.
+- **Categories:** New categories are automatically assigned theme-aware colors by default. Nested categories receive close, readable shades of their parent color; the new General setting can disable automatic colors without removing manual picks.
+- **Sidebar:** Note context menus and category rename/demote popovers now measure against the viewport and flip above bottom-edge rows instead of being clipped by the scrollable note list.
+- **Sidebar / sorting:** Each category and subcategory can independently sort notes alphabetically, newest-created first, or oldest-created first from its right-click menu. Nested folders inherit the closest parent mode until they set an override; sort preferences follow renames/archives and sync with workspace UI preferences.
+
 ## 2.1.19 — 2026-04-16
 
 - **npm (`mnemo-note`):** **`bin`** now exposes **`mnemo-note`** as well as **`mnemo`** (same entry point) so the package name matches a command when using **`npx`**. **README** clarifies that **`npm install -g mnemo-note`** is required for a global **`mnemo`** on **`PATH`**; without **`-g`**, use **`npx mnemo`** / **`npx mnemo-note`** or **`node_modules/.bin/mnemo`**.

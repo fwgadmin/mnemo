@@ -35,6 +35,7 @@ export interface NoteListItem {
   id: string;
   title: string;
   tags: string[];
+  created: string;
   modified: string;
   snippet: string;    // First ~100 chars of body
   hideHeader?: boolean;
@@ -128,6 +129,7 @@ export interface AppConfig {
 
 /** GUI layout override (Settings) — mirrors renderer */
 export type LayoutOverridePreference = 'inherit' | 'sidebar' | 'top' | 'ide';
+export type CategorySortMode = 'alphabetical' | 'created-desc' | 'created-asc';
 
 /**
  * Customizable UI state shared by the Electron app (via IPC), on-disk JSON
@@ -145,6 +147,10 @@ export interface MnemoUiPreferences {
   grouped?: boolean;
   /** Include subfolders when filtering by category */
   categoryScopeSubtree?: boolean;
+  /** Automatically color new categories; nested paths receive nearby shades of their parent. Default true. */
+  autoColorCategories?: boolean;
+  /** Per-category note ordering; subcategories inherit the closest parent override. */
+  categorySortModes?: Record<string, CategorySortMode>;
   /** Folder path → #hex color */
   categoryColors?: Record<string, string>;
   /** Per-folder-path last update time (ms) for merge with remote `app_kv` — clears win over stale cloud colors. */

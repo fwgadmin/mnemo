@@ -44,7 +44,7 @@ export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
         <Group title="Links &amp; Images">
           <Row syntax="[[Note Title]]"       result="wikilink" />
           <Row syntax="[text](url)"          result="hyperlink" />
-          <Row syntax="![alt](url)"          result="image" />
+          <Row syntax="![alt](url)"          result="image (paste/drop or Ctrl+Shift+I)" />
         </Group>
 
         <Group title="Code Blocks">

@@ -261,7 +261,7 @@ export class TursoNoteStore implements INoteStore {
 
   async list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT ref, id, title, body, tags, updated_at, hide_header
+      sql: `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header
             FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC`,
       args: [tenantId],
     });
@@ -270,6 +270,7 @@ export class TursoNoteStore implements INoteStore {
       id: row['id'] as string,
       title: row['title'] as string,
       tags: JSON.parse(row['tags'] as string),
+      created: row['created_at'] as string,
       modified: row['updated_at'] as string,
       snippet: (row['body'] as string).substring(0, 120),
       hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
@@ -355,7 +356,7 @@ export class TursoNoteStore implements INoteStore {
 
   async getBacklinks(noteId: string): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.updated_at
+      sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at
             FROM note_links nl
             JOIN notes n ON n.id = nl.source_id
             WHERE nl.target_id = ?
@@ -367,6 +368,7 @@ export class TursoNoteStore implements INoteStore {
       id: row['id'] as string,
       title: row['title'] as string,
       tags: JSON.parse(row['tags'] as string),
+      created: row['created_at'] as string,
       modified: row['updated_at'] as string,
       snippet: (row['body'] as string).substring(0, 120),
     }));

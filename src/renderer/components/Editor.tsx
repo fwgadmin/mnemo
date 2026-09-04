@@ -43,6 +43,7 @@ import { wikilinkDecorations } from './wikilinkPlugin';
 import { clampFixedContextMenu } from '../fixedMenuPosition';
 import type { Note } from '../../shared/types';
 import MarkdownNoteBody from './MarkdownNoteBody';
+import { isEmbeddableFileType, markdownForMediaFiles } from '../editor/mediaMarkdown';
 
 function readNoteBodyMode(): 'edit' | 'preview' {
   try {
@@ -115,12 +116,44 @@ function insertMarkdownTable(view: EditorView): boolean {
   return true;
 }
 
-function insertMarkdownImage(view: EditorView): boolean {
+function insertTextAtSelection(view: EditorView, text: string): void {
   const sel = view.state.selection.main;
-  const text = view.state.sliceDoc(sel.from, sel.to);
-  const insert = text ? `![${text}](url)` : `![alt](url)`;
-  view.dispatch({ changes: { from: sel.from, to: sel.to, insert } });
+  const prefix = sel.from > 0 && view.state.sliceDoc(sel.from - 1, sel.from) !== '\n' ? '\n\n' : '';
+  const suffix = sel.to < view.state.doc.length && view.state.sliceDoc(sel.to, sel.to + 1) !== '\n' ? '\n\n' : '';
+  const insert = `${prefix}${text}${suffix}`;
+  view.dispatch({
+    changes: { from: sel.from, to: sel.to, insert },
+    selection: { anchor: sel.from + insert.length },
+  });
+}
+
+async function insertMediaFiles(view: EditorView, files: readonly File[]): Promise<void> {
+  if (files.length === 0) return;
+  try {
+    insertTextAtSelection(view, await markdownForMediaFiles(files));
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : String(e));
+  }
+}
+
+function chooseMediaFiles(view: EditorView): boolean {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = 'image/*,audio/*,video/*,application/pdf,text/plain';
+  input.addEventListener('change', () => void insertMediaFiles(view, [...(input.files ?? [])]), { once: true });
+  input.click();
   return true;
+}
+
+function mediaFilesFromTransfer(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const direct = [...data.files].filter(file => isEmbeddableFileType(file.type));
+  if (direct.length > 0) return direct;
+  return [...data.items]
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter((file): file is File => !!file && isEmbeddableFileType(file.type));
 }
 
 function wrapSelectionMarkdown(view: EditorView, before: string, after: string): void {
@@ -153,6 +186,23 @@ async function clipboardReadText(): Promise<string> {
   }
 }
 
+async function clipboardReadMedia(): Promise<File[]> {
+  if (!navigator.clipboard.read) return [];
+  try {
+    const files: File[] = [];
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(isEmbeddableFileType);
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const extension = type.split('/')[1]?.replace('jpeg', 'jpg').replace('plain', 'txt') ?? 'bin';
+      files.push(new File([blob], `pasted-media.${extension}`, { type }));
+    }
+    return files;
+  } catch {
+    return [];
+  }
+}
+
 function editorCopy(view: EditorView): void {
   const sel = view.state.selection.main;
   const text = view.state.sliceDoc(sel.from, sel.to);
@@ -167,6 +217,11 @@ function editorCut(view: EditorView): void {
 }
 
 async function editorPaste(view: EditorView): Promise<void> {
+  const media = await clipboardReadMedia();
+  if (media.length > 0) {
+    await insertMediaFiles(view, media);
+    return;
+  }
   const text = normalizeLineSeparators(await clipboardReadText());
   if (!text) return;
   const sel = view.state.selection.main;
@@ -426,6 +481,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setCtxMenuRef.current({ x: e.clientX, y: e.clientY });
         return true;
       },
+      paste: (e, view) => {
+        const files = mediaFilesFromTransfer(e.clipboardData);
+        if (files.length === 0) return false;
+        e.preventDefault();
+        void insertMediaFiles(view, files);
+        return true;
+      },
+      drop: (e, view) => {
+        const files = mediaFilesFromTransfer(e.dataTransfer);
+        if (files.length === 0) return false;
+        e.preventDefault();
+        const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+        if (pos !== null) view.dispatch({ selection: { anchor: pos } });
+        void insertMediaFiles(view, files);
+        return true;
+      },
     });
 
     const markdownSupport = markdown({ base: markdownLanguage, codeLanguages: mnemoMarkdownCodeLanguages });
@@ -489,7 +560,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             },
             { key: 'Mod-k', run: insertMarkdownLink },
             { key: 'Mod-Shift-t', run: insertMarkdownTable },
-            { key: 'Mod-Shift-i', run: insertMarkdownImage },
+            { key: 'Mod-Shift-i', run: chooseMediaFiles },
           ]),
         ),
         keymap.of([
@@ -774,7 +845,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       >
         {bodyMode === 'preview' && (
           <div className="absolute inset-0 z-10 flex flex-col min-h-0 bg-mnemo-app overflow-hidden">
-            <MarkdownNoteBody body={previewLiveBody} />
+            <MarkdownNoteBody
+              body={previewLiveBody}
+              onBodyChange={(body) => {
+                const v = viewRef.current;
+                if (!v) return;
+                v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: body } });
+                setPreviewLiveBody(body);
+                saveNow();
+              }}
+            />
           </div>
         )}
         <div
