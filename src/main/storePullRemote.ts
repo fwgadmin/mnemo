@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
-import { LocalNoteStore, migrateNoteDatabaseHideHeader, migrateNoteDatabaseRef } from './store/NoteStore';
+import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
+import { migrateLocalNoteDatabase } from './store/migrations';
 import type { SyncResult } from '../shared/types';
 
 export type BulkNoteRow = {
@@ -26,8 +27,7 @@ export function readLocalNotesAndLinksForSync(dbPath: string): {
   }
   const db = new Database(dbPath);
   try {
-    migrateNoteDatabaseRef(db);
-    migrateNoteDatabaseHideHeader(db);
+    migrateLocalNoteDatabase(db, dbPath);
     const notes = db
       .prepare(
         'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',

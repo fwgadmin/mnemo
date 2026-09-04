@@ -16,33 +16,9 @@ import type {
   INoteStore,
   VaultSnapshot,
 } from '../../shared/types';
-import { escapeYamlDoubleQuotedString } from '../../shared/yamlEscape';
 import { parseStoredTags } from '../../shared/noteTags';
-
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS notes (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL DEFAULT 'Untitled',
-    body        TEXT NOT NULL DEFAULT '',
-    tags        TEXT NOT NULL DEFAULT '[]',
-    tenant_id   TEXT NOT NULL DEFAULT 'default',
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS note_links (
-    source_id   TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    target_id   TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    PRIMARY KEY (source_id, target_id)
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id)`,
-  `CREATE TABLE IF NOT EXISTS app_kv (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-];
+import { migrateRemoteNoteDatabase } from './migrations';
+import { serializeNoteMarkdown } from './noteMarkdown';
 
 function isTenantRefUniqueConstraint(err: unknown): boolean {
   const parts: string[] = [];
@@ -54,20 +30,6 @@ function isTenantRefUniqueConstraint(err: unknown): boolean {
   const msg = parts.join(' ');
   return msg.includes('UNIQUE constraint failed') && (msg.includes('notes.ref') || msg.includes('tenant_id'));
 }
-
-const FTS_STATEMENTS = [
-  `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, body, tags, content='notes', content_rowid='rowid')`,
-  `CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
-    INSERT INTO notes_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
-  END`,
-  `CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, title, body, tags) VALUES ('delete', old.rowid, old.title, old.body, old.tags);
-  END`,
-  `CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, title, body, tags) VALUES ('delete', old.rowid, old.title, old.body, old.tags);
-    INSERT INTO notes_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
-  END`,
-];
 
 /**
  * Remote async store via @libsql/client (Turso Cloud, self-hosted libSQL/sqld, or any compatible endpoint).
@@ -83,74 +45,7 @@ export class TursoNoteStore implements INoteStore {
 
   /** Run schema migrations — call once before using the store. */
   async initSchema(): Promise<void> {
-    const all = [...SCHEMA_STATEMENTS, ...FTS_STATEMENTS];
-    await this.client.batch(
-      all.map(sql => ({ sql })),
-      'write',
-    );
-    await this.migrateRefIfNeeded();
-    await this.migrateHideHeaderIfNeeded();
-  }
-
-  private async migrateRefIfNeeded(): Promise<void> {
-    const info = await this.client.execute({ sql: 'PRAGMA table_info(notes)', args: [] });
-    const hasRef = info.rows.some(r => r['name'] === 'ref');
-    if (hasRef) return;
-
-    await this.client.execute({ sql: 'ALTER TABLE notes ADD COLUMN ref INTEGER', args: [] });
-
-    const tenants = await this.client.execute({
-      sql: 'SELECT DISTINCT tenant_id FROM notes',
-      args: [],
-    });
-    for (const row of tenants.rows) {
-      const tenantId = row['tenant_id'] as string;
-      const ids = await this.client.execute({
-        sql: 'SELECT id FROM notes WHERE tenant_id = ? ORDER BY created_at ASC',
-        args: [tenantId],
-      });
-      let r = 1;
-      for (const ir of ids.rows) {
-        await this.client.execute({
-          sql: 'UPDATE notes SET ref = ? WHERE id = ?',
-          args: [r++, ir['id'] as string],
-        });
-      }
-    }
-    await this.client.execute({
-      sql: `
-        UPDATE notes
-        SET ref = (
-          SELECT ranked.ref
-          FROM (
-            SELECT
-              id,
-              ROW_NUMBER() OVER (
-                PARTITION BY tenant_id
-                ORDER BY created_at ASC, id ASC
-              ) AS ref
-            FROM notes
-          ) AS ranked
-          WHERE ranked.id = notes.id
-        )
-      `,
-      args: [],
-    });
-
-    await this.client.execute({
-      sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes (tenant_id, ref)',
-      args: [],
-    });
-  }
-
-  private async migrateHideHeaderIfNeeded(): Promise<void> {
-    const info = await this.client.execute({ sql: 'PRAGMA table_info(notes)', args: [] });
-    const has = info.rows.some(r => r['name'] === 'hide_header');
-    if (has) return;
-    await this.client.execute({
-      sql: 'ALTER TABLE notes ADD COLUMN hide_header INTEGER NOT NULL DEFAULT 0',
-      args: [],
-    });
+    await migrateRemoteNoteDatabase(this.client);
   }
 
   async create(input: CreateNoteInput): Promise<Note> {
@@ -638,6 +533,13 @@ export class TursoNoteStore implements INoteStore {
       }
     }
 
+    if (this.vaultPath) {
+      for (const incoming of notes) {
+        const note = await this.read(incoming.id);
+        if (note) this.writeMdFile(note);
+      }
+    }
+
     return { synced, skipped: 0 };
   }
 
@@ -660,17 +562,6 @@ export class TursoNoteStore implements INoteStore {
     if (!this.vaultPath) return;
     fs.mkdirSync(this.vaultPath, { recursive: true });
     const filePath = path.join(this.vaultPath, `${note.id}.md`);
-    const content = [
-      '---',
-      `title: "${escapeYamlDoubleQuotedString(note.title)}"`,
-      `tags: [${note.tags.map(t => `"${escapeYamlDoubleQuotedString(t)}"`).join(', ')}]`,
-      `created: ${note.created}`,
-      `modified: ${note.modified}`,
-      `hideHeader: ${note.hideHeader}`,
-      '---',
-      '',
-      note.body,
-    ].join('\n');
-    fs.writeFileSync(filePath, content, 'utf-8');
+    fs.writeFileSync(filePath, serializeNoteMarkdown(note), 'utf-8');
   }
 }
