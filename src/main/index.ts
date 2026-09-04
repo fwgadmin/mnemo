@@ -49,6 +49,7 @@ import {
   getElectronBootstrapRoot,
   importFolderIntoWorkspaceProfile,
   renameWorkspaceProfile,
+  restoreWorkspaceProfile,
   setActiveWorkspace,
   setWorkspaceProfileStorage,
 } from './workspaceProfiles';
@@ -727,29 +728,22 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.WORKSPACE_PROFILES_ARCHIVE, async (_event, id: unknown) => {
     const root = getElectronBootstrapRoot();
     const wid = typeof id === 'string' ? id : '';
-    const profilesBefore = await readWorkspaceProfilesMerged(getGlobalStore(), root);
-    const entry = profilesBefore.workspaces.find(w => w.id === wid);
     const result = archiveWorkspaceProfile(root, wid);
     if (!result) {
       return {
         ok: false as const,
         error:
-          'Cannot archive: switch to another workspace first, keep at least two vaults, and do not archive the Default vault.',
+          'Cannot archive: switch to another workspace first, keep an active vault, and do not archive the Default or an already archived vault.',
       };
     }
-    if (entry) await purgeWorkspaceNotesForProfile(entry);
-    const st = entry?.storage ?? { mode: 'inherit' as const };
-    if (st.mode === 'sqlite') {
-      try {
-        fs.unlinkSync(st.dbPath);
-      } catch {
-        /* ignore */
-      }
-      try {
-        fs.rmSync(st.vaultPath, { recursive: true, force: true });
-      } catch {
-        /* ignore */
-      }
+    return { ok: true as const, profiles: result.state };
+  });
+
+  ipcMain.handle(IPC.WORKSPACE_PROFILES_RESTORE, (_event, id: unknown) => {
+    const root = getElectronBootstrapRoot();
+    const result = restoreWorkspaceProfile(root, typeof id === 'string' ? id : '');
+    if (!result) {
+      return { ok: false as const, error: 'Unknown workspace or workspace is not archived.' };
     }
     return { ok: true as const, profiles: result.state };
   });

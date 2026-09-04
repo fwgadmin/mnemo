@@ -63,7 +63,7 @@ export interface WorkspaceContextSession {
 
 async function resolveWorkspaceContext(preferredWorkspaceId: string): Promise<WorkspaceStoreContext> {
   const profiles = getProfiles();
-  const id = profiles.workspaces.some(w => w.id === preferredWorkspaceId)
+  const id = profiles.workspaces.some(w => w.id === preferredWorkspaceId && !w.archivedAt)
     ? preferredWorkspaceId
     : profiles.activeWorkspaceId;
   const w = profiles.workspaces.find(x => x.id === id);
@@ -125,7 +125,7 @@ export function closeDedicatedStores(): void {
   dedicatedStores.clear();
 }
 
-/** Purge notes for a workspace when archiving/deleting a profile (inherit: tenant on global DB; remote: dedicated Turso). */
+/** Purge notes for a workspace during permanent deletion (inherit: tenant on global DB; remote: dedicated Turso). */
 export async function purgeWorkspaceNotesForProfile(entry: WorkspaceProfileEntry): Promise<void> {
   const st = entry.storage ?? { mode: 'inherit' as const };
   if (st.mode === 'sqlite') return;
