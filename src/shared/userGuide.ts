@@ -180,7 +180,7 @@ GET STARTED
   mnemo <word>           If one word and not a command → same as find
 
 OTHER COMMANDS
-  mnemo workspace …      List / create / switch / archive / delete vault profiles (see mnemo help workspace)
+  mnemo workspace …      List / create / switch / archive / restore / delete vault profiles (see mnemo help workspace)
   mnemo sync push|pull   Additive merge with remote libSQL (local↔bootstrap DB; see mnemo help sync)
   mnemo mcp              MCP server on stdio (editors / agents; optional --workspace)
   mnemo mcp-http         Remote HTTP MCP (Turso / libSQL)
@@ -288,14 +288,17 @@ function sectionWorkspace(): string {
     Edit storage overrides (same as Settings → Workspace → Storage…). JSON form accepts the same \`storage\` object as \`workspace-profiles.json\`.
 
   mnemo workspace archive <id|index>
-    Non-default, non-active workspace only; removes the profile and purges that workspace’s notes (and deletes
-    dedicated SQLite files if the profile used dedicated storage).
+    Non-default, non-active workspace only; hides it from normal switching while retaining all notes, storage,
+    and dedicated files.
+
+  mnemo workspace restore <id|index>
+    Make an archived workspace selectable again with its original notes and storage.
 
   mnemo workspace delete <id|index>
-    Same constraints as archive; permanent removal.
+    Non-default, non-active workspace only; permanently removes the profile and purges its notes and files.
 
   MCP (stdio): \`list_workspace_profiles\`, \`switch_workspace\`, \`create_workspace\` (optional \`import_folder\`),
-  \`rename_workspace\`, \`set_workspace_storage\`, \`archive_workspace\`, \`delete_workspace\` — same semantics as this CLI when the MCP server uses bootstrap workspace profiles (Turso merge when configured).
+  \`rename_workspace\`, \`set_workspace_storage\`, \`archive_workspace\`, \`restore_workspace\`, \`delete_workspace\` — same semantics as this CLI when the MCP server uses bootstrap workspace profiles (Turso merge when configured).
 
   Optional: --json / --no-json (see mnemo help config).
 `;
@@ -482,7 +485,7 @@ function sectionDesktop(): string {
     General       Theme, layout, note #refs, category color tips
     Markdown      Spell check / autocomplete toggles, editor font/CSS variables for preview
     Summary & LLM Optional local LLM profiles (OpenAI-compatible, Ollama, Anthropic, Gemini), guardrails, Copy/Paste as summary
-    Workspace     Folder sync (markdown import), vault list, storage overrides, create/archive/delete vaults
+    Workspace     Folder sync (markdown import), vault list, storage overrides, create/archive/restore/delete vaults
     Database      libSQL URL/token, save/reconnect, upload + download (additive sync), hosted/self-hosted help
 
   In-app documentation: Help → Documentation (this file in the app).

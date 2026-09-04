@@ -81,7 +81,7 @@ async function preferActiveTenantWithNotes(
   if (currentN > 0) return state;
 
   const inheritIds = state.workspaces
-    .filter(w => (w.storage ?? { mode: 'inherit' as const }).mode === 'inherit')
+    .filter(w => !w.archivedAt && (w.storage ?? { mode: 'inherit' as const }).mode === 'inherit')
     .map(w => w.id);
   let bestId = state.activeWorkspaceId;
   let bestCount = 0;

@@ -33,6 +33,7 @@ import {
   deleteWorkspaceProfile,
   importFolderIntoWorkspaceProfile,
   renameWorkspaceProfile,
+  restoreWorkspaceProfile,
   setActiveWorkspace,
   setWorkspaceProfileStorage,
 } from '../workspaceProfiles';
@@ -77,8 +78,9 @@ const workspaceStorageSchema = z.discriminatedUnion('mode', [
 function resolveWorkspaceTargetId(
   profiles: WorkspaceProfilesState,
   workspace_id: string,
+  options?: { includeArchived?: boolean },
 ): { ok: true; id: string } | { ok: false; message: string } {
-  const sel = resolveWorkspaceSelector(profiles, workspace_id.trim());
+  const sel = resolveWorkspaceSelector(profiles, workspace_id.trim(), options);
   if (sel.kind === 'error') return { ok: false, message: sel.message };
   return { ok: true, id: pickWorkspaceId(profiles, sel) };
 }
@@ -146,7 +148,7 @@ export function createMcpServer(
 
   const profilesForThisConnection = (profiles: WorkspaceProfilesState): WorkspaceProfilesState => {
     const selected = options.workspaceSession?.getWorkspaceId();
-    if (!selected || !profiles.workspaces.some(w => w.id === selected)) return profiles;
+    if (!selected || !profiles.workspaces.some(w => w.id === selected && !w.archivedAt)) return profiles;
     return { ...profiles, activeWorkspaceId: selected };
   };
 
@@ -326,7 +328,7 @@ export function createMcpServer(
 
   mcp.tool(
     'list_workspace_profiles',
-    'List vault workspaces (merged disk + Turso app_kv when connected): activeWorkspaceId is this MCP connection’s target; also includes names, storage, and tombstones. Pair with switch_workspace, create_workspace, rename_workspace, set_workspace_storage, archive_workspace, delete_workspace for full management without the GUI.',
+    'List active and archived vault workspaces (merged disk + Turso app_kv when connected): activeWorkspaceId is this MCP connection’s target; also includes names, storage, archive timestamps, and deletion tombstones.',
     {},
     async () => {
       const root = resolveWorkspaceBootstrapRoot();
@@ -454,7 +456,7 @@ export function createMcpServer(
       const root = resolveWorkspaceBootstrapRoot();
       const store = getGlobalStore();
       const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
-      const res = resolveWorkspaceTargetId(profiles, args.workspace_id);
+      const res = resolveWorkspaceTargetId(profiles, args.workspace_id, { includeArchived: true });
       if (!res.ok) {
         return { content: [{ type: 'text', text: res.message }], isError: true };
       }
@@ -480,7 +482,7 @@ export function createMcpServer(
 
   mcp.tool(
     'archive_workspace',
-    'Archive a vault: remove profile, purge notes, delete dedicated sqlite files when applicable (non-default, non-active, ≥2 vaults).',
+    'Archive a non-default, non-active vault without deleting its notes, database, or files. Restore it with restore_workspace.',
     { workspace_id: z.string() },
     async (args) => {
       const root = resolveWorkspaceBootstrapRoot();
@@ -491,7 +493,6 @@ export function createMcpServer(
         return { content: [{ type: 'text', text: res.message }], isError: true };
       }
       const id = res.id;
-      const entry = profiles.workspaces.find(w => w.id === id);
       const r = archiveWorkspaceProfile(root, id);
       if (!r) {
         return {
@@ -499,28 +500,48 @@ export function createMcpServer(
             {
               type: 'text',
               text:
-                'Cannot archive: switch to another workspace first, keep at least two vaults, and do not archive the default workspace.',
+                'Cannot archive: switch to another workspace first, keep an active vault, and do not archive the default or an already archived workspace.',
             },
           ],
           isError: true,
         };
-      }
-      if (entry) {
-        await applyWorkspaceRemovalDataPurge(root, entry);
       }
       return { content: [{ type: 'text', text: JSON.stringify(r.state, null, 2) }] };
     },
   );
 
   mcp.tool(
-    'delete_workspace',
-    'Permanently delete a vault workspace (same constraints as archive).',
+    'restore_workspace',
+    'Restore an archived vault so it can be selected again. Its original storage and notes are retained.',
     { workspace_id: z.string() },
     async (args) => {
       const root = resolveWorkspaceBootstrapRoot();
       const store = getGlobalStore();
       const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
-      const res = resolveWorkspaceTargetId(profiles, args.workspace_id);
+      const res = resolveWorkspaceTargetId(profiles, args.workspace_id, { includeArchived: true });
+      if (!res.ok) {
+        return { content: [{ type: 'text', text: res.message }], isError: true };
+      }
+      const restored = restoreWorkspaceProfile(root, res.id);
+      if (!restored) {
+        return {
+          content: [{ type: 'text', text: 'Unknown workspace or workspace is not archived.' }],
+          isError: true,
+        };
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(restored.state, null, 2) }] };
+    },
+  );
+
+  mcp.tool(
+    'delete_workspace',
+    'Permanently delete a non-default, non-active vault and purge its notes and dedicated files. Archived vaults may be deleted.',
+    { workspace_id: z.string() },
+    async (args) => {
+      const root = resolveWorkspaceBootstrapRoot();
+      const store = getGlobalStore();
+      const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
+      const res = resolveWorkspaceTargetId(profiles, args.workspace_id, { includeArchived: true });
       if (!res.ok) {
         return { content: [{ type: 'text', text: res.message }], isError: true };
       }

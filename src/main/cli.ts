@@ -29,6 +29,7 @@ import {
   migrateLegacyFlatWorkspace,
   parseWorkspaceStorageRoot,
   renameWorkspaceProfile,
+  restoreWorkspaceProfile,
   setActiveWorkspace,
   setWorkspaceProfileStorage,
 } from './workspaceProfiles';
@@ -1084,7 +1085,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       printJson(st);
     } else {
       st.workspaces.forEach((w, i) => {
-        const mark = w.id === st.activeWorkspaceId ? ' (active)' : '';
+        const mark = w.id === st.activeWorkspaceId ? ' (active)' : w.archivedAt ? ' (archived)' : '';
         console.log(`${i + 1}\t${w.id}\t${w.name}${mark}`);
       });
     }
@@ -1169,7 +1170,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const st = await loadWorkspaceProfilesForCli(tail, root);
-    const sel = resolveWorkspaceSelector(st, raw);
+    const sel = resolveWorkspaceSelector(st, raw, { includeArchived: true });
     if (sel.kind === 'error') {
       console.error(`mnemo: ${sel.message}`);
       process.exit(1);
@@ -1200,7 +1201,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
     }
     const idRaw = tail[0]!.trim();
     const st = await loadWorkspaceProfilesForCli(tail, root);
-    const sel = resolveWorkspaceSelector(st, idRaw);
+    const sel = resolveWorkspaceSelector(st, idRaw, { includeArchived: true });
     if (sel.kind === 'error') {
       console.error(`mnemo: ${sel.message}`);
       process.exit(1);
@@ -1271,21 +1272,43 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const id = pickWorkspaceId(st, sel);
-    const entry = st.workspaces.find(w => w.id === id);
     const r = archiveWorkspaceProfile(root, id);
     if (!r) {
       console.error(
-        'Cannot archive: need a non-default, non-active vault, at least two vaults, and a valid id.',
+        'Cannot archive: need a non-default, non-active, non-archived vault and at least one other active vault.',
       );
       process.exit(1);
-    }
-    if (entry) {
-      await applyWorkspaceRemovalDataPurge(root, entry);
     }
     if (outJson) {
       printJson({ ok: true, profiles: r.state });
     } else {
       console.log(`Archived workspace ${id}.`);
+    }
+    return;
+  }
+
+  if (sub === 'restore') {
+    const raw = tail[0]?.trim();
+    if (!raw || tail.length > 1) {
+      console.error('Usage: mnemo workspace restore <id|index>');
+      process.exit(1);
+    }
+    const st = await loadWorkspaceProfilesForCli(tail, root);
+    const sel = resolveWorkspaceSelector(st, raw, { includeArchived: true });
+    if (sel.kind === 'error') {
+      console.error(`mnemo: ${sel.message}`);
+      process.exit(1);
+    }
+    const id = pickWorkspaceId(st, sel);
+    const r = restoreWorkspaceProfile(root, id);
+    if (!r) {
+      console.error('Cannot restore: unknown workspace or workspace is not archived.');
+      process.exit(1);
+    }
+    if (outJson) {
+      printJson({ ok: true, profiles: r.state });
+    } else {
+      console.log(`Restored workspace ${id}.`);
     }
     return;
   }
@@ -1297,7 +1320,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const st = await loadWorkspaceProfilesForCli(tail, root);
-    const sel = resolveWorkspaceSelector(st, raw);
+    const sel = resolveWorkspaceSelector(st, raw, { includeArchived: true });
     if (sel.kind === 'error') {
       console.error(`mnemo: ${sel.message}`);
       process.exit(1);

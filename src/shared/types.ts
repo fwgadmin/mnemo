@@ -98,6 +98,8 @@ export interface WorkspaceProfileEntry {
   name: string;
   /** Defaults to inherit when omitted (multi-tenant rows in the global DB). */
   storage?: WorkspaceStorage;
+  /** ISO timestamp. Archived workspaces retain their profile and all data but cannot be selected. */
+  archivedAt?: string;
 }
 
 export interface WorkspaceProfilesState {
@@ -297,6 +299,7 @@ export const IPC = {
   WORKSPACE_PROFILES_SWITCH: 'workspaceProfiles:switch',
   WORKSPACE_PROFILES_PICK_FOLDER: 'workspaceProfiles:pickFolder',
   WORKSPACE_PROFILES_ARCHIVE: 'workspaceProfiles:archive',
+  WORKSPACE_PROFILES_RESTORE: 'workspaceProfiles:restore',
   WORKSPACE_PROFILES_DELETE: 'workspaceProfiles:delete',
   WORKSPACE_PROFILES_SET_STORAGE: 'workspaceProfiles:setStorage',
   WORKSPACE_PROFILES_RENAME: 'workspaceProfiles:rename',

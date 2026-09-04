@@ -7,6 +7,7 @@ const profiles: WorkspaceProfilesState = {
   workspaces: [
     { id: 'default', name: 'Default' },
     { id: 'work', name: 'Work' },
+    { id: 'old', name: 'Old', archivedAt: '2026-01-01T00:00:00.000Z' },
   ],
 };
 
@@ -18,7 +19,16 @@ describe('workspace selector', () => {
   });
 
   it('reports invalid selectors', () => {
-    expect(resolveWorkspaceSelector(profiles, '3').kind).toBe('error');
+    expect(resolveWorkspaceSelector(profiles, '4').kind).toBe('error');
     expect(resolveWorkspaceSelector(profiles, 'missing').kind).toBe('error');
+  });
+
+  it('rejects archived targets unless a management operation opts in', () => {
+    expect(resolveWorkspaceSelector(profiles, 'old')).toMatchObject({ kind: 'error' });
+    expect(resolveWorkspaceSelector(profiles, '3')).toMatchObject({ kind: 'error' });
+    expect(resolveWorkspaceSelector(profiles, 'old', { includeArchived: true })).toEqual({
+      kind: 'id',
+      id: 'old',
+    });
   });
 });

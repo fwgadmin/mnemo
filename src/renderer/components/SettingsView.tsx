@@ -418,15 +418,22 @@ export default function SettingsView({
             (same as workspace id). You can optionally give a workspace its own SQLite files or libSQL URL in{' '}
             <strong className="text-mnemo-muted">Storage</strong>. Switching workspaces updates the note list immediately
             when using the shared connection; dedicated databases switch without restarting the app.{' '}
-            <strong className="text-mnemo-muted">Archive</strong> / <strong className="text-mnemo-muted">Delete</strong>{' '}
-            remove the profile and purge that workspace’s notes (dedicated SQLite: deletes the DB and vault folder). You need
-            at least two vaults, and you cannot archive or delete the active or Default vault. Use <strong className="text-mnemo-muted">Rename</strong> to
+            <strong className="text-mnemo-muted">Archive</strong> hides a workspace from normal switching while retaining
+            all notes and files; <strong className="text-mnemo-muted">Restore</strong> makes it selectable again.{' '}
+            <strong className="text-mnemo-muted">Delete</strong> is the separate permanent action that purges its data.
+            You cannot archive or delete the active or Default vault. Use <strong className="text-mnemo-muted">Rename</strong> to
             change the default vault’s label (or any vault; the id stays fixed). The <strong className="text-mnemo-muted">Workspace folder</strong> block above syncs markdown into the{' '}
             <strong className="text-mnemo-muted">current</strong> workspace.
           </p>
           <ul className="space-y-2 mb-4">
             {vaultProfiles.workspaces.map(w => {
-              const canRemoveVault =
+              const isArchived = Boolean(w.archivedAt);
+              const canArchiveVault =
+                !isArchived &&
+                w.id !== 'default' &&
+                w.id !== vaultProfiles.activeWorkspaceId &&
+                vaultProfiles.workspaces.filter(item => !item.archivedAt).length > 1;
+              const canDeleteVault =
                 w.id !== 'default' &&
                 w.id !== vaultProfiles.activeWorkspaceId &&
                 vaultProfiles.workspaces.length > 1;
@@ -443,10 +450,11 @@ export default function SettingsView({
                     {w.id === vaultProfiles.activeWorkspaceId ? (
                       <span className="ml-2 text-emerald-500/90">active</span>
                     ) : null}
+                    {isArchived ? <span className="ml-2 text-amber-500/90">archived</span> : null}
                     <span className="ml-2 text-[10px] text-mnemo-dim">storage: {st}</span>
                   </span>
                   <div className="flex flex-wrap gap-1.5 shrink-0">
-                    {w.id !== vaultProfiles.activeWorkspaceId ? (
+                    {!isArchived && w.id !== vaultProfiles.activeWorkspaceId ? (
                       <button
                         type="button"
                         disabled={vaultProfileBusy}
@@ -492,17 +500,12 @@ export default function SettingsView({
                     >
                       Storage…
                     </button>
-                    {canRemoveVault ? (
-                      <>
+                    {canArchiveVault ? (
                         <button
                           type="button"
                           disabled={vaultProfileBusy}
                           onClick={async () => {
-                            if (
-                              !window.confirm(
-                                `Archive workspace “${w.name}”? Notes for this workspace will be removed from the database (and dedicated files deleted if applicable).`,
-                              )
-                            ) {
+                            if (!window.confirm(`Archive workspace “${w.name}”? Its notes and files will be retained.`)) {
                               return;
                             }
                             setVaultProfileBusy(true);
@@ -522,6 +525,31 @@ export default function SettingsView({
                         >
                           Archive
                         </button>
+                    ) : null}
+                    {isArchived ? (
+                      <button
+                        type="button"
+                        disabled={vaultProfileBusy}
+                        onClick={async () => {
+                          setVaultProfileBusy(true);
+                          try {
+                            const r = await window.mnemo.workspaceProfiles.restoreVault(w.id);
+                            if (r.ok) {
+                              setVaultProfiles(r.profiles);
+                              setStatus({ ok: true, msg: `Restored “${w.name}”.` });
+                            } else {
+                              setStatus({ ok: false, msg: r.error });
+                            }
+                          } finally {
+                            setVaultProfileBusy(false);
+                          }
+                        }}
+                        className="px-2 py-1 rounded border border-emerald-700/50 text-emerald-700 dark:text-emerald-400 hover:bg-mnemo-hover disabled:opacity-50"
+                      >
+                        Restore
+                      </button>
+                    ) : null}
+                    {canDeleteVault ? (
                         <button
                           type="button"
                           disabled={vaultProfileBusy}
@@ -550,7 +578,6 @@ export default function SettingsView({
                         >
                           Delete
                         </button>
-                      </>
                     ) : null}
                   </div>
                   </div>

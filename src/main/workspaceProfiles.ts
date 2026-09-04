@@ -129,10 +129,16 @@ export function parseWorkspaceProfilesWorkspacesOnly(j: unknown): WorkspaceProfi
       const name = typeof e.name === 'string' ? e.name.trim() : '';
       if (id && /^[\w-]+$/.test(id) && id.length <= 64 && name.length <= 128) {
         const storage = parseStorage(e);
+        const archivedRaw = typeof e.archivedAt === 'string' ? e.archivedAt.trim() : '';
+        const archivedAt =
+          id !== DEFAULT_WORKSPACE_ID && archivedRaw && !Number.isNaN(Date.parse(archivedRaw))
+            ? archivedRaw
+            : undefined;
         workspaces.push({
           id,
           name: name || id,
           ...(storage ? { storage } : {}),
+          ...(archivedAt ? { archivedAt } : {}),
         });
       }
     }
@@ -149,7 +155,9 @@ export function combineLocalActiveWithWorkspaces(
   localActive: string,
   workspaces: WorkspaceProfilesState['workspaces'],
 ): WorkspaceProfilesState {
-  const active = workspaces.some(w => w.id === localActive) ? localActive : DEFAULT_WORKSPACE_ID;
+  const active = workspaces.some(w => w.id === localActive && !w.archivedAt)
+    ? localActive
+    : DEFAULT_WORKSPACE_ID;
   return { activeWorkspaceId: active, workspaces };
 }
 
@@ -239,7 +247,7 @@ export function parseWorkspaceProfilesState(j: unknown): WorkspaceProfilesState 
       ? o.activeWorkspaceId.trim()
       : DEFAULT_WORKSPACE_ID;
   const active =
-    workspaces.some(w => w.id === activeRaw) && !delSet.has(activeRaw)
+    workspaces.some(w => w.id === activeRaw && !w.archivedAt) && !delSet.has(activeRaw)
       ? activeRaw
       : DEFAULT_WORKSPACE_ID;
   if (!workspaces.some(w => w.id === active)) {
@@ -417,7 +425,7 @@ export async function importFolderIntoWorkspaceProfile(
 
 export function setActiveWorkspace(root: string, id: string): WorkspaceProfilesState | null {
   const cur = ensureWorkspaceProfilesOnDisk(root);
-  if (!cur.workspaces.some(w => w.id === id)) return null;
+  if (!cur.workspaces.some(w => w.id === id && !w.archivedAt)) return null;
   const next = { ...cur, activeWorkspaceId: id };
   writeWorkspaceProfilesFile(root, next);
   return next;
@@ -453,23 +461,42 @@ export function renameWorkspaceProfile(root: string, id: string, name: string): 
   return next;
 }
 
-/** Remove profile entry (not active, not default). Caller purges tenant data / dedicated DB files. */
+/** Hide a profile from normal selection while retaining its metadata and all note/file data. */
 export function archiveWorkspaceProfile(root: string, id: string): { state: WorkspaceProfilesState } | null {
   if (id === DEFAULT_WORKSPACE_ID) return null;
   const cur = ensureWorkspaceProfilesOnDisk(root);
   if (cur.activeWorkspaceId === id) return null;
-  if (cur.workspaces.length <= 1) return null;
-  if (!cur.workspaces.some(w => w.id === id)) return null;
+  const entry = cur.workspaces.find(w => w.id === id);
+  if (!entry || entry.archivedAt) return null;
+  if (cur.workspaces.filter(w => !w.archivedAt).length <= 1) return null;
   const next: WorkspaceProfilesState = {
     ...cur,
-    workspaces: cur.workspaces.filter(w => w.id !== id),
-    deletedWorkspaceIds: tombstoneWorkspaceId(cur, id),
+    workspaces: cur.workspaces.map(w =>
+      w.id === id ? { ...w, archivedAt: new Date().toISOString() } : w,
+    ),
   };
   writeWorkspaceProfilesFile(root, next);
   return { state: next };
 }
 
-/** Remove profile entry (not active, not default). Caller purges tenant data / dedicated DB files. */
+/** Make an archived workspace selectable again without changing its storage or data. */
+export function restoreWorkspaceProfile(root: string, id: string): { state: WorkspaceProfilesState } | null {
+  const cur = ensureWorkspaceProfilesOnDisk(root);
+  const entry = cur.workspaces.find(w => w.id === id);
+  if (!entry?.archivedAt) return null;
+  const next: WorkspaceProfilesState = {
+    ...cur,
+    workspaces: cur.workspaces.map(w => {
+      if (w.id !== id) return w;
+      const { archivedAt: _archivedAt, ...restored } = w;
+      return restored;
+    }),
+  };
+  writeWorkspaceProfilesFile(root, next);
+  return { state: next };
+}
+
+/** Permanently remove a profile. Caller purges tenant data / dedicated DB files. */
 export function deleteWorkspaceProfile(root: string, id: string): { state: WorkspaceProfilesState } | null {
   if (id === DEFAULT_WORKSPACE_ID) return null;
   const cur = ensureWorkspaceProfilesOnDisk(root);
@@ -497,7 +524,7 @@ export function getLocalWorkspaceDbPathsForCli(): { dbPath: string; vaultPath: s
   };
 }
 
-/** Purge notes for a workspace (CLI archive/delete, or resolver fallback). Inherit: global DB + tenant id; remote: dedicated Turso + default tenant. */
+/** Purge notes for permanent workspace deletion. Inherit: global DB + tenant id; remote: dedicated Turso + default tenant. */
 export async function purgeWorkspaceTenantData(root: string, entry: WorkspaceProfileEntry): Promise<void> {
   const st = entry.storage ?? { mode: 'inherit' };
   if (st.mode === 'sqlite') return;
@@ -528,8 +555,8 @@ export async function purgeWorkspaceTenantData(root: string, entry: WorkspacePro
 }
 
 /**
- * After a profile row is removed: purge tenant notes (inherit/remote) and delete dedicated SQLite files.
- * Same side effects as CLI archive/delete and app IPC (for sqlite dirs).
+ * After a profile row is permanently removed: purge tenant notes (inherit/remote) and dedicated SQLite files.
+ * Archive must never call this helper.
  */
 export async function applyWorkspaceRemovalDataPurge(root: string, entry: WorkspaceProfileEntry): Promise<void> {
   await purgeWorkspaceTenantData(root, entry);

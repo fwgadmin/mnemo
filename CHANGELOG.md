@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Workspaces:** Archive is now reversible and never deletes notes or dedicated files. Archived vaults stay visible in management views, remain unavailable to normal switching, and can be restored from Settings, CLI, or MCP; permanent Delete remains separate.
 - **Storage:** Local SQLite and Turso/libSQL now use one ordered, versioned migration ledger. Local databases receive one consistent backup per pre-migration schema version, and both stores write the same complete Markdown frontmatter.
 - **Data contracts:** Search results now retain tags and creation/modification timestamps, so category grouping and per-category creation-date sorting remain correct while searching. Stored tag JSON is decoded defensively across desktop and mobile list/read/search/backlink paths.
 - **Editor / media:** Fixed persisted media widths being read as the default 80% because the preview parser did not recognize Mnemo's own `mnemo:w=…` title prefix.
