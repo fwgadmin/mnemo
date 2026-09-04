@@ -76,6 +76,9 @@ END;
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_tenant_updated ON notes(tenant_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_tenant_created ON notes(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_tenant_title ON notes(tenant_id, title COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes(tenant_id, ref);
 CREATE INDEX IF NOT EXISTS idx_note_tombstones_tenant ON note_tombstones(tenant_id, deleted_at);

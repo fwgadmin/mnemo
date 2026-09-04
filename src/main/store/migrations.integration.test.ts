@@ -148,6 +148,20 @@ describe('note-store migrations', () => {
     const store = new TursoNoteStore(url, '');
     await store.initSchema();
     expect(await store.read('remote-old')).toMatchObject({ ref: 1, hideHeader: false });
+    await client.execute(`WITH RECURSIVE seq(x) AS (
+      SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 500
+    )
+    INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+    SELECT 'plan-' || x, 'Plan ' || x, '', '[]',
+           CASE WHEN x % 2 = 0 THEN 'default' ELSE 'other' END,
+           printf('2025-01-%02d', (x % 28) + 1), printf('2025-02-%02d', (x % 28) + 1), x + 1, 0
+    FROM seq`);
+    await client.execute('ANALYZE');
+    const plan = await client.execute({
+      sql: 'EXPLAIN QUERY PLAN SELECT id FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC',
+      args: ['default'],
+    });
+    expect(plan.rows.map(row => String(row['detail'])).join('\n')).toContain('idx_notes_tenant_updated');
     const first = await client.execute('SELECT version, applied_at FROM schema_migrations ORDER BY version');
     await store.initSchema();
     const second = await client.execute('SELECT version, applied_at FROM schema_migrations ORDER BY version');
