@@ -38,7 +38,12 @@ import {
 } from '../workspaceProfiles';
 import { pickWorkspaceId, resolveWorkspaceSelector } from '../workspaceResolve';
 import { resolveWorkspaceBootstrapRoot } from '../userConfig';
-import { closeDedicatedStores, getGlobalStore, setActiveWorkspaceId } from '../storeResolver';
+import {
+  closeDedicatedStores,
+  getGlobalStore,
+  setActiveWorkspaceId,
+  type WorkspaceContextSession,
+} from '../storeResolver';
 
 /** Shape for tools: pass exactly one of `id` or `ref` (validated in handler; MCP SDK needs a raw Zod shape). */
 const idOrRefShape = {
@@ -104,6 +109,11 @@ export type StoreContextResolver = () => Promise<{
   workspaceId: string;
 }>;
 
+export interface McpServerOptions {
+  /** A connection-local workspace target (used by stdio MCP clients). */
+  workspaceSession?: WorkspaceContextSession;
+}
+
 function sortListLikeCli(notes: NoteListItem[]): NoteListItem[] {
   return [...notes].sort((a, b) => {
     const cmp = a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0;
@@ -118,6 +128,7 @@ function sortListLikeCli(notes: NoteListItem[]): NoteListItem[] {
  */
 export function createMcpServer(
   storeOrResolver: INoteStore | StoreContextResolver,
+  options: McpServerOptions = {},
 ): McpServer {
   const resolve: StoreContextResolver =
     typeof storeOrResolver === 'function'
@@ -132,6 +143,12 @@ export function createMcpServer(
     { name: 'mnemo', version: '0.1.0' },
     { capabilities: { resources: {}, tools: {}, prompts: {} } },
   );
+
+  const profilesForThisConnection = (profiles: WorkspaceProfilesState): WorkspaceProfilesState => {
+    const selected = options.workspaceSession?.getWorkspaceId();
+    if (!selected || !profiles.workspaces.some(w => w.id === selected)) return profiles;
+    return { ...profiles, activeWorkspaceId: selected };
+  };
 
   // ─── Resources ────────────────────────────────────────────
 
@@ -309,13 +326,15 @@ export function createMcpServer(
 
   mcp.tool(
     'list_workspace_profiles',
-    'List vault workspaces (merged disk + Turso app_kv when connected): activeWorkspaceId, names, storage, tombstones. Pair with switch_workspace, create_workspace, rename_workspace, set_workspace_storage, archive_workspace, delete_workspace for full management without the GUI.',
+    'List vault workspaces (merged disk + Turso app_kv when connected): activeWorkspaceId is this MCP connection’s target; also includes names, storage, and tombstones. Pair with switch_workspace, create_workspace, rename_workspace, set_workspace_storage, archive_workspace, delete_workspace for full management without the GUI.',
     {},
     async () => {
       const root = resolveWorkspaceBootstrapRoot();
       const store = getGlobalStore();
       const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
-      return { content: [{ type: 'text', text: JSON.stringify(profiles, null, 2) }] };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(profilesForThisConnection(profiles), null, 2) }],
+      };
     },
   );
 
@@ -339,7 +358,7 @@ export function createMcpServer(
 
   mcp.tool(
     'switch_workspace',
-    'Set the active vault on this machine (workspace-profiles.json only; not synced). Same as `mnemo workspace switch`.',
+    'Target a different vault for this MCP connection only. Does not change the GUI/CLI active vault or any other MCP client.',
     { workspace_id: z.string() },
     async (args) => {
       const root = resolveWorkspaceBootstrapRoot();
@@ -349,10 +368,13 @@ export function createMcpServer(
       if (!res.ok) {
         return { content: [{ type: 'text', text: res.message }], isError: true };
       }
-      const next = setActiveWorkspace(root, res.id);
-      if (!next) {
-        return { content: [{ type: 'text', text: 'Unknown workspace.' }], isError: true };
+      if (options.workspaceSession) {
+        options.workspaceSession.setWorkspaceId(res.id);
+        const next = { ...profiles, activeWorkspaceId: res.id };
+        return { content: [{ type: 'text', text: JSON.stringify(next, null, 2) }] };
       }
+      const next = setActiveWorkspace(root, res.id);
+      if (!next) return { content: [{ type: 'text', text: 'Unknown workspace.' }], isError: true };
       setActiveWorkspaceId(next.activeWorkspaceId);
       return { content: [{ type: 'text', text: JSON.stringify(next, null, 2) }] };
     },
@@ -581,6 +603,7 @@ export function createMcpServer(
                   id: n.id,
                   ref: n.ref,
                   title: n.title,
+                  created: n.created,
                   modified: n.modified,
                   snippet: n.snippet,
                   tags: n.tags,
@@ -767,6 +790,11 @@ export function createMcpServer(
     showNoteRefs: z.boolean().optional(),
     grouped: z.boolean().optional(),
     categoryScopeSubtree: z.boolean().optional(),
+    autoColorCategories: z.boolean().optional(),
+    categorySortModes: z.record(
+      z.string(),
+      z.enum(['alphabetical', 'created-desc', 'created-asc']),
+    ).optional(),
     categoryColors: z.record(z.string(), z.string()).optional(),
     categoryColorStamps: z.record(z.string(), z.number()).optional(),
     markdownGlobal: z.record(z.string(), z.string()).optional(),

@@ -1,6 +1,6 @@
 {
   "name": "mnemo-note",
-  "version": "2.1.18",
+  "version": "2.1.19",
   "description": "AI-native memory layer — notes, embeddings, and MCP for intelligence systems",
   "main": ".webpack/main",
   "license": "MIT",
@@ -134,7 +134,8 @@
     "typescript": "^6.0.2"
   },
   "bin": {
-    "mnemo": "bin/mnemo.js"
+    "mnemo": "bin/mnemo.js",
+    "mnemo-note": "bin/mnemo.js"
   },
   "overrides": {
     "tar": "^7.5.13",

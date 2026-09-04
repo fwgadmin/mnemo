@@ -26,6 +26,8 @@ interface Props {
   onLayoutOverrideChange: (v: LayoutOverride) => void;
   showNoteRefs: boolean;
   onShowNoteRefsChange: (v: boolean) => void;
+  autoColorCategories: boolean;
+  onAutoColorCategoriesChange: (v: boolean) => void;
   editorSpellcheck: boolean;
   editorAutocomplete: boolean;
   onEditorSpellcheckChange: (v: boolean) => void;
@@ -46,6 +48,8 @@ export default function SettingsView({
   onLayoutOverrideChange,
   showNoteRefs,
   onShowNoteRefsChange,
+  autoColorCategories,
+  onAutoColorCategoriesChange,
   editorSpellcheck,
   editorAutocomplete,
   onEditorSpellcheckChange,
@@ -236,6 +240,20 @@ export default function SettingsView({
 
       <section className="mb-8 max-w-lg">
         <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Editor</h2>
+        <label className="mb-4 flex items-start gap-3 text-sm text-mnemo-muted cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoColorCategories}
+            onChange={e => onAutoColorCategoriesChange(e.target.checked)}
+            className="mt-0.5 rounded border-mnemo-border"
+          />
+          <span>
+            <span className="block text-mnemo-text">Automatically color new categories</span>
+            <span className="block text-xs text-mnemo-dim mt-1 leading-relaxed">
+              Enabled by default. Top-level categories get distinct theme-aware colors; subcategories use nearby shades of their parent.
+            </span>
+          </span>
+        </label>
         <label className="flex items-start gap-3 text-sm text-mnemo-muted cursor-pointer select-none">
           <input
             type="checkbox"
@@ -256,7 +274,7 @@ export default function SettingsView({
           <strong>Rename</strong>, <strong>Promote</strong> (move up one level), <strong>Demote</strong> (nest under a
           parent — including moving <strong>General</strong> under another folder), <strong>suggested colors</strong>, a{' '}
           <strong>custom color</strong> control, or <strong>Clear folder color</strong>. Top-level folders line up
-          flat; only nested paths are indented. Subfolders inherit a
+          flat; only nested paths are indented. With automatic colors enabled, subfolders receive a close shade of their
           parent color until you set their own. Colors apply to folder labels and note titles; the IDE layout uses the same
           accent on the active note in the list.
         </p>

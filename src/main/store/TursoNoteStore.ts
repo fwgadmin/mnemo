@@ -198,23 +198,30 @@ export class TursoNoteStore implements INoteStore {
   }
 
   async read(id: string): Promise<Note | null> {
-    const result = await this.client.execute({
-      sql: 'SELECT * FROM notes WHERE id = ?',
-      args: [id],
-    });
-    const row = result.rows[0];
+    const [noteResult, linkResult] = await Promise.all([
+      this.client.execute({ sql: 'SELECT * FROM notes WHERE id = ?', args: [id] }),
+      this.client.execute({
+        sql: 'SELECT target_id FROM note_links WHERE source_id = ?',
+        args: [id],
+      }),
+    ]);
+    const row = noteResult.rows[0];
     if (!row) return null;
-    return this.rowToNote(id, row);
+    return this.rowToNote(
+      id,
+      row,
+      linkResult.rows.map(link => link['target_id'] as string),
+    );
   }
 
   async readByRef(ref: number, tenantId: string = 'default'): Promise<Note | null> {
     const result = await this.client.execute({
-      sql: 'SELECT * FROM notes WHERE tenant_id = ? AND ref = ?',
+      sql: 'SELECT id FROM notes WHERE tenant_id = ? AND ref = ?',
       args: [tenantId, ref],
     });
-    const row = result.rows[0];
-    if (!row) return null;
-    return this.rowToNote(row['id'] as string, row);
+    const id = result.rows[0]?.['id'] as string | undefined;
+    if (!id) return null;
+    return this.read(id);
   }
 
   async update(input: UpdateNoteInput): Promise<Note | null> {
@@ -254,7 +261,7 @@ export class TursoNoteStore implements INoteStore {
 
   async list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT ref, id, title, body, tags, updated_at, hide_header
+      sql: `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header
             FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC`,
       args: [tenantId],
     });
@@ -263,10 +270,38 @@ export class TursoNoteStore implements INoteStore {
       id: row['id'] as string,
       title: row['title'] as string,
       tags: JSON.parse(row['tags'] as string),
+      created: row['created_at'] as string,
       modified: row['updated_at'] as string,
       snippet: (row['body'] as string).substring(0, 120),
       hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
     }));
+  }
+
+  async listNotes(tenantId: string = 'default'): Promise<Note[]> {
+    const [noteResult, linkResult] = await Promise.all([
+      this.client.execute({
+        sql: 'SELECT * FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC',
+        args: [tenantId],
+      }),
+      this.client.execute({
+        sql: `SELECT nl.source_id, nl.target_id
+              FROM note_links nl
+              JOIN notes n ON n.id = nl.source_id
+              WHERE n.tenant_id = ?`,
+        args: [tenantId],
+      }),
+    ]);
+    const bySource = new Map<string, string[]>();
+    for (const row of linkResult.rows) {
+      const sourceId = row['source_id'] as string;
+      const targets = bySource.get(sourceId) ?? [];
+      targets.push(row['target_id'] as string);
+      bySource.set(sourceId, targets);
+    }
+    return noteResult.rows.map(row => {
+      const id = row['id'] as string;
+      return this.rowToNote(id, row, bySource.get(id) ?? []);
+    });
   }
 
   async search(query: string, tenantId: string = 'default'): Promise<SearchResult[]> {
@@ -321,7 +356,7 @@ export class TursoNoteStore implements INoteStore {
 
   async getBacklinks(noteId: string): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.updated_at
+      sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at
             FROM note_links nl
             JOIN notes n ON n.id = nl.source_id
             WHERE nl.target_id = ?
@@ -333,20 +368,38 @@ export class TursoNoteStore implements INoteStore {
       id: row['id'] as string,
       title: row['title'] as string,
       tags: JSON.parse(row['tags'] as string),
+      created: row['created_at'] as string,
       modified: row['updated_at'] as string,
       snippet: (row['body'] as string).substring(0, 120),
     }));
   }
 
   async updateLinks(sourceId: string, targetIds: string[]): Promise<void> {
-    const statements = [
-      { sql: 'DELETE FROM note_links WHERE source_id = ?', args: [sourceId] },
-      ...targetIds.map(targetId => ({
-        sql: 'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
-        args: [sourceId, targetId],
-      })),
-    ];
-    await this.client.batch(statements, 'write');
+    await this.updateLinksBatch([{ sourceId, targetIds }]);
+  }
+
+  async updateLinksBatch(updates: Array<{ sourceId: string; targetIds: string[] }>): Promise<void> {
+    const maxStatements = 256;
+    let statements: Array<{ sql: string; args: import('@libsql/client').InValue[] }> = [];
+    const flush = async () => {
+      if (statements.length === 0) return;
+      await this.client.batch(statements, 'write');
+      statements = [];
+    };
+    for (const { sourceId, targetIds } of updates) {
+      const group = [
+        { sql: 'DELETE FROM note_links WHERE source_id = ?', args: [sourceId] },
+        ...targetIds.map(targetId => ({
+          sql: 'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
+          args: [sourceId, targetId],
+        })),
+      ];
+      if (statements.length > 0 && statements.length + group.length > maxStatements) {
+        await flush();
+      }
+      statements.push(...group);
+    }
+    await flush();
   }
 
   async resolveTitle(title: string, tenantId: string = 'default'): Promise<string | null> {
@@ -583,8 +636,7 @@ export class TursoNoteStore implements INoteStore {
     return { synced, skipped: 0 };
   }
 
-  private rowToNote(id: string, row: Record<string, unknown>): Note {
-    const links: string[] = [];  // links loaded lazily by consumers if needed
+  private rowToNote(id: string, row: Record<string, unknown>, links: string[]): Note {
     return {
       id,
       ref: row['ref'] as number,

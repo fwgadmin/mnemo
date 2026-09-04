@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **MCP / workspaces:** Each stdio MCP connection now owns its workspace selection. `--workspace` pins an agent to a vault, and `switch_workspace` retargets only that connection instead of changing `workspace-profiles.json` or another Codex window's target.
+- **Editor / media:** Paste, drop, or choose images, audio, video, PDF, and text attachments directly in note bodies. Rendered Preview provides controls for width, alignment, vertical movement, copy/cut, description changes, and deletion; embedded data stays with the Markdown note across local or remote databases.
+- **Categories:** New categories are automatically assigned theme-aware colors by default. Nested categories receive close, readable shades of their parent color; the new General setting can disable automatic colors without removing manual picks.
+- **Sidebar:** Note context menus and category rename/demote popovers now measure against the viewport and flip above bottom-edge rows instead of being clipped by the scrollable note list.
+- **Sidebar / sorting:** Each category and subcategory can independently sort notes alphabetically, newest-created first, or oldest-created first from its right-click menu. Nested folders inherit the closest parent mode until they set an override; sort preferences follow renames/archives and sync with workspace UI preferences.
+
+## 2.1.19 — 2026-04-16
+
+- **npm (`mnemo-note`):** **`bin`** now exposes **`mnemo-note`** as well as **`mnemo`** (same entry point) so the package name matches a command when using **`npx`**. **README** clarifies that **`npm install -g mnemo-note`** is required for a global **`mnemo`** on **`PATH`**; without **`-g`**, use **`npx mnemo`** / **`npx mnemo-note`** or **`node_modules/.bin/mnemo`**.
+- **npm / GitHub:** `mnemo-note@2.1.19`; tag **`v2.1.19`** when released.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.19**, iOS build number **19**. In **`app.json`**: **`expo.version`** = **2.1.19**, **`ios.buildNumber`** = **19**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
 ## 2.1.18 — 2026-04-16
 
 - **Desktop (CI / packaging):** **`electron`** is listed in **`devDependencies`** again (same range as **`dependencies`**) — **`@electron-forge/plugin-webpack`** resolves the Electron version only from **`devDependencies`**, so **`npm run make`** / Release builds failed with *Could not find any Electron packages in devDependencies* after **`electron`** was moved for global npm installs (**2.1.16**).

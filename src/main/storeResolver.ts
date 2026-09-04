@@ -47,16 +47,24 @@ function getProfiles(): WorkspaceProfilesState {
   return readWorkspaceProfilesFile(bootstrapRoot);
 }
 
-export async function ensureActiveContext(): Promise<{
+export interface WorkspaceStoreContext {
   store: INoteStore;
   /** Row filter for notes (inherit: workspace id; dedicated DB: default). */
   tenantId: string;
   /** Profile id for ui-preferences namespacing. */
   workspaceId: string;
-}> {
+}
+
+export interface WorkspaceContextSession {
+  resolve: () => Promise<WorkspaceStoreContext>;
+  getWorkspaceId: () => string;
+  setWorkspaceId: (id: string) => void;
+}
+
+async function resolveWorkspaceContext(preferredWorkspaceId: string): Promise<WorkspaceStoreContext> {
   const profiles = getProfiles();
-  const id = profiles.workspaces.some(w => w.id === activeWorkspaceId)
-    ? activeWorkspaceId
+  const id = profiles.workspaces.some(w => w.id === preferredWorkspaceId)
+    ? preferredWorkspaceId
     : profiles.activeWorkspaceId;
   const w = profiles.workspaces.find(x => x.id === id);
   if (!w) {
@@ -88,6 +96,22 @@ export async function ensureActiveContext(): Promise<{
     dedicatedStores.set(key, st);
   }
   return { store: st, tenantId: 'default', workspaceId: w.id };
+}
+
+export async function ensureActiveContext(): Promise<WorkspaceStoreContext> {
+  return resolveWorkspaceContext(activeWorkspaceId);
+}
+
+/** An independent workspace selection for one MCP connection/server. */
+export function createWorkspaceContextSession(initialWorkspaceId: string): WorkspaceContextSession {
+  let workspaceId = initialWorkspaceId;
+  return {
+    resolve: () => resolveWorkspaceContext(workspaceId),
+    getWorkspaceId: () => workspaceId,
+    setWorkspaceId: (id: string) => {
+      workspaceId = id;
+    },
+  };
 }
 
 export function closeDedicatedStores(): void {

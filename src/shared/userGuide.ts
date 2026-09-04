@@ -15,7 +15,7 @@ export const USER_GUIDE_PATHS_ROWS: string[][] = [
 
 /** MCP stdio without --db: same bootstrap paths as `mnemo note` (MNEMO_HOME / default userData), not cwd ./mnemo.db. */
 export const MCP_STDIO_DEFAULT_NOTE =
-  'MCP stdio without --db/--turso: uses the same bootstrap SQLite as mnemo note (see DATA LOCATIONS). Pass --workspace <id|index> to match a GUI vault when using the shared database.';
+  'MCP stdio without --db/--turso: uses the same bootstrap SQLite as mnemo note (see DATA LOCATIONS). Each MCP connection selects its workspace independently; pass --workspace <id|index> to pin it.';
 
 export const MCP_RESOURCES_HEADERS = ['URI', 'Description'] as const;
 export const MCP_RESOURCES_ROWS: string[][] = [
@@ -108,6 +108,10 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
   [
     'Autocomplete',
     'Settings → Markdown: suggests fenced-block language ids after ``` and note titles after [[ (current vault).',
+  ],
+  [
+    'Embedded media',
+    'Paste, drop, or Ctrl+Shift+I to add images, audio, video, PDF, or text attachments (12 MB each). In Preview, use media controls to resize, align, move, copy/cut, rename, or delete.',
   ],
   [
     'Summary & LLM',
@@ -387,6 +391,8 @@ function sectionVaultCommands(): string {
   mnemo note category demote <path> --under <parentPath>
 
   Categories: first tag = folder (General, Unassigned, or nested paths).
+  In the desktop sidebar, right-click any category or subcategory to choose alphabetical, newest-created,
+  or oldest-created note ordering. Subcategories inherit the closest parent setting until explicitly overridden.
 `;
 }
 
@@ -408,7 +414,10 @@ function sectionMcpStdio(): string {
   With --db: opens only that file (--workspace ignored; tenant "default").
   With global Turso credentials (config.json or env): same remote DB as Settings → Database; --workspace still applies.
 
-  Minimal client args (shared DB, active vault):  node …/mnemo-mcp.js
+  Workspace selection is connection-local. \`switch_workspace\` retargets only that MCP connection and does not
+  change the GUI/CLI active vault or another agent. Give each client \`--workspace <id|index>\` to pin its target.
+
+  Minimal client args (shared DB, initially active vault):  node …/mnemo-mcp.js
   Explicit file pair:  --db "$MNEMO_HOME/mnemo.db" --vault "$MNEMO_HOME/vault"
 
 MCP RESOURCES (stdio server)
@@ -454,8 +463,9 @@ ${mcpClients}
 
   Published npm package: command "mnemo", args ["mcp"] (optional --db/--vault/--workspace/--turso-*) via Electron.
 
-  Example args for the same vault as the GUI without listing paths:  "mcp"  (or "mcp", "--workspace", "my-vault-id")
-  when MNEMO_HOME points at app userData.
+  Example args when MNEMO_HOME points at app userData: "mcp", "--workspace", "my-vault-id".
+  Multiple clients can share that database with different --workspace values; later switch_workspace calls stay local
+  to the connection that made them.
 `;
 }
 
