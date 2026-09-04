@@ -548,7 +548,7 @@ export function createMcpServer(
 
   mcp.tool(
     'search_notes',
-    'Full-text search across all notes',
+    'Full-text search across all notes, including tags and creation/modification timestamps',
     { query: z.string() },
     async (args) => {
       const { store, tenantId, workspaceId } = await resolve();

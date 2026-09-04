@@ -18,6 +18,7 @@ import {
   snippetForSearchResult,
 } from '../../shared/searchQuery';
 import { escapeYamlDoubleQuotedString } from '../../shared/yamlEscape';
+import { parseStoredTags } from '../../shared/noteTags';
 
 /** Add `ref` column + backfill; safe to call on every open. Exported for Turso sync from local file. */
 export function migrateNoteDatabaseRef(db: Database.Database): void {
@@ -197,7 +198,7 @@ export class LocalNoteStore implements INoteStore {
       ref: row.ref,
       id: row.id,
       title: row.title,
-      tags: JSON.parse(row.tags),
+      tags: parseStoredTags(row.tags),
       created: row.created_at,
       modified: row.updated_at,
       snippet: row.body.substring(0, 120),
@@ -235,6 +236,9 @@ export class LocalNoteStore implements INoteStore {
       ref: row.ref,
       id: row.id,
       title: row.title,
+      tags: parseStoredTags(row.tags),
+      created: row.created_at,
+      modified: row.updated_at,
       snippet: snippetForSearchResult(row.title, row.body, query),
       rank,
       hideHeader: (row.hide_header ?? 0) === 1,
@@ -242,7 +246,8 @@ export class LocalNoteStore implements INoteStore {
 
     try {
       const rows = this.db.prepare(`
-        SELECT n.ref, n.id, n.title, n.body, n.hide_header, notes_fts.rank
+        SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at,
+               n.hide_header, notes_fts.rank
         FROM notes_fts
         JOIN notes n ON n.rowid = notes_fts.rowid
         WHERE notes_fts MATCH ?
@@ -263,7 +268,7 @@ export class LocalNoteStore implements INoteStore {
       }
       const rows = this.db
         .prepare(
-          `SELECT ref, id, title, body, hide_header FROM notes
+          `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header FROM notes
            WHERE tenant_id = ? AND ${conds}
            LIMIT 50`,
         )
@@ -285,7 +290,7 @@ export class LocalNoteStore implements INoteStore {
       ref: row.ref,
       id: row.id,
       title: row.title,
-      tags: JSON.parse(row.tags),
+      tags: parseStoredTags(row.tags),
       created: row.created_at,
       modified: row.updated_at,
       snippet: row.body.substring(0, 120),
@@ -481,7 +486,7 @@ export class LocalNoteStore implements INoteStore {
       ref: row.ref as number,
       title: row.title,
       body: row.body,
-      tags: JSON.parse(row.tags),
+      tags: parseStoredTags(row.tags),
       created: row.created_at,
       modified: row.updated_at,
       tenantId: row.tenant_id,
