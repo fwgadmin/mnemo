@@ -433,9 +433,11 @@ ${mcpPrompts}
 }
 
 function sectionMcpHttp(): string {
-  return `MCP (HTTP/SSE)
+  return `MCP (Streamable HTTP)
   mnemo mcp-http    (needs dist/mnemo-mcp-http.js)
   Requires: TURSO_URL + TURSO_AUTH_TOKEN (or LIBSQL_*), MCP_API_KEY. Optional: PORT (default 3001).
+  Endpoint: /mcp. Each transport has an independent workspace selection. /health also requires bearer auth.
+  Limits: MCP_HTTP_MAX_SESSIONS, MCP_HTTP_IDLE_MS, MCP_HTTP_REQUEST_TIMEOUT_MS, MCP_HTTP_BODY_LIMIT.
   Remote libSQL only — not for local SQLite.
 `;
 }
@@ -546,7 +548,7 @@ export function formatCliHelpTopicsIndex(): string {
   sync         mnemo sync push / pull, Settings buttons, merge rules
   note         Legacy mnemo note … only
   mcp          MCP stdio: --workspace, resources, tools, prompts
-  mcp-http     MCP over HTTP/SSE
+  mcp-http     MCP over Streamable HTTP
   config       cli.json and JSON output defaults
   clients      MCP client config files (Cursor, Claude, …)
   desktop      GUI: Settings tabs, vault switcher, shortcuts

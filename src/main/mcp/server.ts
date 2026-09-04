@@ -114,6 +114,8 @@ export type StoreContextResolver = () => Promise<{
 export interface McpServerOptions {
   /** A connection-local workspace target (used by stdio MCP clients). */
   workspaceSession?: WorkspaceContextSession;
+  /** Bootstrap root paired with the connection resolver (required for isolated hosted/test sessions). */
+  bootstrapRoot?: string;
 }
 
 function sortListLikeCli(notes: NoteListItem[]): NoteListItem[] {
@@ -132,6 +134,7 @@ export function createMcpServer(
   storeOrResolver: INoteStore | StoreContextResolver,
   options: McpServerOptions = {},
 ): McpServer {
+  const workspaceRoot = () => options.bootstrapRoot ?? resolveWorkspaceBootstrapRoot();
   const resolve: StoreContextResolver =
     typeof storeOrResolver === 'function'
       ? storeOrResolver
@@ -331,7 +334,7 @@ export function createMcpServer(
     'List active and archived vault workspaces (merged disk + Turso app_kv when connected): activeWorkspaceId is this MCP connection’s target; also includes names, storage, archive timestamps, and deletion tombstones.',
     {},
     async () => {
-      const root = resolveWorkspaceBootstrapRoot();
+      const root = workspaceRoot();
       const store = getGlobalStore();
       const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
       return {
@@ -345,7 +348,7 @@ export function createMcpServer(
     'Rename a vault’s display label (id unchanged; includes the default vault). Persists to workspace-profiles.json and mirrors to app_kv when using Turso.',
     { workspace_id: z.string(), name: z.string() },
     async (args) => {
-      const root = resolveWorkspaceBootstrapRoot();
+      const root = workspaceRoot();
       const nm = args.name.trim();
       if (!nm) {
         return { content: [{ type: 'text', text: 'Empty name' }], isError: true };
@@ -363,7 +366,7 @@ export function createMcpServer(
     'Target a different vault for this MCP connection only. Does not change the GUI/CLI active vault or any other MCP client.',
     { workspace_id: z.string() },
     async (args) => {
-      const root = resolveWorkspaceBootstrapRoot();
+      const root = workspaceRoot();
       const store = getGlobalStore();
       const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
       const res = resolveWorkspaceTargetId(profiles, args.workspace_id);
@@ -390,7 +393,7 @@ export function createMcpServer(
       import_folder: z.string().optional(),
     },
     async (args) => {
-      const root = resolveWorkspaceBootstrapRoot();
+      const root = workspaceRoot();
       const name = args.name.trim();
       if (!name) {
         return { content: [{ type: 'text', text: 'Empty name' }], isError: true };
@@ -453,7 +456,7 @@ export function createMcpServer(
       storage: workspaceStorageSchema,
     },
     async (args) => {
-      const root = resolveWorkspaceBootstrapRoot();
+      const root = workspaceRoot();
       const store = getGlobalStore();
       const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
       const res = resolveWorkspaceTargetId(profiles, args.workspace_id, { includeArchived: true });
@@ -485,7 +488,7 @@ export function createMcpServer(
     'Archive a non-default, non-active vault without deleting its notes, database, or files. Restore it with restore_workspace.',
     { workspace_id: z.string() },
     async (args) => {
-      const root = resolveWorkspaceBootstrapRoot();
+      const root = workspaceRoot();
       const store = getGlobalStore();
       const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
       const res = resolveWorkspaceTargetId(profiles, args.workspace_id);
@@ -515,7 +518,7 @@ export function createMcpServer(
     'Restore an archived vault so it can be selected again. Its original storage and notes are retained.',
     { workspace_id: z.string() },
     async (args) => {
-      const root = resolveWorkspaceBootstrapRoot();
+      const root = workspaceRoot();
       const store = getGlobalStore();
       const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
       const res = resolveWorkspaceTargetId(profiles, args.workspace_id, { includeArchived: true });
@@ -538,7 +541,7 @@ export function createMcpServer(
     'Permanently delete a non-default, non-active vault and purge its notes and dedicated files. Archived vaults may be deleted.',
     { workspace_id: z.string() },
     async (args) => {
-      const root = resolveWorkspaceBootstrapRoot();
+      const root = workspaceRoot();
       const store = getGlobalStore();
       const profiles = await readWorkspaceProfilesMerged(store ?? undefined, root);
       const res = resolveWorkspaceTargetId(profiles, args.workspace_id, { includeArchived: true });

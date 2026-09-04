@@ -33,7 +33,8 @@ module.exports = {
     'express': 'commonjs express',
     '@libsql/client': 'commonjs @libsql/client',
     '@modelcontextprotocol/sdk/server/mcp.js': 'commonjs @modelcontextprotocol/sdk/server/mcp.js',
-    '@modelcontextprotocol/sdk/server/sse.js': 'commonjs @modelcontextprotocol/sdk/server/sse.js',
+    '@modelcontextprotocol/sdk/server/streamableHttp.js': 'commonjs @modelcontextprotocol/sdk/server/streamableHttp.js',
+    '@modelcontextprotocol/sdk/types.js': 'commonjs @modelcontextprotocol/sdk/types.js',
     'zod': 'commonjs zod',
   },
 };
