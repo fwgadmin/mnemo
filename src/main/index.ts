@@ -29,7 +29,7 @@ import { IPC, STORED_SECRET_PLACEHOLDER } from '../shared/types';
 import { resolveActiveProfile } from '../shared/llmProfile';
 import { readLlmConfig, writeLlmConfig, sanitizeLlmSettings, effectiveGuardrails } from './llm/llmConfig';
 import { summarizeWithProfile } from './llm/summarizeWithProfile';
-import type { CreateNoteInput, UpdateNoteInput } from '../shared/types';
+import type { CreateNoteInput, SaveNoteInput, UpdateNoteInput } from '../shared/types';
 import { createMcpServer } from './mcp/server';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from './uiPreferences';
 import {
@@ -39,7 +39,7 @@ import {
   readRemoteConfigFromBootstrapDir,
 } from './userConfig';
 import { syncWorkspaceFolder } from './workspaceImport';
-import { relocateWikilinksAfterTitleChange } from './noteOutgoingLinks';
+import { relocateWikilinksAfterTitleChange, saveNoteWithOutgoingLinks } from './noteOutgoingLinks';
 import {
   applyBootstrapRootOnly,
   archiveWorkspaceProfile,
@@ -607,6 +607,11 @@ function registerIpcHandlers(): void {
     return ctx.store.update(input);
   });
 
+  ipcMain.handle(IPC.NOTE_SAVE, async (_event, input: SaveNoteInput) => {
+    const ctx = await ensureActiveContext();
+    return saveNoteWithOutgoingLinks(ctx.store, input, ctx.tenantId);
+  });
+
   ipcMain.handle(IPC.NOTE_DELETE, async (_event, id: string) => {
     const ctx = await ensureActiveContext();
     return ctx.store.delete(id);
@@ -1158,7 +1163,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+app.on('will-quit', () => {
   mcpServer?.close();
   closeDedicatedStores();
   store?.close();

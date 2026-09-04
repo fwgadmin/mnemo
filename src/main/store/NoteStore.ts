@@ -7,6 +7,8 @@ import type {
   NoteListItem,
   CreateNoteInput,
   UpdateNoteInput,
+  SaveNoteInput,
+  SaveNoteResult,
   SearchResult,
   INoteStore,
   VaultSnapshot,
@@ -104,6 +106,68 @@ export class LocalNoteStore implements INoteStore {
 
     this.writeMdFile(note);
     return note;
+  }
+
+  async save(input: SaveNoteInput, targetIds: string[]): Promise<SaveNoteResult> {
+    const row = this.db.prepare('SELECT * FROM notes WHERE id = ?').get(input.id) as any;
+    if (!row) return { status: 'not-found' };
+    const existing = this.rowToNote(row);
+    if (existing.modified !== input.expectedModified) return { status: 'conflict', current: existing };
+
+    const modified = new Date(Math.max(Date.now(), Date.parse(existing.modified) + 1)).toISOString();
+    const note: Note = {
+      ...existing,
+      title: input.title ?? existing.title,
+      body: input.body ?? existing.body,
+      tags: input.tags ?? existing.tags,
+      hideHeader: input.hideHeader ?? existing.hideHeader,
+      modified,
+      links: [...new Set(targetIds)].filter(id => id !== input.id),
+    };
+    const saveTransaction = this.db.transaction(() => {
+      const updated = this.db.prepare(`
+        UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ?, hide_header = ?
+        WHERE id = ? AND updated_at = ?
+      `).run(
+        note.title,
+        note.body,
+        JSON.stringify(note.tags),
+        modified,
+        note.hideHeader ? 1 : 0,
+        note.id,
+        input.expectedModified,
+      );
+      if (updated.changes !== 1) throw new Error('STALE_NOTE_REVISION');
+      this.db.prepare('DELETE FROM note_links WHERE source_id = ?').run(note.id);
+      const insertLink = this.db.prepare(
+        'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
+      );
+      for (const targetId of note.links) insertLink.run(note.id, targetId);
+    });
+    try {
+      saveTransaction();
+    } catch (error) {
+      if (error instanceof Error && error.message === 'STALE_NOTE_REVISION') {
+        const current = await this.read(input.id);
+        return current ? { status: 'conflict', current } : { status: 'not-found' };
+      }
+      throw error;
+    }
+    this.writeMdFile(note);
+    return {
+      status: 'saved',
+      note,
+      listItem: {
+        ref: note.ref,
+        id: note.id,
+        title: note.title,
+        tags: note.tags,
+        created: note.created,
+        modified: note.modified,
+        snippet: note.body.slice(0, 120),
+        hideHeader: note.hideHeader,
+      },
+    };
   }
 
   delete(id: string): Promise<boolean> {

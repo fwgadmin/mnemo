@@ -12,8 +12,6 @@ import NewVaultWorkspaceDialog from './components/NewVaultWorkspaceDialog';
 import MarkdownHelper from './components/MarkdownHelper';
 import SettingsView from './components/SettingsView';
 import RemoteUpdateIndicator from './components/RemoteUpdateIndicator';
-import { extractWikilinks } from '../shared/wikilinks';
-import { inferLinkTargetIds, mergeOutgoingLinkTargets } from '../shared/linkInference';
 import { ClassicSidebarLayout } from './layouts/ClassicSidebarLayout';
 import { IdeLayout } from './layouts/IdeLayout';
 import { TopNavLayout } from './layouts/TopNavLayout';
@@ -41,6 +39,7 @@ import type { CategorySortMode, LlmSettingsFile, MnemoUiPreferences, Note, NoteL
 import { shouldShowSummaryMenuItems } from '../shared/llmProfile';
 import { vaultFingerprint } from '../shared/types';
 import { decodeFileTabPath, encodeFileTabId, fileTabBasename, isFileTabId } from '../shared/fileTabId';
+import { NoteSaveQueue, type NoteSaveStatus } from './noteSaveQueue';
 
 type RightPanel = 'none' | 'graph' | 'markdown-help' | 'markdown-preview';
 
@@ -117,6 +116,11 @@ export default function App() {
   const [categorySortModes, setCategorySortModes] = useState<Record<string, CategorySortMode>>(readCategorySortModes);
   const [activeTab, setActiveTab] = useState<ActiveTab>('note');
   const [saveSignal, setSaveSignal] = useState(0);
+  const [saveState, setSaveState] = useState<{
+    noteId: string;
+    status: NoteSaveStatus;
+    error?: string;
+  } | null>(null);
   /** Bumps on explicit ↻ / Reload Note List so the editor replaces its buffer from DB. */
   const [editorReloadNonce, setEditorReloadNonce] = useState(0);
   /** Brief flash when a background poll applies newer server content to the open note. */
@@ -231,6 +235,32 @@ export default function App() {
   const lastVaultFingerprintRef = useRef<string>('');
 
   const editorRef = useRef<EditorHandle | null>(null);
+  const allowWindowCloseRef = useRef(false);
+  const saveQueueRef = useRef<NoteSaveQueue | null>(null);
+  if (!saveQueueRef.current) {
+    saveQueueRef.current = new NoteSaveQueue(
+      input => window.mnemo.notes.save(input),
+      event => {
+        setSaveState({ noteId: event.noteId, status: event.status, error: event.error });
+        if (!event.result) return;
+        const { note, listItem } = event.result;
+        const nextVault = [listItem, ...vaultNotesRef.current.filter(item => item.id !== note.id)];
+        vaultNotesRef.current = nextVault;
+        setVaultNotes(nextVault);
+        setNotes(previous =>
+          previous.some(item => item.id === note.id)
+            ? [listItem, ...previous.filter(item => item.id !== note.id)]
+            : previous,
+        );
+        if (activeNoteRef.current?.id === note.id) setActiveNote(note);
+      },
+    );
+  }
+  useEffect(() => {
+    if (activeNote && !activeNote.filePath) {
+      saveQueueRef.current!.seedRevision(activeNote.id, activeNote.modified);
+    }
+  }, [activeNote]);
   /** After New Note, focus title once the editor for that id is mounted (when header is visible). */
   const focusTitleForNoteIdRef = useRef<string | null>(null);
   const [previewBody, setPreviewBody] = useState('');
@@ -816,6 +846,11 @@ export default function App() {
 
   const handleSelectNote = useCallback(
     async (id: string) => {
+      const previous = activeNoteRef.current;
+      if (previous && previous.id !== id && editorRef.current?.isDirty()) {
+        const saved = await editorRef.current.flush();
+        if (!saved) return;
+      }
       if (isFileTabId(id)) {
         const abs = decodeFileTabPath(id);
         if (!abs) return;
@@ -849,6 +884,7 @@ export default function App() {
         return;
       }
       const note = await window.mnemo.notes.read(id);
+      if (note) saveQueueRef.current!.seedRevision(note.id, note.modified);
       setActiveNote(note);
       if (effectiveLayoutRef.current === 'ide') {
         setOpenTabIds((prev) => {
@@ -1021,19 +1057,19 @@ export default function App() {
       if (idx < 0) idx = delta > 0 ? -1 : 0;
       const nextIdx = (idx + delta + list.length) % list.length;
       const id = list[nextIdx]!.id;
-      const note = await window.mnemo.notes.read(id);
-      setActiveNote(note);
-      window.setTimeout(() => editorRef.current?.focus(), 0);
+      await handleSelectNote(id);
     },
     [handleSelectNote],
   );
 
   const handleCreateNote = useCallback(async () => {
+    if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) return;
     const note = await window.mnemo.notes.create({
       title: 'Untitled',
       body: '',
       tags: [],
     });
+    saveQueueRef.current!.seedRevision(note.id, note.modified);
     await loadNotes();
     if (showNoteHeader && !note.hideHeader) {
       focusTitleForNoteIdRef.current = note.id;
@@ -1044,7 +1080,8 @@ export default function App() {
     }
   }, [loadNotes, showNoteHeader]);
 
-  const handleCloseAllTabs = useCallback(() => {
+  const handleCloseAllTabs = useCallback(async () => {
+    if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) return;
     setOpenTabIds([]);
     setActiveNote(null);
   }, []);
@@ -1056,17 +1093,21 @@ export default function App() {
       if (idx < 0) return;
       const nextIds = cur.slice(0, idx + 1);
       if (nextIds.length === cur.length) return;
-      setOpenTabIds(nextIds);
       const activeId = activeNoteRef.current?.id;
       if (activeId && !nextIds.includes(activeId)) {
+        if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) return;
         await handleSelectNote(fromId);
       }
+      setOpenTabIds(nextIds);
     },
     [handleSelectNote],
   );
 
   const handleCloseTab = useCallback(
     async (id: string) => {
+      if (activeNoteRef.current?.id === id && editorRef.current?.isDirty()) {
+        if (!(await editorRef.current.flush())) return;
+      }
       const cur = openTabIdsRef.current;
       const nextIds = cur.filter((x) => x !== id);
       setOpenTabIds(nextIds);
@@ -1290,6 +1331,7 @@ export default function App() {
           void editorRef.current?.formatDocument();
           break;
         case 'show-help':
+          if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) break;
           setActiveTab('help');
           break;
         case 'settings':
@@ -1379,7 +1421,9 @@ export default function App() {
   // Files opened via OS shell right-click or "Open with" (Windows registry / macOS CFBundleDocumentTypes)
   useEffect(() => {
     const unsubscribe = window.mnemo.onFileOpenedExternally(async ({ title, body }) => {
+      if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) return;
       const note = await window.mnemo.notes.create({ title, body, tags: [] });
+      saveQueueRef.current!.seedRevision(note.id, note.modified);
       await loadNotes();
       setActiveNote(note);
       if (effectiveLayoutRef.current === 'ide') {
@@ -1393,9 +1437,12 @@ export default function App() {
     async (id: string, title: string, body: string) => {
       if (isFileTabId(id)) {
         const abs = decodeFileTabPath(id);
-        if (!abs) return;
+        if (!abs) return false;
         const ok = await writeExternalFile(abs, body);
-        if (!ok) return;
+        if (!ok) {
+          setSaveState({ noteId: id, status: 'error', error: 'Could not write this file.' });
+          return false;
+        }
         if (activeNoteRef.current?.id === id) {
           setActiveNote((prev) =>
             prev && prev.id === id
@@ -1408,38 +1455,32 @@ export default function App() {
               : prev,
           );
         }
-        return;
+        setSaveState({ noteId: id, status: 'saved' });
+        return true;
       }
-
-      const wikilinkTitles = extractWikilinks(body);
-      const explicitIds: string[] = [];
-      for (const linkTitle of wikilinkTitles) {
-        const resolved = await window.mnemo.notes.resolveTitle(linkTitle);
-        if (resolved) explicitIds.push(resolved);
-      }
-
-      const index = await window.mnemo.notes.list();
-      const inferredIds = inferLinkTargetIds(
-        body,
-        id,
-        index.map((n) => ({ id: n.id, title: n.title, ref: n.ref })),
-      );
-      const targetIds = mergeOutgoingLinkTargets(explicitIds, inferredIds, id);
-
-      const updated = await window.mnemo.notes.update({ id, title, body });
-      if (updated) {
-        await window.mnemo.notes.updateLinks(id, targetIds);
-        if (activeNoteRef.current?.id === id) {
-          setActiveNote({ ...updated, links: targetIds });
-        }
-        const list = await window.mnemo.notes.list();
-        vaultNotesRef.current = list;
-        setVaultNotes(list);
-        setNotes(list);
-      }
+      const current = activeNoteRef.current;
+      if (current?.id === id) saveQueueRef.current!.seedRevision(id, current.modified);
+      return saveQueueRef.current!.enqueue({ id, title, body });
     },
     [writeExternalFile],
   );
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (allowWindowCloseRef.current) return;
+      if (!editorRef.current?.isDirty()) return;
+      event.preventDefault();
+      event.returnValue = '';
+      void editorRef.current.flush().then(saved => {
+        if (saved) {
+          allowWindowCloseRef.current = true;
+          window.close();
+        }
+      });
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   const handleDeleteNote = useCallback(
     async (id: string) => {
@@ -1503,6 +1544,9 @@ export default function App() {
       if (next === null) return;
       const trimmed = next.trim() || 'Untitled';
       if (trimmed === item.title) return;
+      if (activeNoteRef.current?.id === id && editorRef.current?.isDirty()) {
+        if (!(await editorRef.current.flush())) return;
+      }
       const prevTitle = item.title;
       await window.mnemo.notes.update({ id, title: trimmed });
       await window.mnemo.notes.relocateWikilinksOnRename(prevTitle, trimmed);
@@ -1519,6 +1563,9 @@ export default function App() {
     async (id: string) => {
       const item = vaultNotes.find((n) => n.id === id) ?? notes.find((n) => n.id === id);
       if (!item) return;
+      if (activeNoteRef.current?.id === id && editorRef.current?.isDirty()) {
+        if (!(await editorRef.current.flush())) return;
+      }
       const next = !item.hideHeader;
       await window.mnemo.notes.update({ id, hideHeader: next });
       await loadNotes();
@@ -1543,7 +1590,11 @@ export default function App() {
       } else {
         newTags = [category, ...otherTags];
       }
-      await window.mnemo.notes.update({ id, tags: newTags });
+      if (activeNoteRef.current?.id === id && editorRef.current?.isDirty()) {
+        if (!(await editorRef.current.flush())) return;
+      }
+      const updated = await window.mnemo.notes.update({ id, tags: newTags });
+      if (updated && activeNoteRef.current?.id === id) setActiveNote(updated);
       await loadNotes();
     },
     [vaultNotes, loadNotes],
@@ -1567,13 +1618,15 @@ export default function App() {
     async (title: string) => {
       const id = await window.mnemo.notes.resolveTitle(title);
       if (id) {
-        handleSelectNote(id);
+        await handleSelectNote(id);
       } else {
+        if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) return;
         const newNote = await window.mnemo.notes.create({
           title,
           body: '',
           tags: [],
         });
+        saveQueueRef.current!.seedRevision(newNote.id, newNote.modified);
         await loadNotes();
         setActiveNote(newNote);
         if (effectiveLayoutRef.current === 'ide') {
@@ -1727,10 +1780,43 @@ export default function App() {
         <>
           <div className="relative flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
             <RemoteUpdateIndicator visible={remotePollIndicatorVisible} />
+            {saveState?.noteId === activeNote.id && (
+              <div
+                className={`absolute right-3 top-2 z-30 flex items-center gap-2 rounded border px-2 py-1 text-[10px] shadow-sm ${
+                  saveState.status === 'error'
+                    ? 'border-red-500/60 bg-red-950/90 text-red-200'
+                    : 'border-mnemo-border bg-mnemo-panel-elevated/90 text-mnemo-muted'
+                }`}
+                role="status"
+              >
+                <span>
+                  {saveState.status === 'saving'
+                    ? 'Saving…'
+                    : saveState.status === 'dirty'
+                      ? 'Unsaved changes'
+                      : saveState.status === 'error'
+                        ? saveState.error ?? 'Save failed'
+                        : 'Saved'}
+                </span>
+                {saveState.status === 'error' && (
+                  <button
+                    type="button"
+                    className="underline hover:text-white"
+                    onClick={() => {
+                      if (isFileTabId(activeNote.id)) void editorRef.current?.flush();
+                      else void saveQueueRef.current?.retry(activeNote.id);
+                    }}
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
             <Editor
               ref={editorRef}
               note={activeNote}
               onUpdate={handleUpdateNote}
+              onDirty={noteId => setSaveState({ noteId, status: 'dirty' })}
               onNavigate={handleNavigateToTitle}
               showHeader={showNoteHeader && !activeNote.hideHeader}
               saveSignal={saveSignal}

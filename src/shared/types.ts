@@ -64,6 +64,21 @@ export interface UpdateNoteInput {
   hideHeader?: boolean;
 }
 
+export interface SaveNoteInput {
+  id: string;
+  title: string;
+  body: string;
+  tags?: string[];
+  hideHeader?: boolean;
+  /** Optimistic concurrency token from the last note read/save. */
+  expectedModified: string;
+}
+
+export type SaveNoteResult =
+  | { status: 'saved'; note: Note; listItem: NoteListItem }
+  | { status: 'conflict'; current: Note }
+  | { status: 'not-found' };
+
 export interface GraphData {
   nodes: Array<{ id: string; title: string; ref: number }>;
   links: Array<{ source: string; target: string }>;
@@ -255,6 +270,8 @@ export interface INoteStore {
   /** Load by stable ref (same as list column); tenant defaults to "default". */
   readByRef(ref: number, tenantId?: string): Promise<Note | null>;
   update(input: UpdateNoteInput): Promise<Note | null>;
+  /** Atomically persist note fields and replace its outgoing links. */
+  save(input: SaveNoteInput, targetIds: string[]): Promise<SaveNoteResult>;
   delete(id: string): Promise<boolean>;
   list(tenantId?: string): Promise<NoteListItem[]>;
   /** Load every full note and its outgoing links in a bounded number of store round trips. */
@@ -282,6 +299,7 @@ export const IPC = {
   NOTE_CREATE: 'note:create',
   NOTE_READ: 'note:read',
   NOTE_UPDATE: 'note:update',
+  NOTE_SAVE: 'note:save',
   NOTE_DELETE: 'note:delete',
   NOTE_LIST: 'note:list',
   NOTE_VAULT_SNAPSHOT: 'note:vaultSnapshot',

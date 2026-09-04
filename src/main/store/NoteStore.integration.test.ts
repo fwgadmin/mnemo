@@ -120,4 +120,42 @@ describe('LocalNoteStore', () => {
       store.close();
     }
   });
+
+  it('atomically saves note content and links and rejects stale revisions', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mnemo-store-save-test-'));
+    cleanupDirectories.push(root);
+    const store = new LocalNoteStore(path.join(root, 'mnemo.db'), path.join(root, 'vault'));
+    try {
+      const target = await store.create({ title: 'Target', body: '', tags: [] });
+      const source = await store.create({ title: 'Source', body: 'old', tags: [] });
+      const result = await store.save(
+        { id: source.id, title: source.title, body: 'new', expectedModified: source.modified },
+        [target.id],
+      );
+      expect(result.status).toBe('saved');
+      expect((await store.read(source.id))?.body).toBe('new');
+      expect((await store.getBacklinks(target.id)).map(note => note.id)).toEqual([source.id]);
+
+      const stale = await store.save(
+        { id: source.id, title: source.title, body: 'stale', expectedModified: source.modified },
+        [],
+      );
+      expect(stale.status).toBe('conflict');
+      expect((await store.read(source.id))?.body).toBe('new');
+      expect((await store.getBacklinks(target.id)).map(note => note.id)).toEqual([source.id]);
+
+      await expect(store.save(
+        {
+          id: source.id,
+          title: source.title,
+          body: 'must roll back',
+          expectedModified: result.status === 'saved' ? result.note.modified : '',
+        },
+        ['missing-target'],
+      )).rejects.toThrow();
+      expect((await store.read(source.id))?.body).toBe('new');
+    } finally {
+      store.close();
+    }
+  });
 });

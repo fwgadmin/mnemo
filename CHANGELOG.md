@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Editor saves:** Autosaves now use one optimistic, atomic note-and-link operation. Per-note queues serialize writes, coalesce rapid edits, flush before navigation/close, retain failed drafts, and expose a persistent save state with retry instead of transient alerts.
+- **Category performance:** Desktop and mobile build indexed category models once per note-list update, including resolved paths, adjacency, sorted children, and bottom-up counts. The 10,000-note/1,000-path benchmark is reproducible with `npm run bench:category-model` and measured about 21× faster than the previous repeated filtering path.
 - **List performance:** Desktop, Turso, and mobile sidebar/backlink queries now select 120-character SQL snippets instead of transferring entire note bodies and embedded media. New tenant+updated/created/title indexes keep per-workspace sorting indexed; large-body payload and query-plan regressions are covered by integration tests.
 - **MCP HTTP:** Migrated the hosted endpoint from legacy SSE to Streamable HTTP at `/mcp`. Every transport now owns an independent workspace context and MCP server; authenticated diagnostics, idle expiry, bounded session count, request size/time limits, and deterministic close cleanup prevent session crossover and resource leaks.
 - **Desktop security:** Enabled Chromium renderer sandboxing, added a restrictive CSP and navigation/window guards, moved persisted-file access behind expiring per-window capabilities, hardened Mermaid rendering, encrypted database/LLM/workspace tokens with Electron `safeStorage` when available, set credential files owner-only, isolated dedicated store caches/vaults by workspace and token identity, and bounded all LLM requests to 60 seconds.

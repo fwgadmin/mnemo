@@ -6,6 +6,8 @@ import type {
   SearchResult,
   CreateNoteInput,
   UpdateNoteInput,
+  SaveNoteInput,
+  SaveNoteResult,
   GraphData,
   AppConfig,
   SyncResult,
@@ -21,6 +23,7 @@ export interface MnemoAPI {
     create(input: CreateNoteInput): Promise<Note>;
     read(id: string): Promise<Note | null>;
     update(input: UpdateNoteInput): Promise<Note | null>;
+    save(input: SaveNoteInput): Promise<SaveNoteResult>;
     delete(id: string): Promise<boolean>;
     list(tenantId?: string): Promise<NoteListItem[]>;
     vaultSnapshot(tenantId?: string): Promise<VaultSnapshot>;
@@ -115,6 +118,7 @@ const api: MnemoAPI = {
     create: (input) => ipcRenderer.invoke(IPC.NOTE_CREATE, input),
     read: (id) => ipcRenderer.invoke(IPC.NOTE_READ, id),
     update: (input) => ipcRenderer.invoke(IPC.NOTE_UPDATE, input),
+    save: (input) => ipcRenderer.invoke(IPC.NOTE_SAVE, input),
     delete: (id) => ipcRenderer.invoke(IPC.NOTE_DELETE, id),
     list: (tenantId) => ipcRenderer.invoke(IPC.NOTE_LIST, tenantId),
     vaultSnapshot: (tenantId) => ipcRenderer.invoke(IPC.NOTE_VAULT_SNAPSHOT, tenantId),
