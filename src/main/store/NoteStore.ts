@@ -17,78 +17,9 @@ import {
   likeWordsFromUserQuery,
   snippetForSearchResult,
 } from '../../shared/searchQuery';
-import { escapeYamlDoubleQuotedString } from '../../shared/yamlEscape';
 import { parseStoredTags } from '../../shared/noteTags';
-
-/** Add `ref` column + backfill; safe to call on every open. Exported for Turso sync from local file. */
-export function migrateNoteDatabaseRef(db: Database.Database): void {
-  const cols = db.prepare('PRAGMA table_info(notes)').all() as { name: string }[];
-  if (cols.some(c => c.name === 'ref')) return;
-  db.exec('ALTER TABLE notes ADD COLUMN ref INTEGER');
-  const tenants = db.prepare('SELECT DISTINCT tenant_id FROM notes').all() as { tenant_id: string }[];
-  for (const { tenant_id } of tenants) {
-    const rows = db
-      .prepare('SELECT id FROM notes WHERE tenant_id = ? ORDER BY created_at ASC')
-      .all(tenant_id) as { id: string }[];
-    let r = 1;
-    const upd = db.prepare('UPDATE notes SET ref = ? WHERE id = ?');
-    for (const row of rows) {
-      upd.run(r++, row.id);
-    }
-  }
-  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes (tenant_id, ref)');
-}
-
-/** Add hide_header (per-note editor chrome); safe to call on every open. */
-export function migrateNoteDatabaseHideHeader(db: Database.Database): void {
-  const cols = db.prepare('PRAGMA table_info(notes)').all() as { name: string }[];
-  if (cols.some(c => c.name === 'hide_header')) return;
-  db.exec('ALTER TABLE notes ADD COLUMN hide_header INTEGER NOT NULL DEFAULT 0');
-}
-
-const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS notes (
-  id          TEXT PRIMARY KEY,
-  title       TEXT NOT NULL DEFAULT 'Untitled',
-  body        TEXT NOT NULL DEFAULT '',
-  tags        TEXT NOT NULL DEFAULT '[]',
-  tenant_id   TEXT NOT NULL DEFAULT 'default',
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS note_links (
-  source_id   TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-  target_id   TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-  PRIMARY KEY (source_id, target_id)
-);
-
-CREATE TABLE IF NOT EXISTS embeddings (
-  note_id     TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-  model       TEXT NOT NULL DEFAULT 'all-MiniLM-L6-v2',
-  vector      BLOB NOT NULL,
-  created_at  TEXT NOT NULL,
-  PRIMARY KEY (note_id, model)
-);
-
-CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id);
-`;
-
-const FTS_SQL = [
-  `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, body, tags, content='notes', content_rowid='rowid')`,
-  `CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
-    INSERT INTO notes_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
-  END`,
-  `CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, title, body, tags) VALUES ('delete', old.rowid, old.title, old.body, old.tags);
-  END`,
-  `CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, title, body, tags) VALUES ('delete', old.rowid, old.title, old.body, old.tags);
-    INSERT INTO notes_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
-  END`,
-];
+import { migrateLocalNoteDatabase } from './migrations';
+import { serializeNoteMarkdown } from './noteMarkdown';
 
 /** Local SQLite-backed store (offline, default). */
 export class LocalNoteStore implements INoteStore {
@@ -101,17 +32,13 @@ export class LocalNoteStore implements INoteStore {
     fs.mkdirSync(vaultPath, { recursive: true });
 
     this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    this.initSchema();
-    migrateNoteDatabaseRef(this.db);
-    migrateNoteDatabaseHideHeader(this.db);
-  }
-
-  private initSchema(): void {
-    this.db.exec(SCHEMA_SQL);
-    for (const stmt of FTS_SQL) {
-      this.db.exec(stmt);
+    try {
+      this.db.pragma('foreign_keys = ON');
+      migrateLocalNoteDatabase(this.db, dbPath);
+      this.db.pragma('journal_mode = WAL');
+    } catch (error) {
+      this.db.close();
+      throw error;
     }
   }
 
@@ -503,21 +430,7 @@ export class LocalNoteStore implements INoteStore {
   }
 
   private writeMdFile(note: Note): void {
-    const frontmatter = [
-      '---',
-      `id: "${note.id}"`,
-      `ref: ${note.ref}`,
-      `title: "${escapeYamlDoubleQuotedString(note.title)}"`,
-      `tags: [${note.tags.map(t => `"${escapeYamlDoubleQuotedString(t)}"`).join(', ')}]`,
-      `created: "${note.created}"`,
-      `modified: "${note.modified}"`,
-      `tenantId: "${note.tenantId}"`,
-      `hideHeader: ${note.hideHeader}`,
-      '---',
-    ].join('\n');
-
-    const content = `${frontmatter}\n\n${note.body}`;
     const filePath = path.join(this.vaultPath, `${note.id}.md`);
-    fs.writeFileSync(filePath, content, 'utf-8');
+    fs.writeFileSync(filePath, serializeNoteMarkdown(note), 'utf-8');
   }
 }

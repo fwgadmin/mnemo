@@ -8,7 +8,14 @@ CREATE TABLE IF NOT EXISTS notes (
   tags        TEXT NOT NULL DEFAULT '[]',   -- JSON array of strings
   tenant_id   TEXT NOT NULL DEFAULT 'default',
   created_at  TEXT NOT NULL,                -- ISO 8601
-  updated_at  TEXT NOT NULL                 -- ISO 8601
+  updated_at  TEXT NOT NULL,                -- ISO 8601
+  ref         INTEGER,
+  hide_header INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version    INTEGER PRIMARY KEY,
+  applied_at TEXT NOT NULL
 );
 
 -- Links between notes (directed: source → target)
@@ -25,6 +32,12 @@ CREATE TABLE IF NOT EXISTS embeddings (
   vector      BLOB NOT NULL,
   created_at  TEXT NOT NULL,
   PRIMARY KEY (note_id, model)
+);
+
+CREATE TABLE IF NOT EXISTS app_kv (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 -- Full-text search index
@@ -58,3 +71,4 @@ END;
 CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes(tenant_id, ref);
