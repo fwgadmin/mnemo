@@ -31,6 +31,12 @@ describe('embedded media Markdown', () => {
     expect(markdown).toContain('"mnemo:w=80;align=center"');
   });
 
+  it('sanitizes markdown-breaking label characters', async () => {
+    const file = new File([new Uint8Array([1])], '[diagram].png', { type: 'image/png' });
+    const markdown = await markdownForMediaFile(file);
+    expect(markdown).toContain('![diagram .png]');
+  });
+
   it('rejects oversized media before reading it', async () => {
     const file = new File([new Uint8Array(1)], 'huge.png', { type: 'image/png' });
     Object.defineProperty(file, 'size', { value: MAX_EMBEDDED_MEDIA_BYTES + 1 });

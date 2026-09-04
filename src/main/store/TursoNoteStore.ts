@@ -391,18 +391,20 @@ export class TursoNoteStore implements INoteStore {
       await this.client.batch(statements, 'write');
       statements = [];
     };
-    for (const { sourceId, targetIds } of updates) {
-      const group = [
-        { sql: 'DELETE FROM note_links WHERE source_id = ?', args: [sourceId] },
-        ...targetIds.map(targetId => ({
-          sql: 'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
-          args: [sourceId, targetId],
-        })),
-      ];
-      if (statements.length > 0 && statements.length + group.length > maxStatements) {
+    const pushStatement = async (statement: { sql: string; args: import('@libsql/client').InValue[] }) => {
+      if (statements.length >= maxStatements) {
         await flush();
       }
-      statements.push(...group);
+      statements.push(statement);
+    };
+    for (const { sourceId, targetIds } of updates) {
+      await pushStatement({ sql: 'DELETE FROM note_links WHERE source_id = ?', args: [sourceId] });
+      for (const targetId of targetIds) {
+        await pushStatement({
+          sql: 'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
+          args: [sourceId, targetId],
+        });
+      }
     }
     await flush();
   }

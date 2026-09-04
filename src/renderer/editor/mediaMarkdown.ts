@@ -36,7 +36,7 @@ export function mediaTitle(options: MediaDisplayOptions): string {
 }
 
 function safeLabel(name: string): string {
-  return name.replace(/[\]\\\n\r]/g, ' ').trim() || 'media';
+  return name.replace(/[[\]\\\n\r]/g, ' ').trim() || 'media';
 }
 
 export function fileToDataUrl(file: File): Promise<string> {

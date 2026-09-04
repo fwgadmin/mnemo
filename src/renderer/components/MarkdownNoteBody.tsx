@@ -67,7 +67,8 @@ const sanitizeSchema = {
 const SAFE_DATA_URL = /^data:(?:image\/(?:png|jpe?g|gif|webp|bmp)|audio\/(?:mpeg|mp4|ogg|wav|webm)|video\/(?:mp4|ogg|webm|quicktime)|application\/pdf|text\/plain);base64,/i;
 
 function markdownUrlTransform(url: string): string {
-  return SAFE_DATA_URL.test(url) ? url : defaultUrlTransform(url);
+  if (/^data:/i.test(url)) return SAFE_DATA_URL.test(url) ? url : '';
+  return defaultUrlTransform(url);
 }
 
 interface MediaRange {

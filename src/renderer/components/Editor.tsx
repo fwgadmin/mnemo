@@ -191,7 +191,7 @@ async function clipboardReadMedia(): Promise<File[]> {
   try {
     const files: File[] = [];
     for (const item of await navigator.clipboard.read()) {
-      const type = item.types.find(isEmbeddableFileType);
+      const type = item.types.find(type => type !== 'text/plain' && isEmbeddableFileType(type));
       if (!type) continue;
       const blob = await item.getType(type);
       const extension = type.split('/')[1]?.replace('jpeg', 'jpg').replace('plain', 'txt') ?? 'bin';
