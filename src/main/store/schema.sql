@@ -18,6 +18,12 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   applied_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS note_tombstones (
+  id         TEXT PRIMARY KEY,
+  tenant_id  TEXT NOT NULL,
+  deleted_at TEXT NOT NULL
+);
+
 -- Links between notes (directed: source → target)
 CREATE TABLE IF NOT EXISTS note_links (
   source_id   TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
@@ -72,3 +78,4 @@ CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes(tenant_id, ref);
+CREATE INDEX IF NOT EXISTS idx_note_tombstones_tenant ON note_tombstones(tenant_id, deleted_at);

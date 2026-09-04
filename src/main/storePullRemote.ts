@@ -3,27 +3,18 @@ import Database from 'better-sqlite3';
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
 import { migrateLocalNoteDatabase } from './store/migrations';
-import type { SyncResult } from '../shared/types';
+import type { NoteTombstoneRow, SyncNoteRow, SyncResult } from '../shared/types';
 
-export type BulkNoteRow = {
-  id: string;
-  title: string;
-  body: string;
-  tags: string;
-  tenant_id: string;
-  created_at: string;
-  updated_at: string;
-  ref: number | null;
-  hide_header: number;
-};
+export type BulkNoteRow = SyncNoteRow;
 
 /** Read all notes + links from a local SQLite file (same shape as Settings → sync local). */
 export function readLocalNotesAndLinksForSync(dbPath: string): {
   notes: BulkNoteRow[];
   links: Array<{ source_id: string; target_id: string }>;
+  tombstones: NoteTombstoneRow[];
 } {
   if (!fs.existsSync(dbPath)) {
-    return { notes: [], links: [] };
+    return { notes: [], links: [], tombstones: [] };
   }
   const db = new Database(dbPath);
   try {
@@ -36,26 +27,28 @@ export function readLocalNotesAndLinksForSync(dbPath: string): {
     const links = db
       .prepare('SELECT source_id, target_id FROM note_links')
       .all() as Array<{ source_id: string; target_id: string }>;
-    return { notes, links };
+    const tombstones = db
+      .prepare('SELECT id, tenant_id, deleted_at FROM note_tombstones')
+      .all() as NoteTombstoneRow[];
+    return { notes, links, tombstones };
   } finally {
     db.close();
   }
 }
 
 /**
- * Additive upload: merge local SQLite rows into Turso (same as Settings → sync local). Does not delete remote rows.
+ * Upload local note/deletion events and exact outgoing links into Turso.
  */
 export async function pushLocalToTursoStore(
   turso: TursoNoteStore,
   localDbPath: string,
 ): Promise<SyncResult> {
-  const { notes, links } = readLocalNotesAndLinksForSync(localDbPath);
-  return turso.importNotes(notes, links);
+  const { notes, links, tombstones } = readLocalNotesAndLinksForSync(localDbPath);
+  return turso.importNotes(notes, links, tombstones);
 }
 
 /**
- * Additive snapshot: merge all rows from Turso into a local SQLite file + vault .md files.
- * Does not delete local notes or links absent from the remote payload.
+ * Merge the remote snapshot into local SQLite and its vault mirror, including deletions and link removals.
  */
 export async function pullTursoIntoLocalStore(
   turso: TursoNoteStore,
@@ -65,7 +58,7 @@ export async function pullTursoIntoLocalStore(
   const payload = await turso.exportAllNotesAndLinks();
   const local = new LocalNoteStore(localDbPath, localVaultPath);
   try {
-    return await local.importNotesAdditiveFromRemote(payload.notes, payload.links);
+    return await local.importNotesFromRemote(payload.notes, payload.links, payload.tombstones);
   } finally {
     local.close();
   }

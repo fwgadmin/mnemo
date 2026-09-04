@@ -942,7 +942,7 @@ export default function SettingsView({
           <div>
             <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Sync with remote</h2>
             <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
-              Both directions are <strong className="text-mnemo-muted">additive</strong>: nothing is deleted on either side.
+              Both directions use timestamps: newer note updates or deletion tombstones win, and accepted notes replace their outgoing link set.
               Notes merge by <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">updated_at</code> (newer
               wins). Links only use <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">INSERT OR IGNORE</code>.
               CLI: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo sync push</code> /{' '}
@@ -955,11 +955,12 @@ export default function SettingsView({
             <h3 className="text-xs font-semibold text-mnemo-muted uppercase tracking-wide mb-3">Upload (local → remote)</h3>
             <p className="text-xs text-mnemo-dim mb-4 leading-relaxed">
               Copy rows from this device&apos;s local <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo.db</code> into
-              the remote database. Remote rows stay unless your local copy is newer.
+              the remote database. Newer local updates or deletions win; stale events are skipped.
             </p>
             {syncPushResult && (
               <p className={`text-xs mb-3 ${successMsgClass}`}>
-                Done — {syncPushResult.synced} note row{syncPushResult.synced !== 1 ? 's' : ''} sent to remote (additive merge).
+                Done — {syncPushResult.synced} note/deletion event{syncPushResult.synced !== 1 ? 's' : ''} applied remotely;{' '}
+                {syncPushResult.skipped} stale or unchanged.
               </p>
             )}
             <button
@@ -988,12 +989,12 @@ export default function SettingsView({
             <h3 className="text-xs font-semibold text-mnemo-muted uppercase tracking-wide mb-3">Download (remote → local)</h3>
             <p className="text-xs text-mnemo-dim mb-4 leading-relaxed">
               Merge the remote database into your local <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo.db</code> and
-              mirror <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">vault/*.md</code>. Local-only notes remain; each row updates
-              only when the remote copy is newer than your local copy.
+              mirror <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">vault/*.md</code>. Newer remote updates and deletions
+              are applied; newer local events remain.
             </p>
             {syncPullResult && (
               <p className={`text-xs mb-3 ${successMsgClass}`}>
-                Done — merged {syncPullResult.synced} updates from remote ({syncPullResult.skipped} skipped: local newer or unchanged).
+                Done — merged {syncPullResult.synced} note/deletion events from remote ({syncPullResult.skipped} stale or unchanged).
               </p>
             )}
             <button

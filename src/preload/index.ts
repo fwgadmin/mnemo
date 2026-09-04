@@ -45,7 +45,7 @@ export interface MnemoAPI {
     save(cfg: AppConfig): Promise<boolean>;
     storeType(): Promise<'turso' | 'local'>;
     syncLocalNotes(): Promise<SyncResult>;
-    /** Turso → local bootstrap DB + vault; additive merge (last-write-wins per note id). */
+    /** Turso → local bootstrap DB + vault; timestamped note/deletion merge with exact outgoing links. */
     syncPullLocalNotes(): Promise<SyncResult>;
   };
   /**

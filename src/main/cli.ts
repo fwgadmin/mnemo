@@ -910,7 +910,7 @@ async function cmdSync(argv: string[]): Promise<void> {
       if (outJson) {
         printJson({ ok: true, direction: 'push', ...result, dbPath });
       } else {
-        console.log(`Upload: sent ${result.synced} note rows to remote (additive merge by updated_at).`);
+        console.log(`Upload: applied ${result.synced} note/deletion events to remote (${result.skipped} stale or unchanged).`);
         console.log(`Local database: ${dbPath}`);
       }
     }
