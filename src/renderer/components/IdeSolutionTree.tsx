@@ -1,14 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type DragEvent, type MouseEvent } from 'react';
-import type { CategorySortMode, NoteListItem } from '../../shared/types';
+import type { NoteListItem } from '../../shared/types';
 import {
   ancestorPaths,
-  categoryPathFromTags,
   GENERAL_PATH,
   UNASSIGNED_PATH,
   type CategoryTreeNode,
 } from '../categoryPath';
 import { colorForCategoryPath } from '../categoryColors';
-import { sortNotesForCategory } from '../categorySort';
 
 const EXPANDED_KEY = 'mnemo.ideExplorerExpanded';
 
@@ -35,32 +33,26 @@ function saveExpandedToStorage(paths: Set<string>): void {
   }
 }
 
-function defaultExpandedForActive(activeNoteId: string | null, vaultNotes: NoteListItem[]): Set<string> {
+function defaultExpandedForActive(
+  activeNoteId: string | null,
+  pathByNoteId: Map<string, string>,
+): Set<string> {
   const s = new Set<string>();
   if (!activeNoteId) return s;
-  const note = vaultNotes.find(n => n.id === activeNoteId);
-  if (!note) return s;
-  for (const a of ancestorPaths(categoryPathFromTags(note.tags, vaultNotes))) {
+  const path = pathByNoteId.get(activeNoteId);
+  if (!path) return s;
+  for (const a of ancestorPaths(path)) {
     s.add(a);
   }
   return s;
 }
 
-function visibleNotesInSubtree(node: CategoryTreeNode, notesByPath: Map<string, NoteListItem[]>): number {
-  let n = notesByPath.get(node.path)?.length ?? 0;
-  for (const c of node.children) {
-    n += visibleNotesInSubtree(c, notesByPath);
-  }
-  return n;
-}
-
 interface IdeSolutionTreeProps {
   root: CategoryTreeNode;
   notesByPath: Map<string, NoteListItem[]>;
+  pathByNoteId: Map<string, string>;
   activeNoteId: string | null;
-  vaultNotes: NoteListItem[];
   categoryColors: Record<string, string>;
-  categorySortModes: Record<string, CategorySortMode>;
   onFolderContextMenu: (e: MouseEvent, path: string) => void;
   dragOverCategory: string | null;
   onDragOver: (e: DragEvent, path: string) => void;
@@ -72,10 +64,9 @@ interface IdeSolutionTreeProps {
 export default function IdeSolutionTree({
   root,
   notesByPath,
+  pathByNoteId,
   activeNoteId,
-  vaultNotes,
   categoryColors,
-  categorySortModes,
   onFolderContextMenu,
   dragOverCategory,
   onDragOver,
@@ -86,32 +77,25 @@ export default function IdeSolutionTree({
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     const stored = loadExpandedFromStorage();
     if (stored && stored.size > 0) return stored;
-    return defaultExpandedForActive(activeNoteId, vaultNotes);
+    return defaultExpandedForActive(activeNoteId, pathByNoteId);
   });
 
   /** Only changes when the active note’s resolved category path changes — not on every vault list refresh. */
   const activeNoteCategoryKey = useMemo(() => {
     if (!activeNoteId) return '';
-    const note = vaultNotes.find(n => n.id === activeNoteId);
-    if (!note) return '';
-    return categoryPathFromTags(note.tags, vaultNotes);
-  }, [activeNoteId, vaultNotes]);
+    return pathByNoteId.get(activeNoteId) ?? '';
+  }, [activeNoteId, pathByNoteId]);
 
   useEffect(() => {
     setExpanded(prev => {
       const next = new Set(prev);
       if (activeNoteId && activeNoteCategoryKey) {
-        const note = vaultNotes.find(n => n.id === activeNoteId);
-        if (note) {
-          for (const a of ancestorPaths(categoryPathFromTags(note.tags, vaultNotes))) {
-            next.add(a);
-          }
+        for (const a of ancestorPaths(activeNoteCategoryKey)) {
+          next.add(a);
         }
       }
       return next;
     });
-    // Intentionally omit vaultNotes: only re-expand when active note or its category path changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [activeNoteId, activeNoteCategoryKey]);
 
   const toggle = useCallback((path: string) => {
@@ -125,10 +109,8 @@ export default function IdeSolutionTree({
   }, []);
 
   const renderNode = (node: CategoryTreeNode, depth: number): React.ReactNode => {
-    const notesHere = sortNotesForCategory(notesByPath.get(node.path) ?? [], node.path, categorySortModes);
-    const childFolders = [...node.children].sort((a, b) =>
-      a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
-    );
+    const notesHere = notesByPath.get(node.path) ?? [];
+    const childFolders = node.children;
     const hasSubfolders = childFolders.length > 0;
     const hasNotes = notesHere.length > 0;
     const expandable = hasSubfolders || hasNotes;
@@ -140,7 +122,7 @@ export default function IdeSolutionTree({
       ? `color-mix(in srgb, ${stripe} 42%, var(--mnemo-accent) 58%)`
       : `color-mix(in srgb, var(--mnemo-border) 82%, var(--mnemo-accent) 18%)`;
     const isDrag = dragOverCategory === node.path;
-    const visibleCount = visibleNotesInSubtree(node, notesByPath);
+    const visibleCount = node.subtreeNoteCount;
 
     const depthIndentPx = depth > 0 ? TREE_LEVEL_PX : 0;
 
@@ -257,13 +239,9 @@ export default function IdeSolutionTree({
     );
   };
 
-  const topChildren = [...root.children].sort((a, b) =>
-    a.segment.localeCompare(b.segment, undefined, { sensitivity: 'base' }),
-  );
-
   return (
     <div className="py-0.5 font-sans text-[11px] leading-tight" role="tree">
-      {topChildren.map(ch => renderNode(ch, 0))}
+      {root.children.map(ch => renderNode(ch, 0))}
     </div>
   );
 }
