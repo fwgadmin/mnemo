@@ -1,3 +1,5 @@
+import { fetchLlm } from '../requestTimeout';
+
 export async function summarizeGemini(opts: {
   baseUrl: string;
   model: string;
@@ -14,7 +16,7 @@ export async function summarizeGemini(opts: {
     b && !/^https?:\/\/generativelanguage\.googleapis\.com/i.test(b)
       ? `${b.replace(/\/$/, '')}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`
       : `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
+  const res = await fetchLlm(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

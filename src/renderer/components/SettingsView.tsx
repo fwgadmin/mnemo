@@ -653,34 +653,10 @@ export default function SettingsView({
                         <option value="remote">Dedicated libSQL (URL + token)</option>
                       </select>
                       {storageDraft.mode === 'sqlite' ? (
-                        <div className="flex flex-col gap-1.5">
-                          <input
-                            type="text"
-                            placeholder="Absolute path to mnemo.db"
-                            value={storageDraft.dbPath}
-                            onChange={e =>
-                              setStorageDraft({
-                                mode: 'sqlite',
-                                dbPath: e.target.value,
-                                vaultPath: storageDraft.mode === 'sqlite' ? storageDraft.vaultPath : '',
-                              })
-                            }
-                            className="w-full font-mono text-xs bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Absolute path to vault directory"
-                            value={storageDraft.mode === 'sqlite' ? storageDraft.vaultPath : ''}
-                            onChange={e =>
-                              setStorageDraft({
-                                mode: 'sqlite',
-                                dbPath: storageDraft.mode === 'sqlite' ? storageDraft.dbPath : '',
-                                vaultPath: e.target.value,
-                              })
-                            }
-                            className="w-full font-mono text-xs bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text"
-                          />
-                        </div>
+                        <p className="text-[10px] text-mnemo-dim leading-snug">
+                          New dedicated databases and vaults use Mnemo&apos;s managed per-workspace directory. Existing
+                          dedicated paths are preserved but cannot be changed by renderer input.
+                        </p>
                       ) : null}
                       {storageDraft.mode === 'remote' ? (
                         <div className="flex flex-col gap-1.5">
@@ -713,8 +689,8 @@ export default function SettingsView({
                         </div>
                       ) : null}
                       <p className="text-[10px] text-mnemo-dim leading-snug">
-                        Tokens in workspace profiles are stored in plain JSON on disk (v1). Dedicated SQLite uses a single
-                        tenant inside that file.
+                        Workspace tokens use OS-backed safe storage when available and are masked here. Dedicated SQLite
+                        uses a single tenant inside that file.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -864,10 +840,9 @@ export default function SettingsView({
           <strong className="text-mnemo-muted">Turso Cloud</strong>, a{' '}
           <strong className="text-mnemo-muted">self-hosted libSQL / sqld</strong> instance on your VPS, or any
           endpoint compatible with <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">@libsql/client</code>.
-          Leave blank to use local SQLite only. Credentials are stored in{' '}
+          Leave blank to use local SQLite only. Credentials are stored in an owner-only{' '}
           <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">%APPDATA%\Mnemo\config.json</code>{' '}
-          as <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">tursoUrl</code> /{' '}
-          <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">tursoToken</code> (legacy names; values work for any libSQL host).
+          and tokens are encrypted with Electron&apos;s OS-backed safe storage when available. Saved secrets are masked in the UI.
         </p>
         <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
           <strong className="text-mnemo-muted">Multiple devices:</strong> the same URL and token on each machine

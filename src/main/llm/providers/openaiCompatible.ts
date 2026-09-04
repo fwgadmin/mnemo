@@ -1,3 +1,5 @@
+import { fetchLlm } from '../requestTimeout';
+
 export async function summarizeOpenAiCompatibleChat(opts: {
   baseUrl: string;
   model: string;
@@ -12,7 +14,7 @@ export async function summarizeOpenAiCompatibleChat(opts: {
   if (opts.apiKey?.trim()) {
     headers.Authorization = `Bearer ${opts.apiKey.trim()}`;
   }
-  const res = await fetch(url, {
+  const res = await fetchLlm(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({

@@ -90,10 +90,7 @@ export const KEYBOARD_SHORTCUTS_ROWS: string[][] = [
     'Ctrl+Shift+C / ⌘⇧C',
     'Copy as summary (note editor, when Summary & LLM is configured with a valid default profile)',
   ],
-  [
-    'Ctrl+Shift+V / ⌘⇧V',
-    'Paste as summary in editor when configured; otherwise toggles Markdown preview panel',
-  ],
+  ['Ctrl+Shift+V / ⌘⇧V', 'Paste as summary in editor when configured; otherwise toggles Markdown preview panel'],
   ['Ctrl+Alt+C / ⌃⌥C', 'Copy as formatted Markdown summary (editor, when Summary is configured)'],
   ['Ctrl+Alt+V / ⌃⌥V', 'Paste as formatted Markdown summary (editor, when Summary is configured)'],
 ];
@@ -115,7 +112,7 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
   ],
   [
     'Summary & LLM',
-    'Settings → Summary & LLM: named provider profiles (OpenAI-compatible chat, Ollama, Anthropic, Gemini), base URL, model, optional API key; pick a default profile. Keys live in userData llm-config.json only (not synced to Turso).',
+    'Settings → Summary & LLM: named provider profiles (OpenAI-compatible chat, Ollama, Anthropic, Gemini), base URL, model, optional API key; pick a default profile. Keys stay local in an owner-only file and use Electron safeStorage encryption when available (not synced to Turso). Requests time out after 60 seconds.',
   ],
   [
     'Guardrails',
@@ -214,12 +211,12 @@ ${paths}
 
   Next to mnemo.db (same bootstrap folder):
     workspace-profiles.json     Active workspace id, vault names/ids, optional per-vault storage overrides
-    config.json                 Global libSQL URL/token (Settings → Database tab); if missing remote creds here, the app may use workspaces/default/config.json
+    config.json                 Global libSQL URL/token (Settings → Database tab); desktop tokens use Electron safeStorage encryption when available
     ui-preferences.json         Default workspace UI state; ui-preferences.<workspaceId>.json for other vaults
   Workspaces use tenant_id = workspace id in the shared DB unless a profile uses dedicated SQLite/libSQL (tenant "default" in that file).
 
   Legacy ~/.config/mnemo may still apply when it holds Turso credentials and mnemo-note does not (same as the desktop app).
-  CLI loads remote DB credentials from the same bootstrap folder first (then other paths) so Turso URL/token stay aligned with workspace-profiles.json and mnemo.db.
+  CLI loads plaintext remote DB credentials from the same bootstrap folder first (then other paths). If the desktop has migrated a token to Electron safeStorage, pass the CLI/MCP token by flag or MNEMO_TURSO_TOKEN / MNEMO_LIBSQL_AUTH_TOKEN instead.
 `;
 }
 

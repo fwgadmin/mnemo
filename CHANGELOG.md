@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Desktop security:** Enabled Chromium renderer sandboxing, added a restrictive CSP and navigation/window guards, moved persisted-file access behind expiring per-window capabilities, hardened Mermaid rendering, encrypted database/LLM/workspace tokens with Electron `safeStorage` when available, set credential files owner-only, isolated dedicated store caches/vaults by workspace and token identity, and bounded all LLM requests to 60 seconds.
 - **Sync:** Note deletions now propagate through durable timestamped tombstones instead of allowing stale replicas to resurrect data. Synced outgoing links use exact replacement, so removed links stay removed; newer recreations still supersede older deletions.
 - **Workspaces:** Archive is now reversible and never deletes notes or dedicated files. Archived vaults stay visible in management views, remain unavailable to normal switching, and can be restored from Settings, CLI, or MCP; permanent Delete remains separate.
 - **Storage:** Local SQLite and Turso/libSQL now use one ordered, versioned migration ledger. Local databases receive one consistent backup per pre-migration schema version, and both stores write the same complete Markdown frontmatter.
