@@ -11,6 +11,8 @@ import type {
   INoteStore,
   VaultSnapshot,
   SyncResult,
+  SyncNoteRow,
+  NoteTombstoneRow,
 } from '../../shared/types';
 import {
   ftsMatchFromUserQuery,
@@ -105,7 +107,19 @@ export class LocalNoteStore implements INoteStore {
   }
 
   delete(id: string): Promise<boolean> {
-    const result = this.db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+    const row = this.db.prepare('SELECT tenant_id FROM notes WHERE id = ?').get(id) as
+      | { tenant_id: string }
+      | undefined;
+    if (!row) return Promise.resolve(false);
+    const deletedAt = new Date().toISOString();
+    const result = this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+        WHERE excluded.deleted_at > note_tombstones.deleted_at
+      `).run(id, row.tenant_id, deletedAt);
+      return this.db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+    })();
     if (result.changes > 0) {
       const filePath = path.join(this.vaultPath, `${id}.md`);
       if (fs.existsSync(filePath)) {
@@ -303,24 +317,16 @@ export class LocalNoteStore implements INoteStore {
 
   /**
    * Merge remote/libSQL rows into this SQLite file and mirror .md files for affected notes.
-   * Last-write-wins by updated_at (same rule as Turso importNotes). Links are INSERT OR IGNORE only.
-   * Does not delete local notes or links missing from the payload.
+   * Last-write-wins across note updates and deletion tombstones. Links are replaced exactly for accepted source notes.
    */
-  async importNotesAdditiveFromRemote(
-    notes: Array<{
-      id: string;
-      title: string;
-      body: string;
-      tags: string;
-      tenant_id: string;
-      created_at: string;
-      updated_at: string;
-      ref: number | null;
-      hide_header: number;
-    }>,
+  async importNotesFromRemote(
+    notes: SyncNoteRow[],
     links: Array<{ source_id: string; target_id: string }>,
+    tombstones: NoteTombstoneRow[] = [],
   ): Promise<SyncResult> {
-    if (notes.length === 0 && links.length === 0) return { synced: 0, skipped: 0 };
+    if (notes.length === 0 && links.length === 0 && tombstones.length === 0) {
+      return { synced: 0, skipped: 0 };
+    }
 
     const upsert = this.db.prepare(`
       INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
@@ -337,10 +343,50 @@ export class LocalNoteStore implements INoteStore {
 
     let applied = 0;
     let skipped = 0;
-    const CHUNK = 50;
+    const acceptedSources = new Set<string>();
+    const deletedIds = new Set<string>();
+    const getNoteVersion = this.db.prepare('SELECT updated_at FROM notes WHERE id = ?');
+    const getTombstoneVersion = this.db.prepare('SELECT deleted_at FROM note_tombstones WHERE id = ?');
+    const upsertTombstone = this.db.prepare(`
+      INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+      WHERE excluded.deleted_at > note_tombstones.deleted_at
+    `);
+    const deleteNote = this.db.prepare('DELETE FROM notes WHERE id = ?');
+    const deleteTombstone = this.db.prepare('DELETE FROM note_tombstones WHERE id = ? AND deleted_at < ?');
+    const deleteLinks = this.db.prepare('DELETE FROM note_links WHERE source_id = ?');
+    const insertLink = this.db.prepare(
+      'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
+    );
 
-    const runNotes = this.db.transaction((chunk: typeof notes) => {
-      for (const n of chunk) {
+    this.db.transaction(() => {
+      for (const tombstone of tombstones) {
+        const note = getNoteVersion.get(tombstone.id) as { updated_at: string } | undefined;
+        if (note && note.updated_at > tombstone.deleted_at) {
+          skipped += 1;
+          continue;
+        }
+        const info = upsertTombstone.run(tombstone.id, tombstone.tenant_id, tombstone.deleted_at);
+        if (info.changes > 0) applied += 1;
+        else skipped += 1;
+        if (!note || tombstone.deleted_at < note.updated_at) continue;
+        deleteNote.run(tombstone.id);
+        deletedIds.add(tombstone.id);
+      }
+
+      for (const n of notes) {
+        const tombstone = getTombstoneVersion.get(n.id) as { deleted_at: string } | undefined;
+        if (tombstone && tombstone.deleted_at >= n.updated_at) {
+          skipped += 1;
+          continue;
+        }
+        const existing = getNoteVersion.get(n.id) as { updated_at: string } | undefined;
+        if (existing && existing.updated_at > n.updated_at) {
+          skipped += 1;
+          continue;
+        }
+        acceptedSources.add(n.id);
+        deleteTombstone.run(n.id, n.updated_at);
         const info = upsert.run(
           n.id,
           n.title,
@@ -355,28 +401,24 @@ export class LocalNoteStore implements INoteStore {
         if (info.changes > 0) applied += 1;
         else skipped += 1;
       }
-    });
 
-    for (let i = 0; i < notes.length; i += CHUNK) {
-      runNotes(notes.slice(i, i + CHUNK));
-    }
-
-    const existingIds = new Set(
-      (this.db.prepare('SELECT id FROM notes').all() as { id: string }[]).map(r => r.id),
-    );
-    const linkIns = this.db.prepare(
-      'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
-    );
-    const linkRows = links.filter(
-      l => existingIds.has(l.source_id) && existingIds.has(l.target_id),
-    );
-    const runLinks = this.db.transaction((chunk: typeof linkRows) => {
-      for (const l of chunk) {
-        linkIns.run(l.source_id, l.target_id);
+      for (const sourceId of acceptedSources) deleteLinks.run(sourceId);
+      const existingIds = new Set(
+        (this.db.prepare('SELECT id FROM notes').all() as { id: string }[]).map(row => row.id),
+      );
+      for (const link of links) {
+        if (acceptedSources.has(link.source_id) && existingIds.has(link.target_id)) {
+          insertLink.run(link.source_id, link.target_id);
+        }
       }
-    });
-    for (let i = 0; i < linkRows.length; i += CHUNK) {
-      runLinks(linkRows.slice(i, i + CHUNK));
+    })();
+
+    for (const id of deletedIds) {
+      try {
+        fs.unlinkSync(path.join(this.vaultPath, `${id}.md`));
+      } catch {
+        /* missing */
+      }
     }
 
     for (const n of notes) {
@@ -399,6 +441,7 @@ export class LocalNoteStore implements INoteStore {
       }
     }
     this.db.prepare('DELETE FROM notes WHERE tenant_id = ?').run(tenantId);
+    this.db.prepare('DELETE FROM note_tombstones WHERE tenant_id = ?').run(tenantId);
   }
 
   close(): void {

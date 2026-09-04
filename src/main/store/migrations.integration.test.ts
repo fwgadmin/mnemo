@@ -6,7 +6,7 @@ import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LocalNoteStore } from './NoteStore';
 import { TursoNoteStore } from './TursoNoteStore';
-import { CURRENT_NOTE_SCHEMA_VERSION } from './migrations';
+import { NOTE_STORE_MIGRATIONS } from './migrations';
 
 const cleanupDirectories: string[] = [];
 
@@ -49,7 +49,7 @@ describe('note-store migrations', () => {
     const first = migrationVersions(dbPath);
     new LocalNoteStore(dbPath, path.join(root, 'vault')).close();
 
-    expect(first.map(row => row.version)).toEqual([1, 2, CURRENT_NOTE_SCHEMA_VERSION]);
+    expect(first.map(row => row.version)).toEqual(NOTE_STORE_MIGRATIONS.map(migration => migration.version));
     expect(migrationVersions(dbPath)).toEqual(first);
     expect(backupPaths(root)).toEqual([]);
   });
@@ -174,7 +174,7 @@ describe('note-store migrations', () => {
       hide_header: 1,
     };
 
-    await local.importNotesAdditiveFromRemote([row], []);
+    await local.importNotesFromRemote([row], []);
     await remote.importNotes([row], []);
 
     expect(fs.readFileSync(path.join(localVault, 'same-note.md'), 'utf8')).toBe(

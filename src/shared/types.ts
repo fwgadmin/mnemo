@@ -68,12 +68,32 @@ export interface GraphData {
 
 /**
  * Result of a sync operation.
- * - Push (local→Turso): `synced` is rows processed; `skipped` is unused (0).
- * - Pull (Turso→local): `synced` is rows updated/inserted; `skipped` is rows left unchanged (local newer or tie).
+ * `synced` counts applied note/deletion events; `skipped` counts stale or unchanged events.
+ * Exact link replacement for an accepted but unchanged note does not increment `synced`.
  */
 export interface SyncResult {
   synced: number;
   skipped: number;
+}
+
+/** Database-shaped note event used by local ↔ libSQL synchronization. */
+export interface SyncNoteRow {
+  id: string;
+  title: string;
+  body: string;
+  tags: string;
+  tenant_id: string;
+  created_at: string;
+  updated_at: string;
+  ref: number | null;
+  hide_header: number;
+}
+
+/** Durable deletion event. Kept until the supported-client protocol floor permits bounded cleanup. */
+export interface NoteTombstoneRow {
+  id: string;
+  tenant_id: string;
+  deleted_at: string;
 }
 
 /**
@@ -281,7 +301,7 @@ export const IPC = {
   CONFIG_SAVE: 'config:save',
   CONFIG_STORE_TYPE: 'config:storeType',
   CONFIG_SYNC_LOCAL: 'config:syncLocal',
-  /** Merge remote libSQL rows into local bootstrap mnemo.db + vault (additive; same semantics as `mnemo sync pull`). */
+  /** Merge remote note/deletion events and exact links into local bootstrap storage. */
   CONFIG_SYNC_PULL_LOCAL: 'config:syncPullLocal',
   // UI preferences (disk + MCP)
   UI_PREFERENCES_READ: 'uiPreferences:read',

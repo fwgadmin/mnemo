@@ -213,6 +213,10 @@ export async function createNote(client: Client, input: CreateNoteInput): Promis
 
   const note = await getNote(client, id);
   if (!note) throw new Error('createNote: inserted row not read back');
+  await client.execute({
+    sql: 'DELETE FROM note_tombstones WHERE id = ? AND deleted_at < ?',
+    args: [id, now],
+  });
   return note;
 }
 
@@ -230,17 +234,44 @@ export async function updateNote(client: Client, input: UpdateNoteInput): Promis
     sql: `UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ?, hide_header = ? WHERE id = ?`,
     args: [title, body, JSON.stringify(tags), now, hideHeader ? 1 : 0, input.id],
   });
+  await client.execute({
+    sql: 'DELETE FROM note_tombstones WHERE id = ? AND deleted_at < ?',
+    args: [input.id, now],
+  });
 
   const note = await getNote(client, input.id);
   return note;
 }
 
-export async function deleteNote(client: Client, id: string): Promise<boolean> {
-  const result = await client.execute({
-    sql: 'DELETE FROM notes WHERE id = ?',
+export async function deleteNote(
+  client: Client,
+  id: string,
+  tenantId?: string,
+  deletedAt: string = new Date().toISOString(),
+): Promise<boolean> {
+  const existing = await client.execute({
+    sql: 'SELECT tenant_id, updated_at FROM notes WHERE id = ?',
     args: [id],
   });
-  return (result.rowsAffected ?? 0) > 0;
+  const row = existing.rows[0];
+  if (row && (row['updated_at'] as string) > deletedAt) return false;
+  const tenant = (row?.['tenant_id'] as string | undefined) ?? tenantId;
+  if (!tenant) return false;
+  const results = await client.batch([
+    {
+      sql: `INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+            WHERE excluded.deleted_at > note_tombstones.deleted_at`,
+      args: [id, tenant, deletedAt],
+    },
+    {
+      sql: `DELETE FROM note_links WHERE (source_id = ? OR target_id = ?)
+            AND EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at <= ?)`,
+      args: [id, id, id, deletedAt],
+    },
+    { sql: 'DELETE FROM notes WHERE id = ? AND updated_at <= ?', args: [id, deletedAt] },
+  ], 'write');
+  return (results[2]?.rowsAffected ?? 0) > 0;
 }
 
 /** Mirrors desktop TursoNoteStore — same key as `ui-preferences` cloud sync (`ui_preferences`). */

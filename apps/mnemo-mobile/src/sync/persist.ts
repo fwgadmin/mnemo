@@ -171,7 +171,7 @@ export async function persistNoteDelete(
 
   if (client && isOnline) {
     try {
-      await deleteNote(client, noteId);
+      await deleteNote(client, noteId, tenantId);
     } catch {
       await enqueueDelete(tenantId, noteId);
     }

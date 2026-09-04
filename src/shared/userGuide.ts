@@ -194,7 +194,7 @@ HELP SECTIONS (read these next)
   mnemo help topics      List section names
   mnemo help vault       Paths, --db/--vault, every vault command and flag
   mnemo help workspace   Vault profiles, tenant id, workspace-profiles.json, CLI commands
-  mnemo help sync        mnemo sync push / pull, additive rules, GUI buttons
+  mnemo help sync        mnemo sync push / pull, timestamp conflict rules, GUI buttons
   mnemo help mcp         MCP stdio: options, resources, tools
   mnemo help config      ~/.config/mnemo/cli.json and JSON output
   mnemo help desktop     Graphical app and keyboard shortcuts
@@ -233,7 +233,8 @@ function sectionRemoteDb(): string {
 
 function sectionSync(): string {
   return `SYNC (local ↔ remote libSQL)
-  Non-destructive: no deletes on either side. Notes merge by id using newer \`updated_at\`; links use INSERT OR IGNORE only.
+  Notes and deletion tombstones merge by timestamp, so deletes propagate without overwriting a newer recreation.
+  Outgoing links are replaced exactly for each accepted note version, so removed links stay removed.
 
   CLI (same remote credential rules as \`mnemo help vault\` — config, env, or flags)
   mnemo sync push [--db <path>] [--workspace <id|index>] [--turso-url …] [--turso-token …]
@@ -486,7 +487,7 @@ function sectionDesktop(): string {
     Markdown      Spell check / autocomplete toggles, editor font/CSS variables for preview
     Summary & LLM Optional local LLM profiles (OpenAI-compatible, Ollama, Anthropic, Gemini), guardrails, Copy/Paste as summary
     Workspace     Folder sync (markdown import), vault list, storage overrides, create/archive/restore/delete vaults
-    Database      libSQL URL/token, save/reconnect, upload + download (additive sync), hosted/self-hosted help
+    Database      libSQL URL/token, save/reconnect, upload + download sync, hosted/self-hosted help
 
   In-app documentation: Help → Documentation (this file in the app).
 

@@ -15,6 +15,8 @@ import type {
   SearchResult,
   INoteStore,
   VaultSnapshot,
+  SyncNoteRow,
+  NoteTombstoneRow,
 } from '../../shared/types';
 import { parseStoredTags } from '../../shared/noteTags';
 import { migrateRemoteNoteDatabase } from './migrations';
@@ -141,11 +143,24 @@ export class TursoNoteStore implements INoteStore {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.client.execute({
-      sql: 'DELETE FROM notes WHERE id = ?',
+    const existing = await this.client.execute({
+      sql: 'SELECT tenant_id FROM notes WHERE id = ?',
       args: [id],
     });
-    if ((result.rowsAffected ?? 0) > 0) {
+    const tenantId = existing.rows[0]?.['tenant_id'] as string | undefined;
+    if (!tenantId) return false;
+    const deletedAt = new Date().toISOString();
+    const results = await this.client.batch([
+      {
+        sql: `INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+              WHERE excluded.deleted_at > note_tombstones.deleted_at`,
+        args: [id, tenantId, deletedAt],
+      },
+      { sql: 'DELETE FROM note_links WHERE source_id = ? OR target_id = ?', args: [id, id] },
+      { sql: 'DELETE FROM notes WHERE id = ?', args: [id] },
+    ], 'write');
+    if ((results[2]?.rowsAffected ?? 0) > 0) {
       if (this.vaultPath) {
         const filePath = path.join(this.vaultPath, `${id}.md`);
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -420,36 +435,31 @@ export class TursoNoteStore implements INoteStore {
       sql: 'DELETE FROM notes WHERE tenant_id = ?',
       args: [tenantId],
     });
+    await this.client.execute({
+      sql: 'DELETE FROM note_tombstones WHERE tenant_id = ?',
+      args: [tenantId],
+    });
   }
 
   /** No-op: HTTP client has no persistent connection to tear down. */
   close(): void { /* no-op */ }
 
   /**
-   * Full export of notes + links for additive merge into another store (e.g. local SQLite snapshot).
+   * Full export of notes, links, and deletion tombstones for synchronization.
    */
   async exportAllNotesAndLinks(): Promise<{
-    notes: Array<{
-      id: string;
-      title: string;
-      body: string;
-      tags: string;
-      tenant_id: string;
-      created_at: string;
-      updated_at: string;
-      ref: number | null;
-      hide_header: number;
-    }>;
+    notes: SyncNoteRow[];
     links: Array<{ source_id: string; target_id: string }>;
+    tombstones: NoteTombstoneRow[];
   }> {
-    const notesR = await this.client.execute({
-      sql: 'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',
-      args: [],
-    });
-    const linksR = await this.client.execute({
-      sql: 'SELECT source_id, target_id FROM note_links',
-      args: [],
-    });
+    const [notesR, linksR, tombstonesR] = await Promise.all([
+      this.client.execute({
+        sql: 'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',
+        args: [],
+      }),
+      this.client.execute({ sql: 'SELECT source_id, target_id FROM note_links', args: [] }),
+      this.client.execute({ sql: 'SELECT id, tenant_id, deleted_at FROM note_tombstones', args: [] }),
+    ]);
     const notes = notesR.rows.map(row => ({
       id: row['id'] as string,
       title: row['title'] as string,
@@ -465,75 +475,158 @@ export class TursoNoteStore implements INoteStore {
       source_id: row['source_id'] as string,
       target_id: row['target_id'] as string,
     }));
-    return { notes, links };
+    const tombstones = tombstonesR.rows.map(row => ({
+      id: row['id'] as string,
+      tenant_id: row['tenant_id'] as string,
+      deleted_at: row['deleted_at'] as string,
+    }));
+    return { notes, links, tombstones };
   }
 
   /**
    * Bulk-upsert notes from another store (e.g. local SQLite) into Turso.
    * Uses "last-write-wins by updated_at" — existing Turso notes are only
    * overwritten if the incoming version is newer.
-   * Links are inserted with INSERT OR IGNORE (additive, never deleted).
+   * Deletion tombstones participate in the same timestamp ordering. Links are replaced exactly for accepted notes.
    */
   async importNotes(
-    notes: Array<{
-      id: string;
-      title: string;
-      body: string;
-      tags: string;
-      tenant_id: string;
-      created_at: string;
-      updated_at: string;
-      ref: number | null;
-      hide_header: number;
-    }>,
+    notes: SyncNoteRow[],
     links: Array<{ source_id: string; target_id: string }>,
+    tombstones: NoteTombstoneRow[] = [],
   ): Promise<{ synced: number; skipped: number }> {
-    if (notes.length === 0) return { synced: 0, skipped: 0 };
+    if (notes.length === 0 && tombstones.length === 0) return { synced: 0, skipped: 0 };
 
-    let synced = 0;
-    const CHUNK = 50;
-
-    // Upsert notes in chunks to stay within libSQL batch limits
-    for (let i = 0; i < notes.length; i += CHUNK) {
-      const chunk = notes.slice(i, i + CHUNK);
-      const statements = chunk.map(n => ({
-        sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(id) DO UPDATE SET
-                title       = excluded.title,
-                body        = excluded.body,
-                tags        = excluded.tags,
-                updated_at  = excluded.updated_at,
-                ref         = COALESCE(excluded.ref, notes.ref),
-                hide_header = excluded.hide_header
-              WHERE excluded.updated_at > notes.updated_at`,
-        args: [
-          n.id,
-          n.title,
-          n.body,
-          n.tags,
-          n.tenant_id,
-          n.created_at,
-          n.updated_at,
-          n.ref,
-          n.hide_header ?? 0,
-        ] as import('@libsql/client').InValue[],
-      }));
-      await this.client.batch(statements, 'write');
-      synced += chunk.length;
-    }
-
-    // Additive link sync — never remove existing Turso links
-    if (links.length > 0) {
-      for (let i = 0; i < links.length; i += CHUNK) {
-        const chunk = links.slice(i, i + CHUNK);
-        const statements = chunk.map(l => ({
-          sql: 'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
-          args: [l.source_id, l.target_id] as import('@libsql/client').InValue[],
-        }));
-        await this.client.batch(statements, 'write');
+    const eventIds = [...new Set([...notes.map(note => note.id), ...tombstones.map(row => row.id)])];
+    const existingNotes = new Map<string, string>();
+    const existingTombstones = new Map<string, string>();
+    for (let offset = 0; offset < eventIds.length; offset += 100) {
+      const ids = eventIds.slice(offset, offset + 100);
+      const placeholders = ids.map(() => '?').join(', ');
+      const [noteRows, tombstoneRows] = await Promise.all([
+        this.client.execute({
+          sql: `SELECT id, updated_at FROM notes WHERE id IN (${placeholders})`,
+          args: ids,
+        }),
+        this.client.execute({
+          sql: `SELECT id, deleted_at FROM note_tombstones WHERE id IN (${placeholders})`,
+          args: ids,
+        }),
+      ]);
+      for (const row of noteRows.rows) {
+        existingNotes.set(row['id'] as string, row['updated_at'] as string);
+      }
+      for (const row of tombstoneRows.rows) {
+        existingTombstones.set(row['id'] as string, row['deleted_at'] as string);
       }
     }
+    const incomingTombstones = new Map<string, string>();
+    for (const tombstone of tombstones) {
+      const current = incomingTombstones.get(tombstone.id);
+      if (!current || tombstone.deleted_at > current) incomingTombstones.set(tombstone.id, tombstone.deleted_at);
+    }
+    const incomingNotes = new Map(notes.map(note => [note.id, note]));
+    const acceptedNotes = notes.filter(note => {
+      const newestTombstone = [existingTombstones.get(note.id), incomingTombstones.get(note.id)]
+        .filter((value): value is string => Boolean(value))
+        .sort()
+        .at(-1);
+      return (!newestTombstone || note.updated_at > newestTombstone) &&
+        (!existingNotes.get(note.id) || note.updated_at >= existingNotes.get(note.id)!);
+    });
+    const acceptedTombstones = tombstones.filter(tombstone => {
+      const incomingNote = incomingNotes.get(tombstone.id);
+      return (!incomingNote || tombstone.deleted_at >= incomingNote.updated_at) &&
+        (!existingNotes.get(tombstone.id) || tombstone.deleted_at >= existingNotes.get(tombstone.id)!) &&
+        (!existingTombstones.get(tombstone.id) || tombstone.deleted_at > existingTombstones.get(tombstone.id)!);
+    });
+    const synced = acceptedNotes.filter(note => existingNotes.get(note.id) !== note.updated_at).length +
+      acceptedTombstones.length;
+    const skipped = notes.length + tombstones.length - synced;
+    const MAX_STATEMENTS = 200;
+    let statements: Array<{ sql: string; args: import('@libsql/client').InValue[] }> = [];
+    const flush = async () => {
+      if (statements.length === 0) return;
+      await this.client.batch(statements, 'write');
+      statements = [];
+    };
+    const append = async (group: typeof statements) => {
+      if (statements.length && statements.length + group.length > MAX_STATEMENTS) await flush();
+      statements.push(...group);
+    };
+
+    for (const tombstone of acceptedTombstones) {
+      await append([
+        {
+          sql: `INSERT INTO note_tombstones (id, tenant_id, deleted_at)
+                SELECT ?, ?, ? WHERE NOT EXISTS (
+                  SELECT 1 FROM notes WHERE id = ? AND updated_at > ?
+                )
+                ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+                WHERE excluded.deleted_at > note_tombstones.deleted_at`,
+          args: [tombstone.id, tombstone.tenant_id, tombstone.deleted_at, tombstone.id, tombstone.deleted_at],
+        },
+        {
+          sql: `DELETE FROM note_links WHERE (source_id = ? OR target_id = ?)
+                AND EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at <= ?)`,
+          args: [tombstone.id, tombstone.id, tombstone.id, tombstone.deleted_at],
+        },
+        {
+          sql: 'DELETE FROM notes WHERE id = ? AND updated_at <= ?',
+          args: [tombstone.id, tombstone.deleted_at],
+        },
+      ]);
+    }
+    for (const note of acceptedNotes) {
+      await append([
+        {
+          sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                WHERE NOT EXISTS (SELECT 1 FROM note_tombstones WHERE id = ? AND deleted_at >= ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  title = excluded.title, body = excluded.body, tags = excluded.tags,
+                  updated_at = excluded.updated_at, ref = COALESCE(excluded.ref, notes.ref),
+                  hide_header = excluded.hide_header
+                WHERE excluded.updated_at > notes.updated_at`,
+          args: [note.id, note.title, note.body, note.tags, note.tenant_id, note.created_at,
+            note.updated_at, note.ref, note.hide_header ?? 0, note.id, note.updated_at],
+        },
+        { sql: 'DELETE FROM note_tombstones WHERE id = ? AND deleted_at < ?', args: [note.id, note.updated_at] },
+      ]);
+    }
+    await flush();
+
+    if (this.vaultPath) {
+      for (const tombstone of acceptedTombstones) {
+        try {
+          fs.unlinkSync(path.join(this.vaultPath, `${tombstone.id}.md`));
+        } catch {
+          /* missing */
+        }
+      }
+    }
+
+    const linksBySource = new Map<string, string[]>();
+    for (const link of links) {
+      const targets = linksBySource.get(link.source_id) ?? [];
+      targets.push(link.target_id);
+      linksBySource.set(link.source_id, targets);
+    }
+    for (const note of acceptedNotes) {
+      await append([{
+        sql: `DELETE FROM note_links WHERE source_id = ?
+              AND EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at <= ?)`,
+        args: [note.id, note.id, note.updated_at],
+      }]);
+      for (const targetId of linksBySource.get(note.id) ?? []) {
+        await append([{
+          sql: `INSERT OR IGNORE INTO note_links (source_id, target_id)
+                SELECT ?, ? WHERE EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at <= ?)
+                AND EXISTS (SELECT 1 FROM notes WHERE id = ?)`,
+          args: [note.id, targetId, note.id, note.updated_at, targetId],
+        }]);
+      }
+    }
+    await flush();
 
     if (this.vaultPath) {
       for (const incoming of notes) {
@@ -542,7 +635,7 @@ export class TursoNoteStore implements INoteStore {
       }
     }
 
-    return { synced, skipped: 0 };
+    return { synced, skipped };
   }
 
   private rowToNote(id: string, row: Record<string, unknown>, links: string[]): Note {

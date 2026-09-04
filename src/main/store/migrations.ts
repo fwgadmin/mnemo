@@ -3,7 +3,14 @@ import type { Client, InValue } from '@libsql/client';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const CURRENT_NOTE_SCHEMA_VERSION = 3;
+export const CURRENT_NOTE_SCHEMA_VERSION = 4;
+
+/** Cleanup remains disabled until the minimum supported released client understands tombstones. */
+export const NOTE_TOMBSTONE_RETENTION_POLICY = Object.freeze({
+  minimumAgeDays: 90,
+  maximumRowsPerTenant: 10_000,
+  automaticCleanup: false,
+});
 
 export interface NoteStoreMigration {
   version: number;
@@ -15,6 +22,7 @@ export const NOTE_STORE_MIGRATIONS: readonly NoteStoreMigration[] = [
   { version: 1, name: 'core-schema' },
   { version: 2, name: 'note-refs' },
   { version: 3, name: 'hidden-note-headers' },
+  { version: 4, name: 'note-deletion-tombstones' },
 ];
 
 export const CORE_SCHEMA_STATEMENTS = [
@@ -46,6 +54,12 @@ export const CORE_SCHEMA_STATEMENTS = [
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS note_tombstones (
+    id         TEXT PRIMARY KEY,
+    tenant_id  TEXT NOT NULL,
+    deleted_at TEXT NOT NULL
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_note_tombstones_tenant ON note_tombstones(tenant_id, deleted_at)',
   'CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id)',
   'CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC)',
   'CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id)',
@@ -160,6 +174,13 @@ function applyLocalMigration(db: Database.Database, migration: NoteStoreMigratio
       if (!columns.has('hide_header')) {
         db.exec('ALTER TABLE notes ADD COLUMN hide_header INTEGER NOT NULL DEFAULT 0');
       }
+    } else if (migration.version === 4) {
+      db.exec(`CREATE TABLE IF NOT EXISTS note_tombstones (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, deleted_at TEXT NOT NULL
+      )`);
+      db.exec(
+        'CREATE INDEX IF NOT EXISTS idx_note_tombstones_tenant ON note_tombstones(tenant_id, deleted_at)',
+      );
     }
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)')
       .run(migration.version, appliedAt);
@@ -204,6 +225,15 @@ async function applyRemoteMigration(client: Client, migration: NoteStoreMigratio
     if (!columns.has('hide_header')) {
       statements.push({ sql: 'ALTER TABLE notes ADD COLUMN hide_header INTEGER NOT NULL DEFAULT 0' });
     }
+  } else if (migration.version === 4) {
+    statements.push({
+      sql: `CREATE TABLE IF NOT EXISTS note_tombstones (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, deleted_at TEXT NOT NULL
+      )`,
+    });
+    statements.push({
+      sql: 'CREATE INDEX IF NOT EXISTS idx_note_tombstones_tenant ON note_tombstones(tenant_id, deleted_at)',
+    });
   }
   statements.push({
     sql: 'INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)',
