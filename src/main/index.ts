@@ -30,6 +30,7 @@ import { resolveActiveProfile } from '../shared/llmProfile';
 import { readLlmConfig, writeLlmConfig, sanitizeLlmSettings, effectiveGuardrails } from './llm/llmConfig';
 import { summarizeWithProfile } from './llm/summarizeWithProfile';
 import type { CreateNoteInput, SaveNoteInput, UpdateNoteInput } from '../shared/types';
+import { validateBulkDeleteIds, validateCategoryMoveInput } from './categoryBulk';
 import { createMcpServer } from './mcp/server';
 import { mergeAndWriteUiPreferencesAsync, readUiPreferencesMerged } from './uiPreferences';
 import {
@@ -610,6 +611,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.NOTE_SAVE, async (_event, input: SaveNoteInput) => {
     const ctx = await ensureActiveContext();
     return saveNoteWithOutgoingLinks(ctx.store, input, ctx.tenantId);
+  });
+
+  ipcMain.handle(IPC.NOTE_MOVE_CATEGORY, async (_event, raw: unknown) => {
+    const input = validateCategoryMoveInput(raw);
+    const ctx = await ensureActiveContext();
+    return ctx.store.moveCategoryPrefix(input, ctx.tenantId);
+  });
+
+  ipcMain.handle(IPC.NOTE_DELETE_MANY, async (_event, rawIds: unknown) => {
+    const ids = validateBulkDeleteIds(rawIds);
+    const ctx = await ensureActiveContext();
+    return ctx.store.deleteNotes(ids, ctx.tenantId);
   });
 
   ipcMain.handle(IPC.NOTE_DELETE, async (_event, id: string) => {

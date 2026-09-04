@@ -19,7 +19,14 @@ import type {
   VaultSnapshot,
   SyncNoteRow,
   NoteTombstoneRow,
+  CategoryMoveInput,
+  BulkMutationResult,
 } from '../../shared/types';
+import {
+  categoryPathForMutation,
+  normalizeCategoryMutationPath,
+  tagsForCategoryMove,
+} from '../../shared/categoryMutation';
 import { parseStoredTags } from '../../shared/noteTags';
 import { migrateRemoteNoteDatabase } from './migrations';
 import { serializeNoteMarkdown } from './noteMarkdown';
@@ -34,6 +41,8 @@ function isTenantRefUniqueConstraint(err: unknown): boolean {
   const msg = parts.join(' ');
   return msg.includes('UNIQUE constraint failed') && (msg.includes('notes.ref') || msg.includes('tenant_id'));
 }
+
+const BULK_MUTATION_CHUNK_SIZE = 100;
 
 /**
  * Remote async store via @libsql/client (Turso Cloud, self-hosted libSQL/sqld, or any compatible endpoint).
@@ -205,6 +214,119 @@ export class TursoNoteStore implements INoteStore {
         hideHeader: note.hideHeader,
       },
     };
+  }
+
+  async moveCategoryPrefix(
+    input: CategoryMoveInput,
+    tenantId: string = 'default',
+  ): Promise<BulkMutationResult> {
+    const notes = await this.listNotes(tenantId);
+    const hasAssigned = notes.some(note => !!normalizeCategoryMutationPath(note.tags[0] ?? ''));
+    const updates = notes.flatMap(note => {
+      const currentPath = categoryPathForMutation(note.tags, hasAssigned);
+      const tags = tagsForCategoryMove(
+        note.tags,
+        currentPath,
+        input.sourcePath,
+        input.targetPath,
+        input.includeDescendants,
+      );
+      if (!tags) return [];
+      const modified = new Date(Math.max(Date.now(), Date.parse(note.modified) + 1)).toISOString();
+      return [{ note: { ...note, tags, modified } }];
+    });
+    const failures: BulkMutationResult['failures'] = [];
+    const changes: BulkMutationResult['changes'] = [];
+    let affected = 0;
+    for (let offset = 0; offset < updates.length; offset += BULK_MUTATION_CHUNK_SIZE) {
+      const chunk = updates.slice(offset, offset + BULK_MUTATION_CHUNK_SIZE);
+      try {
+        const results = await this.client.batch(
+          chunk.map(({ note }) => ({
+            sql: 'UPDATE notes SET tags = ?, updated_at = ? WHERE id = ? AND tenant_id = ?',
+            args: [JSON.stringify(note.tags), note.modified, note.id, tenantId],
+          })),
+          'write',
+        );
+        for (let index = 0; index < chunk.length; index++) {
+          const { note } = chunk[index]!;
+          if ((results[index]?.rowsAffected ?? 0) !== 1) {
+            failures.push({ id: note.id, error: 'Note changed during category move.' });
+            continue;
+          }
+          affected++;
+          changes.push({ id: note.id, modified: note.modified, tags: note.tags });
+          try {
+            this.writeMdFile(note);
+          } catch (error) {
+            failures.push({ id: note.id, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(...chunk.map(({ note }) => ({ id: note.id, error: message })));
+      }
+    }
+    return {
+      requested: updates.length,
+      affected,
+      affectedIds: changes.map(change => change.id),
+      failures,
+      changes,
+    };
+  }
+
+  async deleteNotes(ids: string[], tenantId: string = 'default'): Promise<BulkMutationResult> {
+    const requestedIds = [...new Set(ids)];
+    if (requestedIds.length === 0) return { requested: 0, affected: 0, affectedIds: [], failures: [], changes: [] };
+    const existing = new Set((await this.list(tenantId)).map(note => note.id));
+    const found = requestedIds.filter(id => existing.has(id));
+    const failures = requestedIds
+      .filter(id => !existing.has(id))
+      .map(id => ({ id, error: 'Note not found in the active workspace.' }));
+    let affected = 0;
+    const affectedIds: string[] = [];
+    for (let offset = 0; offset < found.length; offset += BULK_MUTATION_CHUNK_SIZE) {
+      const chunk = found.slice(offset, offset + BULK_MUTATION_CHUNK_SIZE);
+      const deletedAt = new Date().toISOString();
+      const statements: import('@libsql/client').InStatement[] = [];
+      for (const id of chunk) {
+        statements.push(
+          {
+            sql: `INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+                  WHERE excluded.deleted_at > note_tombstones.deleted_at`,
+            args: [id, tenantId, deletedAt],
+          },
+          { sql: 'DELETE FROM note_links WHERE source_id = ? OR target_id = ?', args: [id, id] },
+          { sql: 'DELETE FROM notes WHERE id = ? AND tenant_id = ?', args: [id, tenantId] },
+        );
+      }
+      try {
+        const results = await this.client.batch(statements, 'write');
+        for (let index = 0; index < chunk.length; index++) {
+          const id = chunk[index]!;
+          if ((results[index * 3 + 2]?.rowsAffected ?? 0) !== 1) {
+            failures.push({ id, error: 'Note changed during deletion.' });
+            continue;
+          }
+          affected++;
+          affectedIds.push(id);
+          if (this.vaultPath) {
+            try {
+              const filePath = path.join(this.vaultPath, `${id}.md`);
+              if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            } catch (error) {
+              failures.push({ id, error: error instanceof Error ? error.message : String(error) });
+            }
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(...chunk.map(id => ({ id, error: message })));
+      }
+    }
+    return { requested: requestedIds.length, affected, affectedIds, failures, changes: [] };
   }
 
   async delete(id: string): Promise<boolean> {
