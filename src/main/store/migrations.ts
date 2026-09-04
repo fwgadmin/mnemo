@@ -3,7 +3,7 @@ import type { Client, InValue } from '@libsql/client';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const CURRENT_NOTE_SCHEMA_VERSION = 4;
+export const CURRENT_NOTE_SCHEMA_VERSION = 5;
 
 /** Cleanup remains disabled until the minimum supported released client understands tombstones. */
 export const NOTE_TOMBSTONE_RETENTION_POLICY = Object.freeze({
@@ -23,6 +23,7 @@ export const NOTE_STORE_MIGRATIONS: readonly NoteStoreMigration[] = [
   { version: 2, name: 'note-refs' },
   { version: 3, name: 'hidden-note-headers' },
   { version: 4, name: 'note-deletion-tombstones' },
+  { version: 5, name: 'tenant-list-indexes' },
 ];
 
 export const CORE_SCHEMA_STATEMENTS = [
@@ -62,6 +63,9 @@ export const CORE_SCHEMA_STATEMENTS = [
   'CREATE INDEX IF NOT EXISTS idx_note_tombstones_tenant ON note_tombstones(tenant_id, deleted_at)',
   'CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id)',
   'CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_notes_tenant_updated ON notes(tenant_id, updated_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_notes_tenant_created ON notes(tenant_id, created_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_notes_tenant_title ON notes(tenant_id, title COLLATE NOCASE)',
   'CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id)',
   `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     title, body, tags, content='notes', content_rowid='rowid'
@@ -181,6 +185,10 @@ function applyLocalMigration(db: Database.Database, migration: NoteStoreMigratio
       db.exec(
         'CREATE INDEX IF NOT EXISTS idx_note_tombstones_tenant ON note_tombstones(tenant_id, deleted_at)',
       );
+    } else if (migration.version === 5) {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_notes_tenant_updated ON notes(tenant_id, updated_at DESC)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_notes_tenant_created ON notes(tenant_id, created_at DESC)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_notes_tenant_title ON notes(tenant_id, title COLLATE NOCASE)');
     }
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)')
       .run(migration.version, appliedAt);
@@ -234,6 +242,12 @@ async function applyRemoteMigration(client: Client, migration: NoteStoreMigratio
     statements.push({
       sql: 'CREATE INDEX IF NOT EXISTS idx_note_tombstones_tenant ON note_tombstones(tenant_id, deleted_at)',
     });
+  } else if (migration.version === 5) {
+    statements.push(
+      { sql: 'CREATE INDEX IF NOT EXISTS idx_notes_tenant_updated ON notes(tenant_id, updated_at DESC)' },
+      { sql: 'CREATE INDEX IF NOT EXISTS idx_notes_tenant_created ON notes(tenant_id, created_at DESC)' },
+      { sql: 'CREATE INDEX IF NOT EXISTS idx_notes_tenant_title ON notes(tenant_id, title COLLATE NOCASE)' },
+    );
   }
   statements.push({
     sql: 'INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)',

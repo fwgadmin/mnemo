@@ -59,7 +59,7 @@ export async function getNote(client: Client, id: string): Promise<Note | null> 
 
 export async function listNotes(client: Client, tenantId: string = 'default'): Promise<NoteListItem[]> {
   const result = await client.execute({
-    sql: `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header
+    sql: `SELECT ref, id, title, substr(body, 1, 120) AS snippet, tags, created_at, updated_at, hide_header
           FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC`,
     args: [tenantId],
   });
@@ -70,7 +70,7 @@ export async function listNotes(client: Client, tenantId: string = 'default'): P
     tags: parseStoredTags(row['tags']),
     created: row['created_at'] as string,
     modified: row['updated_at'] as string,
-    snippet: (row['body'] as string).substring(0, 120),
+    snippet: row['snippet'] as string,
     hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
   }));
 }
@@ -148,7 +148,7 @@ export async function searchNotes(
 
 export async function getBacklinks(client: Client, noteId: string): Promise<NoteListItem[]> {
   const result = await client.execute({
-    sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at
+    sql: `SELECT n.ref, n.id, n.title, substr(n.body, 1, 120) AS snippet, n.tags, n.created_at, n.updated_at
           FROM note_links nl
           JOIN notes n ON n.id = nl.source_id
           WHERE nl.target_id = ?
@@ -162,7 +162,7 @@ export async function getBacklinks(client: Client, noteId: string): Promise<Note
     tags: parseStoredTags(row['tags']),
     created: row['created_at'] as string,
     modified: row['updated_at'] as string,
-    snippet: (row['body'] as string).substring(0, 120),
+    snippet: row['snippet'] as string,
   }));
 }
 

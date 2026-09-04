@@ -132,7 +132,7 @@ export class LocalNoteStore implements INoteStore {
 
   list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const rows = this.db.prepare(
-      'SELECT ref, id, title, body, tags, created_at, updated_at, hide_header FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
+      'SELECT ref, id, title, substr(body, 1, 120) AS snippet, tags, created_at, updated_at, hide_header FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
     ).all(tenantId) as any[];
 
     return Promise.resolve(rows.map(row => ({
@@ -142,7 +142,7 @@ export class LocalNoteStore implements INoteStore {
       tags: parseStoredTags(row.tags),
       created: row.created_at,
       modified: row.updated_at,
-      snippet: row.body.substring(0, 120),
+      snippet: row.snippet,
       hideHeader: (row.hide_header ?? 0) === 1,
     })));
   }
@@ -220,7 +220,7 @@ export class LocalNoteStore implements INoteStore {
 
   getBacklinks(noteId: string): Promise<NoteListItem[]> {
     const rows = this.db.prepare(`
-      SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at
+      SELECT n.ref, n.id, n.title, substr(n.body, 1, 120) AS snippet, n.tags, n.created_at, n.updated_at
       FROM note_links nl
       JOIN notes n ON n.id = nl.source_id
       WHERE nl.target_id = ?
@@ -234,7 +234,7 @@ export class LocalNoteStore implements INoteStore {
       tags: parseStoredTags(row.tags),
       created: row.created_at,
       modified: row.updated_at,
-      snippet: row.body.substring(0, 120),
+      snippet: row.snippet,
     })));
   }
 

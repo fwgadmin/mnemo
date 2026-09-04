@@ -24,7 +24,7 @@ describe('TursoNoteStore data contracts', () => {
     const target = await store.create({ title: 'Remote Target', body: 'Destination', tags: ['Reference'] });
     const source = await store.create({
       title: 'Remote Source',
-      body: 'remote contract needle',
+      body: `remote contract needle\n![large](data:image/png;base64,${'A'.repeat(1_000_000)})`,
       tags: ['Work', 'Work/Remote'],
     });
     await store.updateLinks(source.id, [target.id]);
@@ -37,7 +37,10 @@ describe('TursoNoteStore data contracts', () => {
       });
 
       expect((await store.read(source.id))?.tags).toEqual([]);
-      expect((await store.list()).find(note => note.id === source.id)?.tags).toEqual([]);
+      const list = await store.list();
+      expect(list.find(note => note.id === source.id)?.tags).toEqual([]);
+      expect(list.find(note => note.id === source.id)?.snippet).toHaveLength(120);
+      expect(JSON.stringify(list).length).toBeLessThan(2_000);
       expect((await store.search('remote contract'))[0]).toMatchObject({
         id: source.id,
         tags: [],

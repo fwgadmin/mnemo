@@ -83,4 +83,41 @@ describe('LocalNoteStore', () => {
       store.close();
     }
   });
+
+  it('keeps list payloads bounded for embedded media and uses tenant sort indexes', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mnemo-store-list-plan-test-'));
+    cleanupDirectories.push(root);
+    const dbPath = path.join(root, 'mnemo.db');
+    const store = new LocalNoteStore(dbPath, path.join(root, 'vault'));
+
+    try {
+      const prefix = '![large](data:image/png;base64,';
+      await store.create({ title: 'Large media', body: `${prefix}${'A'.repeat(2_000_000)})`, tags: ['Media'] });
+      const list = await store.list();
+      expect(list).toHaveLength(1);
+      expect(list[0]?.snippet).toHaveLength(120);
+      expect(list[0]?.snippet.startsWith(prefix)).toBe(true);
+      expect(JSON.stringify(list).length).toBeLessThan(1_000);
+
+      const db = new Database(dbPath, { readonly: true });
+      try {
+        const plans = [
+          ['SELECT id FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC', 'idx_notes_tenant_updated'],
+          ['SELECT id FROM notes WHERE tenant_id = ? ORDER BY created_at DESC', 'idx_notes_tenant_created'],
+          ['SELECT id FROM notes WHERE tenant_id = ? ORDER BY title COLLATE NOCASE', 'idx_notes_tenant_title'],
+        ] as const;
+        for (const [sql, expectedIndex] of plans) {
+          const detail = (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all('default') as Array<{ detail: string }>)
+            .map(row => row.detail)
+            .join('\n');
+          expect(detail).toContain(expectedIndex);
+          expect(detail).not.toContain('USE TEMP B-TREE');
+        }
+      } finally {
+        db.close();
+      }
+    } finally {
+      store.close();
+    }
+  });
 });
