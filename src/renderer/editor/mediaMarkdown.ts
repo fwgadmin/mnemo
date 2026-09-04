@@ -23,7 +23,7 @@ export function parseMediaDataType(src: string | undefined): string | null {
 }
 
 export function parseMediaDisplayOptions(title: string | undefined): MediaDisplayOptions {
-  const width = /(?:^|;)w=(\d{1,3})(?:;|$)/.exec(title ?? '')?.[1];
+  const width = /(?:^|[:;])w=(\d{1,3})(?:;|$)/.exec(title ?? '')?.[1];
   const align = /(?:^|;)align=(left|center|right)(?:;|$)/.exec(title ?? '')?.[1] as MediaAlign | undefined;
   return {
     width: Math.max(10, Math.min(100, Number(width) || 80)),

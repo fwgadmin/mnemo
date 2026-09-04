@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Editor / media:** Fixed persisted media widths being read as the default 80% because the preview parser did not recognize Mnemo's own `mnemo:w=…` title prefix.
+- **Quality:** Added desktop unit and Electron-ABI integration test suites plus pull-request validation for desktop/mobile typechecks and CLI, MCP, and renderer builds.
 - **MCP / workspaces:** Each stdio MCP connection now owns its workspace selection. `--workspace` pins an agent to a vault, and `switch_workspace` retargets only that connection instead of changing `workspace-profiles.json` or another Codex window's target.
 - **Editor / media:** Paste, drop, or choose images, audio, video, PDF, and text attachments directly in note bodies. Rendered Preview provides controls for width, alignment, vertical movement, copy/cut, description changes, and deletion; embedded data stays with the Markdown note across local or remote databases.
 - **Categories:** New categories are automatically assigned theme-aware colors by default. Nested categories receive close, readable shades of their parent color; the new General setting can disable automatic colors without removing manual picks.
