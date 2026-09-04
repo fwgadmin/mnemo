@@ -134,6 +134,15 @@ export function sanitizePrefs(raw: unknown): MnemoUiPreferences {
   if (typeof o.editorAutocomplete === 'boolean') out.editorAutocomplete = o.editorAutocomplete;
   if (typeof o.grouped === 'boolean') out.grouped = o.grouped;
   if (typeof o.categoryScopeSubtree === 'boolean') out.categoryScopeSubtree = o.categoryScopeSubtree;
+  if (typeof o.autoColorCategories === 'boolean') out.autoColorCategories = o.autoColorCategories;
+
+  if (o.categorySortModes && typeof o.categorySortModes === 'object' && !Array.isArray(o.categorySortModes)) {
+    const modes: NonNullable<MnemoUiPreferences['categorySortModes']> = {};
+    for (const [path, mode] of Object.entries(o.categorySortModes)) {
+      if (mode === 'alphabetical' || mode === 'created-desc' || mode === 'created-asc') modes[path] = mode;
+    }
+    out.categorySortModes = modes;
+  }
 
   if (o.categoryColors && typeof o.categoryColors === 'object' && !Array.isArray(o.categoryColors)) {
     const cc: Record<string, string> = {};
@@ -367,6 +376,8 @@ export async function readUiPreferencesMerged(
       const raw = await store.getKv(prefsKvKey(workspaceId));
       if (raw) {
         const cloud = sanitizePrefs(JSON.parse(raw) as unknown);
+        // Filesystem roots are device-local capabilities and must never be granted by cloud data.
+        delete cloud.workspaceFolder;
         const merged = mergePrefs(disk, cloud);
         const cc = mergeCategoryColorDiskCloud(disk, cloud);
         return {
@@ -396,7 +407,8 @@ export async function mergeAndWriteUiPreferencesAsync(
   fs.mkdirSync(path.dirname(writePath), { recursive: true });
   fs.writeFileSync(writePath, JSON.stringify(merged, null, 2), 'utf-8');
   if (store instanceof TursoNoteStore) {
-    await store.setKv(prefsKvKey(workspaceId), JSON.stringify(merged));
+    const { workspaceFolder: _localFilesystemCapability, ...remoteSafe } = merged;
+    await store.setKv(prefsKvKey(workspaceId), JSON.stringify(remoteSafe));
   }
   return merged;
 }

@@ -6,6 +6,10 @@ import type {
   SearchResult,
   CreateNoteInput,
   UpdateNoteInput,
+  SaveNoteInput,
+  SaveNoteResult,
+  CategoryMoveInput,
+  BulkMutationResult,
   GraphData,
   AppConfig,
   SyncResult,
@@ -21,6 +25,9 @@ export interface MnemoAPI {
     create(input: CreateNoteInput): Promise<Note>;
     read(id: string): Promise<Note | null>;
     update(input: UpdateNoteInput): Promise<Note | null>;
+    save(input: SaveNoteInput): Promise<SaveNoteResult>;
+    moveCategory(input: CategoryMoveInput): Promise<BulkMutationResult>;
+    deleteMany(ids: string[]): Promise<BulkMutationResult>;
     delete(id: string): Promise<boolean>;
     list(tenantId?: string): Promise<NoteListItem[]>;
     vaultSnapshot(tenantId?: string): Promise<VaultSnapshot>;
@@ -34,18 +41,23 @@ export interface MnemoAPI {
   };
   file: {
     saveAs(data: { title: string; body: string }): Promise<{ saved: boolean; filePath?: string }>;
-    open(): Promise<Array<{ title: string; body: string; path: string }> | null>;
-    /** Read UTF-8 file at absolute path (IDE file tabs). */
-    readPath(absPath: string): Promise<string | null>;
-    /** Write UTF-8 to absolute path (IDE file tabs). */
-    writePath(absPath: string, body: string): Promise<boolean>;
+    open(): Promise<Array<{
+      title: string;
+      body: string;
+      path: string;
+      capabilityId: string;
+    }> | null>;
+    /** Reauthorize a persisted file path. Outside the workspace root this opens a native picker. */
+    authorizePath(absPath: string): Promise<{ path: string; body: string; capabilityId: string } | null>;
+    read(capabilityId: string): Promise<string | null>;
+    write(capabilityId: string, body: string): Promise<boolean>;
   };
   config: {
     read(): Promise<AppConfig>;
     save(cfg: AppConfig): Promise<boolean>;
     storeType(): Promise<'turso' | 'local'>;
     syncLocalNotes(): Promise<SyncResult>;
-    /** Turso → local bootstrap DB + vault; additive merge (last-write-wins per note id). */
+    /** Turso → local bootstrap DB + vault; timestamped note/deletion merge with exact outgoing links. */
     syncPullLocalNotes(): Promise<SyncResult>;
   };
   /**
@@ -70,44 +82,38 @@ export interface MnemoAPI {
   /** Toggle OS fullscreen (maps to F11 in renderer on Linux/Windows). */
   toggleFullscreen(): Promise<void>;
   workspace: {
-    chooseFolder(): Promise<
-      | { ok: true; path: string; imported: number; updated: number }
-      | { ok: false; path: null }
-    >;
-    sync(): Promise<
-      | { ok: true; imported: number; updated: number }
-      | { ok: false; error: string }
-    >;
+    chooseFolder(): Promise<{ ok: true; path: string; imported: number; updated: number } | { ok: false; path: null }>;
+    sync(): Promise<{ ok: true; imported: number; updated: number } | { ok: false; error: string }>;
   };
   /** Vault workspaces: shared DB + tenant_id, or optional dedicated sqlite/remote per profile. */
   workspaceProfiles: {
-    list(): Promise<
-      | { ok: true; localMode: boolean; profiles: WorkspaceProfilesState }
-      | { ok: false; error: string }
-    >;
+    list(): Promise<{ ok: true; localMode: boolean; profiles: WorkspaceProfilesState } | { ok: false; error: string }>;
     create(
       name: string,
       importFolder?: string | null,
     ): Promise<
-      | { ok: true; profiles: WorkspaceProfilesState; newWorkspaceId: string; imported?: number; updated?: number }
+      | {
+          ok: true;
+          profiles: WorkspaceProfilesState;
+          newWorkspaceId: string;
+          imported?: number;
+          updated?: number;
+        }
       | { ok: false; error: string }
     >;
     pickImportFolder(): Promise<{ ok: true; path: string } | { ok: false; path: null }>;
-    switchTo(id: string): Promise<
-      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
-    >;
-    setStorage(id: string, storage: WorkspaceStorage): Promise<
-      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
-    >;
-    archiveVault(id: string): Promise<
-      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
-    >;
-    deleteVault(id: string): Promise<
-      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
-    >;
-    renameVault(id: string, name: string): Promise<
-      { ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }
-    >;
+    switchTo(id: string): Promise<{ ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }>;
+    setStorage(
+      id: string,
+      storage: WorkspaceStorage,
+    ): Promise<{ ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }>;
+    archiveVault(id: string): Promise<{ ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }>;
+    restoreVault(id: string): Promise<{ ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }>;
+    deleteVault(id: string): Promise<{ ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }>;
+    renameVault(
+      id: string,
+      name: string,
+    ): Promise<{ ok: true; profiles: WorkspaceProfilesState } | { ok: false; error: string }>;
   };
 }
 
@@ -116,6 +122,9 @@ const api: MnemoAPI = {
     create: (input) => ipcRenderer.invoke(IPC.NOTE_CREATE, input),
     read: (id) => ipcRenderer.invoke(IPC.NOTE_READ, id),
     update: (input) => ipcRenderer.invoke(IPC.NOTE_UPDATE, input),
+    save: (input) => ipcRenderer.invoke(IPC.NOTE_SAVE, input),
+    moveCategory: (input) => ipcRenderer.invoke(IPC.NOTE_MOVE_CATEGORY, input),
+    deleteMany: (ids) => ipcRenderer.invoke(IPC.NOTE_DELETE_MANY, ids),
     delete: (id) => ipcRenderer.invoke(IPC.NOTE_DELETE, id),
     list: (tenantId) => ipcRenderer.invoke(IPC.NOTE_LIST, tenantId),
     vaultSnapshot: (tenantId) => ipcRenderer.invoke(IPC.NOTE_VAULT_SNAPSHOT, tenantId),
@@ -130,9 +139,9 @@ const api: MnemoAPI = {
   file: {
     saveAs: (data) => ipcRenderer.invoke(IPC.FILE_SAVE_AS, data),
     open: () => ipcRenderer.invoke(IPC.FILE_OPEN),
-    readPath: (absPath: string) => ipcRenderer.invoke(IPC.FILE_READ_PATH, absPath),
-    writePath: (absPath: string, body: string) =>
-      ipcRenderer.invoke(IPC.FILE_WRITE_PATH, absPath, body),
+    authorizePath: (absPath: string) => ipcRenderer.invoke(IPC.FILE_AUTHORIZE_PATH, absPath),
+    read: (capabilityId: string) => ipcRenderer.invoke(IPC.FILE_READ_PATH, capabilityId),
+    write: (capabilityId: string, body: string) => ipcRenderer.invoke(IPC.FILE_WRITE_PATH, capabilityId, body),
   },
   config: {
     read: () => ipcRenderer.invoke(IPC.CONFIG_READ),
@@ -149,7 +158,10 @@ const api: MnemoAPI = {
     read: () => ipcRenderer.invoke(IPC.LLM_READ),
     save: (settings: LlmSettingsFile) => ipcRenderer.invoke(IPC.LLM_SAVE, settings),
     summarize: (text: string, opts?: { formattedMarkdown?: boolean }) =>
-      ipcRenderer.invoke(IPC.LLM_SUMMARIZE, { text, formattedMarkdown: opts?.formattedMarkdown }),
+      ipcRenderer.invoke(IPC.LLM_SUMMARIZE, {
+        text,
+        formattedMarkdown: opts?.formattedMarkdown,
+      }),
   },
   onMenuCommand: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, command: string) => callback(command);
@@ -175,9 +187,9 @@ const api: MnemoAPI = {
     setStorage: (id: string, storage: WorkspaceStorage) =>
       ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_SET_STORAGE, id, storage),
     archiveVault: (id: string) => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_ARCHIVE, id),
+    restoreVault: (id: string) => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_RESTORE, id),
     deleteVault: (id: string) => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_DELETE, id),
-    renameVault: (id: string, name: string) =>
-      ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_RENAME, id, name),
+    renameVault: (id: string, name: string) => ipcRenderer.invoke(IPC.WORKSPACE_PROFILES_RENAME, id, name),
   },
 };
 

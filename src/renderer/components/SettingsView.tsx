@@ -26,6 +26,8 @@ interface Props {
   onLayoutOverrideChange: (v: LayoutOverride) => void;
   showNoteRefs: boolean;
   onShowNoteRefsChange: (v: boolean) => void;
+  autoColorCategories: boolean;
+  onAutoColorCategoriesChange: (v: boolean) => void;
   editorSpellcheck: boolean;
   editorAutocomplete: boolean;
   onEditorSpellcheckChange: (v: boolean) => void;
@@ -46,6 +48,8 @@ export default function SettingsView({
   onLayoutOverrideChange,
   showNoteRefs,
   onShowNoteRefsChange,
+  autoColorCategories,
+  onAutoColorCategoriesChange,
   editorSpellcheck,
   editorAutocomplete,
   onEditorSpellcheckChange,
@@ -236,6 +240,20 @@ export default function SettingsView({
 
       <section className="mb-8 max-w-lg">
         <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Editor</h2>
+        <label className="mb-4 flex items-start gap-3 text-sm text-mnemo-muted cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoColorCategories}
+            onChange={e => onAutoColorCategoriesChange(e.target.checked)}
+            className="mt-0.5 rounded border-mnemo-border"
+          />
+          <span>
+            <span className="block text-mnemo-text">Automatically color new categories</span>
+            <span className="block text-xs text-mnemo-dim mt-1 leading-relaxed">
+              Enabled by default. Top-level categories get distinct theme-aware colors; subcategories use nearby shades of their parent.
+            </span>
+          </span>
+        </label>
         <label className="flex items-start gap-3 text-sm text-mnemo-muted cursor-pointer select-none">
           <input
             type="checkbox"
@@ -256,7 +274,7 @@ export default function SettingsView({
           <strong>Rename</strong>, <strong>Promote</strong> (move up one level), <strong>Demote</strong> (nest under a
           parent — including moving <strong>General</strong> under another folder), <strong>suggested colors</strong>, a{' '}
           <strong>custom color</strong> control, or <strong>Clear folder color</strong>. Top-level folders line up
-          flat; only nested paths are indented. Subfolders inherit a
+          flat; only nested paths are indented. With automatic colors enabled, subfolders receive a close shade of their
           parent color until you set their own. Colors apply to folder labels and note titles; the IDE layout uses the same
           accent on the active note in the list.
         </p>
@@ -400,15 +418,22 @@ export default function SettingsView({
             (same as workspace id). You can optionally give a workspace its own SQLite files or libSQL URL in{' '}
             <strong className="text-mnemo-muted">Storage</strong>. Switching workspaces updates the note list immediately
             when using the shared connection; dedicated databases switch without restarting the app.{' '}
-            <strong className="text-mnemo-muted">Archive</strong> / <strong className="text-mnemo-muted">Delete</strong>{' '}
-            remove the profile and purge that workspace’s notes (dedicated SQLite: deletes the DB and vault folder). You need
-            at least two vaults, and you cannot archive or delete the active or Default vault. Use <strong className="text-mnemo-muted">Rename</strong> to
+            <strong className="text-mnemo-muted">Archive</strong> hides a workspace from normal switching while retaining
+            all notes and files; <strong className="text-mnemo-muted">Restore</strong> makes it selectable again.{' '}
+            <strong className="text-mnemo-muted">Delete</strong> is the separate permanent action that purges its data.
+            You cannot archive or delete the active or Default vault. Use <strong className="text-mnemo-muted">Rename</strong> to
             change the default vault’s label (or any vault; the id stays fixed). The <strong className="text-mnemo-muted">Workspace folder</strong> block above syncs markdown into the{' '}
             <strong className="text-mnemo-muted">current</strong> workspace.
           </p>
           <ul className="space-y-2 mb-4">
             {vaultProfiles.workspaces.map(w => {
-              const canRemoveVault =
+              const isArchived = Boolean(w.archivedAt);
+              const canArchiveVault =
+                !isArchived &&
+                w.id !== 'default' &&
+                w.id !== vaultProfiles.activeWorkspaceId &&
+                vaultProfiles.workspaces.filter(item => !item.archivedAt).length > 1;
+              const canDeleteVault =
                 w.id !== 'default' &&
                 w.id !== vaultProfiles.activeWorkspaceId &&
                 vaultProfiles.workspaces.length > 1;
@@ -425,10 +450,11 @@ export default function SettingsView({
                     {w.id === vaultProfiles.activeWorkspaceId ? (
                       <span className="ml-2 text-emerald-500/90">active</span>
                     ) : null}
+                    {isArchived ? <span className="ml-2 text-amber-500/90">archived</span> : null}
                     <span className="ml-2 text-[10px] text-mnemo-dim">storage: {st}</span>
                   </span>
                   <div className="flex flex-wrap gap-1.5 shrink-0">
-                    {w.id !== vaultProfiles.activeWorkspaceId ? (
+                    {!isArchived && w.id !== vaultProfiles.activeWorkspaceId ? (
                       <button
                         type="button"
                         disabled={vaultProfileBusy}
@@ -474,17 +500,12 @@ export default function SettingsView({
                     >
                       Storage…
                     </button>
-                    {canRemoveVault ? (
-                      <>
+                    {canArchiveVault ? (
                         <button
                           type="button"
                           disabled={vaultProfileBusy}
                           onClick={async () => {
-                            if (
-                              !window.confirm(
-                                `Archive workspace “${w.name}”? Notes for this workspace will be removed from the database (and dedicated files deleted if applicable).`,
-                              )
-                            ) {
+                            if (!window.confirm(`Archive workspace “${w.name}”? Its notes and files will be retained.`)) {
                               return;
                             }
                             setVaultProfileBusy(true);
@@ -504,6 +525,31 @@ export default function SettingsView({
                         >
                           Archive
                         </button>
+                    ) : null}
+                    {isArchived ? (
+                      <button
+                        type="button"
+                        disabled={vaultProfileBusy}
+                        onClick={async () => {
+                          setVaultProfileBusy(true);
+                          try {
+                            const r = await window.mnemo.workspaceProfiles.restoreVault(w.id);
+                            if (r.ok) {
+                              setVaultProfiles(r.profiles);
+                              setStatus({ ok: true, msg: `Restored “${w.name}”.` });
+                            } else {
+                              setStatus({ ok: false, msg: r.error });
+                            }
+                          } finally {
+                            setVaultProfileBusy(false);
+                          }
+                        }}
+                        className="px-2 py-1 rounded border border-emerald-700/50 text-emerald-700 dark:text-emerald-400 hover:bg-mnemo-hover disabled:opacity-50"
+                      >
+                        Restore
+                      </button>
+                    ) : null}
+                    {canDeleteVault ? (
                         <button
                           type="button"
                           disabled={vaultProfileBusy}
@@ -532,7 +578,6 @@ export default function SettingsView({
                         >
                           Delete
                         </button>
-                      </>
                     ) : null}
                   </div>
                   </div>
@@ -608,34 +653,10 @@ export default function SettingsView({
                         <option value="remote">Dedicated libSQL (URL + token)</option>
                       </select>
                       {storageDraft.mode === 'sqlite' ? (
-                        <div className="flex flex-col gap-1.5">
-                          <input
-                            type="text"
-                            placeholder="Absolute path to mnemo.db"
-                            value={storageDraft.dbPath}
-                            onChange={e =>
-                              setStorageDraft({
-                                mode: 'sqlite',
-                                dbPath: e.target.value,
-                                vaultPath: storageDraft.mode === 'sqlite' ? storageDraft.vaultPath : '',
-                              })
-                            }
-                            className="w-full font-mono text-xs bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Absolute path to vault directory"
-                            value={storageDraft.mode === 'sqlite' ? storageDraft.vaultPath : ''}
-                            onChange={e =>
-                              setStorageDraft({
-                                mode: 'sqlite',
-                                dbPath: storageDraft.mode === 'sqlite' ? storageDraft.dbPath : '',
-                                vaultPath: e.target.value,
-                              })
-                            }
-                            className="w-full font-mono text-xs bg-mnemo-panel border border-mnemo-border rounded px-2 py-1.5 text-mnemo-text"
-                          />
-                        </div>
+                        <p className="text-[10px] text-mnemo-dim leading-snug">
+                          New dedicated databases and vaults use Mnemo&apos;s managed per-workspace directory. Existing
+                          dedicated paths are preserved but cannot be changed by renderer input.
+                        </p>
                       ) : null}
                       {storageDraft.mode === 'remote' ? (
                         <div className="flex flex-col gap-1.5">
@@ -668,8 +689,8 @@ export default function SettingsView({
                         </div>
                       ) : null}
                       <p className="text-[10px] text-mnemo-dim leading-snug">
-                        Tokens in workspace profiles are stored in plain JSON on disk (v1). Dedicated SQLite uses a single
-                        tenant inside that file.
+                        Workspace tokens use OS-backed safe storage when available and are masked here. Dedicated SQLite
+                        uses a single tenant inside that file.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -819,10 +840,9 @@ export default function SettingsView({
           <strong className="text-mnemo-muted">Turso Cloud</strong>, a{' '}
           <strong className="text-mnemo-muted">self-hosted libSQL / sqld</strong> instance on your VPS, or any
           endpoint compatible with <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">@libsql/client</code>.
-          Leave blank to use local SQLite only. Credentials are stored in{' '}
+          Leave blank to use local SQLite only. Credentials are stored in an owner-only{' '}
           <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">%APPDATA%\Mnemo\config.json</code>{' '}
-          as <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">tursoUrl</code> /{' '}
-          <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">tursoToken</code> (legacy names; values work for any libSQL host).
+          and tokens are encrypted with Electron&apos;s OS-backed safe storage when available. Saved secrets are masked in the UI.
         </p>
         <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
           <strong className="text-mnemo-muted">Multiple devices:</strong> the same URL and token on each machine
@@ -897,7 +917,7 @@ export default function SettingsView({
           <div>
             <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Sync with remote</h2>
             <p className="text-xs text-mnemo-dim mb-5 leading-relaxed">
-              Both directions are <strong className="text-mnemo-muted">additive</strong>: nothing is deleted on either side.
+              Both directions use timestamps: newer note updates or deletion tombstones win, and accepted notes replace their outgoing link set.
               Notes merge by <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">updated_at</code> (newer
               wins). Links only use <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">INSERT OR IGNORE</code>.
               CLI: <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo sync push</code> /{' '}
@@ -910,11 +930,12 @@ export default function SettingsView({
             <h3 className="text-xs font-semibold text-mnemo-muted uppercase tracking-wide mb-3">Upload (local → remote)</h3>
             <p className="text-xs text-mnemo-dim mb-4 leading-relaxed">
               Copy rows from this device&apos;s local <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo.db</code> into
-              the remote database. Remote rows stay unless your local copy is newer.
+              the remote database. Newer local updates or deletions win; stale events are skipped.
             </p>
             {syncPushResult && (
               <p className={`text-xs mb-3 ${successMsgClass}`}>
-                Done — {syncPushResult.synced} note row{syncPushResult.synced !== 1 ? 's' : ''} sent to remote (additive merge).
+                Done — {syncPushResult.synced} note/deletion event{syncPushResult.synced !== 1 ? 's' : ''} applied remotely;{' '}
+                {syncPushResult.skipped} stale or unchanged.
               </p>
             )}
             <button
@@ -943,12 +964,12 @@ export default function SettingsView({
             <h3 className="text-xs font-semibold text-mnemo-muted uppercase tracking-wide mb-3">Download (remote → local)</h3>
             <p className="text-xs text-mnemo-dim mb-4 leading-relaxed">
               Merge the remote database into your local <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">mnemo.db</code> and
-              mirror <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">vault/*.md</code>. Local-only notes remain; each row updates
-              only when the remote copy is newer than your local copy.
+              mirror <code className="text-mnemo-muted bg-mnemo-panel-elevated px-1 rounded">vault/*.md</code>. Newer remote updates and deletions
+              are applied; newer local events remain.
             </p>
             {syncPullResult && (
               <p className={`text-xs mb-3 ${successMsgClass}`}>
-                Done — merged {syncPullResult.synced} updates from remote ({syncPullResult.skipped} skipped: local newer or unchanged).
+                Done — merged {syncPullResult.synced} note/deletion events from remote ({syncPullResult.skipped} stale or unchanged).
               </p>
             )}
             <button

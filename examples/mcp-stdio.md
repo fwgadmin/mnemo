@@ -48,6 +48,29 @@ mnemo mcp --turso-url "libsql://…" --turso-token "…"
 
 Or rely on `config.json` / `MNEMO_TURSO_*` env vars (see [cli-libsql.md](cli-libsql.md)).
 
+## Independent workspaces per agent
+
+Workspace selection belongs to the MCP connection, not to the shared database. Pin each
+Codex window's MCP server to its corresponding workspace with `--workspace`:
+
+```json
+{
+  "mcpServers": {
+    "mnemo-project-a": {
+      "command": "mnemo",
+      "args": ["mcp", "--workspace", "project-a"]
+    },
+    "mnemo-project-b": {
+      "command": "mnemo",
+      "args": ["mcp", "--workspace", "project-b"]
+    }
+  }
+}
+```
+
+The `switch_workspace` tool retargets only the MCP connection that called it. It does
+not change the desktop/CLI active workspace or another agent's target.
+
 ## Cursor — sample `mcp.json` fragment
 
 Adjust the path to your `mnemo` binary (global install or repo `bin/mnemo.js` via `node`).

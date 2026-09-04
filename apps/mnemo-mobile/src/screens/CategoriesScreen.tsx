@@ -20,9 +20,8 @@ import {
   type CategoryTreeNode,
   GENERAL_PATH,
   UNASSIGNED_PATH,
-  buildCategoryTree,
+  buildCategoryModel,
   categoryColorStorageKey,
-  filterNotesByCategory,
   flattenCategoryTreeVisible,
   pathsWithChildren,
   uniqueCategoryPaths,
@@ -111,7 +110,8 @@ export function CategoriesScreen({ refreshToken = 0 }: { refreshToken?: number }
     }
   }, [bootstrapping, load, refreshToken]);
 
-  const tree = useMemo(() => buildCategoryTree(notes), [notes]);
+  const categoryModel = useMemo(() => buildCategoryModel(notes), [notes]);
+  const tree = categoryModel.root;
   const withChildren = useMemo(() => pathsWithChildren(tree), [tree]);
 
   const withChildrenKey = useMemo(() => [...withChildren].sort().join('\n'), [withChildren]);
@@ -126,19 +126,19 @@ export function CategoriesScreen({ refreshToken = 0 }: { refreshToken?: number }
 
   const flatRows = useMemo((): Row[] => {
     const q = query.trim().toLowerCase();
-    const paths = uniqueCategoryPaths(notes);
+    const paths = uniqueCategoryPaths(notes, categoryModel);
     const pathRows: Row[] = paths
       .filter(p => !q || p.toLowerCase().includes(q) || labelForPath(p).toLowerCase().includes(q))
       .map(p => ({
         kind: 'path' as const,
         path: p,
-        count: filterNotesByCategory(notes, p, true).length,
+        count: categoryModel.nodesByPath.get(p)?.subtreeNoteCount ?? 0,
       }))
       .sort((a, b) => a.path.localeCompare(b.path));
 
     const allRow: Row = { kind: 'all', count: notes.length };
     return [allRow, ...pathRows];
-  }, [notes, query]);
+  }, [notes, query, categoryModel]);
 
   const treeRows = useMemo((): Row[] => {
     const q = query.trim().toLowerCase();

@@ -16,6 +16,16 @@ export const DEFAULT_WORKSPACE_ID = 'default';
 
 let bootstrapRootCache = '';
 
+type SecretCodec = (value: string) => string;
+let protectWorkspaceSecret: SecretCodec = (value) => value;
+let unprotectWorkspaceSecret: SecretCodec = (value) => value;
+
+/** Electron installs an OS-backed codec; CLI/MCP retain plaintext compatibility with private file modes. */
+export function setWorkspaceSecretCodec(codec: { protect: SecretCodec; unprotect: SecretCodec }): void {
+  protectWorkspaceSecret = codec.protect;
+  unprotectWorkspaceSecret = codec.unprotect;
+}
+
 export function getElectronBootstrapRoot(): string {
   return bootstrapRootCache;
 }
@@ -31,7 +41,13 @@ function profilesPath(root: string): string {
 function defaultProfiles(): WorkspaceProfilesState {
   return {
     activeWorkspaceId: DEFAULT_WORKSPACE_ID,
-    workspaces: [{ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } }],
+    workspaces: [
+      {
+        id: DEFAULT_WORKSPACE_ID,
+        name: 'Default',
+        storage: { mode: 'inherit' },
+      },
+    ],
     deletedWorkspaceIds: [],
   };
 }
@@ -86,9 +102,10 @@ function parseStorage(e: Record<string, unknown>): WorkspaceStorage | undefined 
     return {
       mode: 'remote',
       tursoUrl: typeof o['tursoUrl'] === 'string' ? o['tursoUrl'] : undefined,
-      tursoToken: typeof o['tursoToken'] === 'string' ? o['tursoToken'] : undefined,
+      tursoToken: typeof o['tursoToken'] === 'string' ? unprotectWorkspaceSecret(o['tursoToken']) : undefined,
       libsqlUrl: typeof o['libsqlUrl'] === 'string' ? o['libsqlUrl'] : undefined,
-      libsqlAuthToken: typeof o['libsqlAuthToken'] === 'string' ? o['libsqlAuthToken'] : undefined,
+      libsqlAuthToken:
+        typeof o['libsqlAuthToken'] === 'string' ? unprotectWorkspaceSecret(o['libsqlAuthToken']) : undefined,
     };
   }
   return undefined;
@@ -129,16 +146,26 @@ export function parseWorkspaceProfilesWorkspacesOnly(j: unknown): WorkspaceProfi
       const name = typeof e.name === 'string' ? e.name.trim() : '';
       if (id && /^[\w-]+$/.test(id) && id.length <= 64 && name.length <= 128) {
         const storage = parseStorage(e);
+        const archivedRaw = typeof e.archivedAt === 'string' ? e.archivedAt.trim() : '';
+        const archivedAt =
+          id !== DEFAULT_WORKSPACE_ID && archivedRaw && !Number.isNaN(Date.parse(archivedRaw))
+            ? archivedRaw
+            : undefined;
         workspaces.push({
           id,
           name: name || id,
           ...(storage ? { storage } : {}),
+          ...(archivedAt ? { archivedAt } : {}),
         });
       }
     }
   }
-  if (!workspaces.some(w => w.id === DEFAULT_WORKSPACE_ID)) {
-    workspaces.unshift({ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } });
+  if (!workspaces.some((w) => w.id === DEFAULT_WORKSPACE_ID)) {
+    workspaces.unshift({
+      id: DEFAULT_WORKSPACE_ID,
+      name: 'Default',
+      storage: { mode: 'inherit' },
+    });
   }
   if (workspaces.length === 0) return defaultProfiles().workspaces;
   return workspaces;
@@ -149,7 +176,7 @@ export function combineLocalActiveWithWorkspaces(
   localActive: string,
   workspaces: WorkspaceProfilesState['workspaces'],
 ): WorkspaceProfilesState {
-  const active = workspaces.some(w => w.id === localActive) ? localActive : DEFAULT_WORKSPACE_ID;
+  const active = workspaces.some((w) => w.id === localActive && !w.archivedAt) ? localActive : DEFAULT_WORKSPACE_ID;
   return { activeWorkspaceId: active, workspaces };
 }
 
@@ -159,7 +186,18 @@ export function workspaceProfilesRemotePayload(state: WorkspaceProfilesState): {
   deletedWorkspaceIds: string[];
 } {
   return {
-    workspaces: state.workspaces,
+    workspaces: state.workspaces.map((workspace) => {
+      const storage = workspace.storage;
+      if (storage?.mode !== 'remote') return workspace;
+      return {
+        ...workspace,
+        storage: {
+          mode: 'remote' as const,
+          tursoUrl: storage.tursoUrl,
+          libsqlUrl: storage.libsqlUrl,
+        },
+      };
+    }),
     deletedWorkspaceIds: normalizeDeletedWorkspaceIds(state.deletedWorkspaceIds),
   };
 }
@@ -172,7 +210,7 @@ export function filterWorkspacesByDeletedIds(
   workspaces: WorkspaceProfileEntry[],
   deletedIds: Set<string>,
 ): WorkspaceProfileEntry[] {
-  return workspaces.filter(w => w.id === DEFAULT_WORKSPACE_ID || !deletedIds.has(w.id));
+  return workspaces.filter((w) => w.id === DEFAULT_WORKSPACE_ID || !deletedIds.has(w.id));
 }
 
 /**
@@ -183,8 +221,22 @@ export function mergeWorkspacesWhenCloudNewer(
   diskWorkspaces: WorkspaceProfileEntry[],
   cloudWorkspaces: WorkspaceProfileEntry[],
 ): WorkspaceProfileEntry[] {
-  const cloudById = new Map(cloudWorkspaces.map(w => [w.id, w] as const));
-  const out: WorkspaceProfileEntry[] = cloudWorkspaces.map(w => ({ ...w }));
+  const cloudById = new Map(cloudWorkspaces.map((w) => [w.id, w] as const));
+  const diskById = new Map(diskWorkspaces.map((w) => [w.id, w] as const));
+  const out: WorkspaceProfileEntry[] = cloudWorkspaces.map((w) => {
+    const local = diskById.get(w.id);
+    if (w.storage?.mode === 'remote' && local?.storage?.mode === 'remote') {
+      return {
+        ...w,
+        storage: {
+          ...w.storage,
+          tursoToken: w.storage.tursoToken || local.storage.tursoToken,
+          libsqlAuthToken: w.storage.libsqlAuthToken || local.storage.libsqlAuthToken,
+        },
+      };
+    }
+    return { ...w };
+  });
   for (const w of diskWorkspaces) {
     if ((w.storage?.mode ?? 'inherit') === 'sqlite' && !cloudById.has(w.id)) {
       out.push({ ...w });
@@ -195,8 +247,12 @@ export function mergeWorkspacesWhenCloudNewer(
     if (!seen.has(w.id)) seen.set(w.id, w);
   }
   const merged = [...seen.values()];
-  if (!merged.some(w => w.id === DEFAULT_WORKSPACE_ID)) {
-    merged.unshift({ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } });
+  if (!merged.some((w) => w.id === DEFAULT_WORKSPACE_ID)) {
+    merged.unshift({
+      id: DEFAULT_WORKSPACE_ID,
+      name: 'Default',
+      storage: { mode: 'inherit' },
+    });
   }
   return merged;
 }
@@ -208,7 +264,7 @@ export function augmentWorkspacesWithTenantIdsFromDb(
   options?: { skipIds?: Set<string> },
 ): WorkspaceProfilesState['workspaces'] {
   const skip = options?.skipIds;
-  const byId = new Map(workspaces.map(w => [w.id, w] as const));
+  const byId = new Map(workspaces.map((w) => [w.id, w] as const));
   for (const tid of tenantIds) {
     const t = tid.trim();
     if (!t || byId.has(t)) continue;
@@ -220,8 +276,12 @@ export function augmentWorkspacesWithTenantIdsFromDb(
     });
   }
   const out = [...byId.values()];
-  if (!out.some(w => w.id === DEFAULT_WORKSPACE_ID)) {
-    out.unshift({ id: DEFAULT_WORKSPACE_ID, name: 'Default', storage: { mode: 'inherit' } });
+  if (!out.some((w) => w.id === DEFAULT_WORKSPACE_ID)) {
+    out.unshift({
+      id: DEFAULT_WORKSPACE_ID,
+      name: 'Default',
+      storage: { mode: 'inherit' },
+    });
   }
   return out;
 }
@@ -239,10 +299,10 @@ export function parseWorkspaceProfilesState(j: unknown): WorkspaceProfilesState 
       ? o.activeWorkspaceId.trim()
       : DEFAULT_WORKSPACE_ID;
   const active =
-    workspaces.some(w => w.id === activeRaw) && !delSet.has(activeRaw)
+    workspaces.some((w) => w.id === activeRaw && !w.archivedAt) && !delSet.has(activeRaw)
       ? activeRaw
       : DEFAULT_WORKSPACE_ID;
-  if (!workspaces.some(w => w.id === active)) {
+  if (!workspaces.some((w) => w.id === active)) {
     return defaultProfiles();
   }
   return { activeWorkspaceId: active, workspaces, deletedWorkspaceIds };
@@ -261,8 +321,31 @@ export function readWorkspaceProfilesFile(root: string): WorkspaceProfilesState 
 /** Disk only — use when rehydrating from Turso without double-mirroring. */
 export function writeWorkspaceProfilesFileDiskOnly(root: string, data: WorkspaceProfilesState): void {
   const p = profilesPath(root);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+  const stored: WorkspaceProfilesState = {
+    ...data,
+    workspaces: data.workspaces.map((workspace) => {
+      const storage = workspace.storage;
+      if (storage?.mode !== 'remote') return workspace;
+      return {
+        ...workspace,
+        storage: {
+          ...storage,
+          tursoToken: storage.tursoToken ? protectWorkspaceSecret(storage.tursoToken) : undefined,
+          libsqlAuthToken: storage.libsqlAuthToken ? protectWorkspaceSecret(storage.libsqlAuthToken) : undefined,
+        },
+      };
+    }),
+  };
+  fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(p, JSON.stringify(stored, null, 2), {
+    encoding: 'utf-8',
+    mode: 0o600,
+  });
+  try {
+    fs.chmodSync(p, 0o600);
+  } catch {
+    /* ignore unsupported permission bits */
+  }
 }
 
 /** app_kv key — mirrored with workspace-profiles.json when using Turso (same DB as notes). */
@@ -345,12 +428,7 @@ export function applyBootstrapRootOnly(
   };
 
   const flatCfg = path.join(bootstrapRootCache, 'config.json');
-  const nestedDefaultCfg = path.join(
-    bootstrapRootCache,
-    'workspaces',
-    DEFAULT_WORKSPACE_ID,
-    'config.json',
-  );
+  const nestedDefaultCfg = path.join(bootstrapRootCache, 'workspaces', DEFAULT_WORKSPACE_ID, 'config.json');
   let cfg = tryReadConfig(flatCfg);
   if (!configHasRemoteCredentials(cfg) && fs.existsSync(nestedDefaultCfg)) {
     cfg = tryReadConfig(nestedDefaultCfg);
@@ -388,7 +466,7 @@ export function createWorkspaceProfile(
   const next: WorkspaceProfilesState = {
     ...cur,
     workspaces: [...cur.workspaces, entry],
-    deletedWorkspaceIds: (cur.deletedWorkspaceIds ?? []).filter(x => x !== id),
+    deletedWorkspaceIds: (cur.deletedWorkspaceIds ?? []).filter((x) => x !== id),
   };
   writeWorkspaceProfilesFile(root, next);
   return { state: next, newId: id };
@@ -406,18 +484,13 @@ export async function importFolderIntoWorkspaceProfile(
   const mapPath = path.join(bootstrapRoot, `workspace-import-map.${workspaceId}.json`);
   const resolved = path.resolve(importRootAbs);
   const stats = await syncWorkspaceFolder(store, resolved, mapPath, workspaceId);
-  await mergeAndWriteUiPreferencesAsync(
-    { workspaceFolder: resolved },
-    bootstrapRoot,
-    store,
-    workspaceId,
-  );
+  await mergeAndWriteUiPreferencesAsync({ workspaceFolder: resolved }, bootstrapRoot, store, workspaceId);
   return stats;
 }
 
 export function setActiveWorkspace(root: string, id: string): WorkspaceProfilesState | null {
   const cur = ensureWorkspaceProfilesOnDisk(root);
-  if (!cur.workspaces.some(w => w.id === id)) return null;
+  if (!cur.workspaces.some((w) => w.id === id && !w.archivedAt)) return null;
   const next = { ...cur, activeWorkspaceId: id };
   writeWorkspaceProfilesFile(root, next);
   return next;
@@ -430,10 +503,10 @@ export function setWorkspaceProfileStorage(
   storage: WorkspaceStorage,
 ): WorkspaceProfilesState | null {
   const cur = ensureWorkspaceProfilesOnDisk(root);
-  if (!cur.workspaces.some(w => w.id === id)) return null;
+  if (!cur.workspaces.some((w) => w.id === id)) return null;
   const next: WorkspaceProfilesState = {
     ...cur,
-    workspaces: cur.workspaces.map(w => (w.id === id ? { ...w, storage } : w)),
+    workspaces: cur.workspaces.map((w) => (w.id === id ? { ...w, storage } : w)),
   };
   writeWorkspaceProfilesFile(root, next);
   return next;
@@ -444,41 +517,58 @@ export function renameWorkspaceProfile(root: string, id: string, name: string): 
   const trimmed = name.trim().slice(0, 128);
   if (!trimmed) return null;
   const cur = ensureWorkspaceProfilesOnDisk(root);
-  if (!cur.workspaces.some(w => w.id === id)) return null;
+  if (!cur.workspaces.some((w) => w.id === id)) return null;
   const next: WorkspaceProfilesState = {
     ...cur,
-    workspaces: cur.workspaces.map(w => (w.id === id ? { ...w, name: trimmed } : w)),
+    workspaces: cur.workspaces.map((w) => (w.id === id ? { ...w, name: trimmed } : w)),
   };
   writeWorkspaceProfilesFile(root, next);
   return next;
 }
 
-/** Remove profile entry (not active, not default). Caller purges tenant data / dedicated DB files. */
+/** Hide a profile from normal selection while retaining its metadata and all note/file data. */
 export function archiveWorkspaceProfile(root: string, id: string): { state: WorkspaceProfilesState } | null {
   if (id === DEFAULT_WORKSPACE_ID) return null;
   const cur = ensureWorkspaceProfilesOnDisk(root);
   if (cur.activeWorkspaceId === id) return null;
-  if (cur.workspaces.length <= 1) return null;
-  if (!cur.workspaces.some(w => w.id === id)) return null;
+  const entry = cur.workspaces.find((w) => w.id === id);
+  if (!entry || entry.archivedAt) return null;
+  if (cur.workspaces.filter((w) => !w.archivedAt).length <= 1) return null;
   const next: WorkspaceProfilesState = {
     ...cur,
-    workspaces: cur.workspaces.filter(w => w.id !== id),
-    deletedWorkspaceIds: tombstoneWorkspaceId(cur, id),
+    workspaces: cur.workspaces.map((w) => (w.id === id ? { ...w, archivedAt: new Date().toISOString() } : w)),
   };
   writeWorkspaceProfilesFile(root, next);
   return { state: next };
 }
 
-/** Remove profile entry (not active, not default). Caller purges tenant data / dedicated DB files. */
+/** Make an archived workspace selectable again without changing its storage or data. */
+export function restoreWorkspaceProfile(root: string, id: string): { state: WorkspaceProfilesState } | null {
+  const cur = ensureWorkspaceProfilesOnDisk(root);
+  const entry = cur.workspaces.find((w) => w.id === id);
+  if (!entry?.archivedAt) return null;
+  const next: WorkspaceProfilesState = {
+    ...cur,
+    workspaces: cur.workspaces.map((w) => {
+      if (w.id !== id) return w;
+      const { archivedAt: _archivedAt, ...restored } = w;
+      return restored;
+    }),
+  };
+  writeWorkspaceProfilesFile(root, next);
+  return { state: next };
+}
+
+/** Permanently remove a profile. Caller purges tenant data / dedicated DB files. */
 export function deleteWorkspaceProfile(root: string, id: string): { state: WorkspaceProfilesState } | null {
   if (id === DEFAULT_WORKSPACE_ID) return null;
   const cur = ensureWorkspaceProfilesOnDisk(root);
   if (cur.activeWorkspaceId === id) return null;
   if (cur.workspaces.length <= 1) return null;
-  if (!cur.workspaces.some(w => w.id === id)) return null;
+  if (!cur.workspaces.some((w) => w.id === id)) return null;
   const next: WorkspaceProfilesState = {
     ...cur,
-    workspaces: cur.workspaces.filter(w => w.id !== id),
+    workspaces: cur.workspaces.filter((w) => w.id !== id),
     deletedWorkspaceIds: tombstoneWorkspaceId(cur, id),
   };
   writeWorkspaceProfilesFile(root, next);
@@ -488,7 +578,10 @@ export function deleteWorkspaceProfile(root: string, id: string): { state: Works
 /**
  * Local SQLite paths for CLI when `--db` is omitted: single bootstrap `mnemo.db` (inherit workspaces).
  */
-export function getLocalWorkspaceDbPathsForCli(): { dbPath: string; vaultPath: string } {
+export function getLocalWorkspaceDbPathsForCli(): {
+  dbPath: string;
+  vaultPath: string;
+} {
   const root = resolveWorkspaceBootstrapRoot();
   fs.mkdirSync(root, { recursive: true });
   return {
@@ -497,7 +590,7 @@ export function getLocalWorkspaceDbPathsForCli(): { dbPath: string; vaultPath: s
   };
 }
 
-/** Purge notes for a workspace (CLI archive/delete, or resolver fallback). Inherit: global DB + tenant id; remote: dedicated Turso + default tenant. */
+/** Purge notes for permanent workspace deletion. Inherit: global DB + tenant id; remote: dedicated Turso + default tenant. */
 export async function purgeWorkspaceTenantData(root: string, entry: WorkspaceProfileEntry): Promise<void> {
   const st = entry.storage ?? { mode: 'inherit' };
   if (st.mode === 'sqlite') return;
@@ -528,8 +621,8 @@ export async function purgeWorkspaceTenantData(root: string, entry: WorkspacePro
 }
 
 /**
- * After a profile row is removed: purge tenant notes (inherit/remote) and delete dedicated SQLite files.
- * Same side effects as CLI archive/delete and app IPC (for sqlite dirs).
+ * After a profile row is permanently removed: purge tenant notes (inherit/remote) and dedicated SQLite files.
+ * Archive must never call this helper.
  */
 export async function applyWorkspaceRemovalDataPurge(root: string, entry: WorkspaceProfileEntry): Promise<void> {
   await purgeWorkspaceTenantData(root, entry);

@@ -1,6 +1,6 @@
 {
   "name": "mnemo-note",
-  "version": "2.1.18",
+  "version": "2.1.19",
   "description": "AI-native memory layer — notes, embeddings, and MCP for intelligence systems",
   "main": ".webpack/main",
   "license": "MIT",
@@ -31,6 +31,13 @@
     "build:mcp-http": "npx webpack-cli --config webpack.mcp-http.config.js",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
+    "test": "npm run test:desktop",
+    "test:unit": "vitest run --config vitest.config.mts",
+    "test:integration": "node scripts/run-electron-node.js node_modules/vitest/vitest.mjs run --config vitest.integration.config.mts",
+    "test:desktop": "npm run test:unit && npm run test:integration",
+    "test:watch": "vitest --config vitest.config.mts",
+    "bench:category-model": "vitest bench --config vitest.config.mts src/renderer/categoryPath.bench.ts --run",
+    "check": "npm run typecheck && npm run test:desktop && npm run typecheck --prefix apps/mnemo-mobile && git diff --check",
     "build:cli": "npx webpack-cli --config webpack.cli.config.js",
     "mobile:start:dev": "npm run start:dev --prefix apps/mnemo-mobile",
     "mobile:expo": "npm run start --prefix apps/mnemo-mobile",
@@ -109,6 +116,9 @@
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
     "@electron-forge/plugin-webpack": "^7.11.1",
     "@electron/windows-sign": "^1.2.2",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/d3-force": "^3.0.10",
     "@types/express": "^5.0.6",
@@ -122,6 +132,7 @@
     "electron": "^41.0.3",
     "fork-ts-checker-webpack-plugin": "^9.1.0",
     "html-webpack-plugin": "^5.6.6",
+    "jsdom": "^30.0.1",
     "node-loader": "^2.1.0",
     "png-to-ico": "^3.0.1",
     "png2icons": "^2.0.1",
@@ -131,10 +142,12 @@
     "style-loader": "^4.0.0",
     "tailwindcss": "^3.4.19",
     "ts-loader": "^9.5.4",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.0"
   },
   "bin": {
-    "mnemo": "bin/mnemo.js"
+    "mnemo": "bin/mnemo.js",
+    "mnemo-note": "bin/mnemo.js"
   },
   "overrides": {
     "tar": "^7.5.13",

@@ -43,6 +43,7 @@ import { wikilinkDecorations } from './wikilinkPlugin';
 import { clampFixedContextMenu } from '../fixedMenuPosition';
 import type { Note } from '../../shared/types';
 import MarkdownNoteBody from './MarkdownNoteBody';
+import { isEmbeddableFileType, markdownForMediaFiles } from '../editor/mediaMarkdown';
 
 function readNoteBodyMode(): 'edit' | 'preview' {
   try {
@@ -115,12 +116,44 @@ function insertMarkdownTable(view: EditorView): boolean {
   return true;
 }
 
-function insertMarkdownImage(view: EditorView): boolean {
+function insertTextAtSelection(view: EditorView, text: string): void {
   const sel = view.state.selection.main;
-  const text = view.state.sliceDoc(sel.from, sel.to);
-  const insert = text ? `![${text}](url)` : `![alt](url)`;
-  view.dispatch({ changes: { from: sel.from, to: sel.to, insert } });
+  const prefix = sel.from > 0 && view.state.sliceDoc(sel.from - 1, sel.from) !== '\n' ? '\n\n' : '';
+  const suffix = sel.to < view.state.doc.length && view.state.sliceDoc(sel.to, sel.to + 1) !== '\n' ? '\n\n' : '';
+  const insert = `${prefix}${text}${suffix}`;
+  view.dispatch({
+    changes: { from: sel.from, to: sel.to, insert },
+    selection: { anchor: sel.from + insert.length },
+  });
+}
+
+async function insertMediaFiles(view: EditorView, files: readonly File[]): Promise<void> {
+  if (files.length === 0) return;
+  try {
+    insertTextAtSelection(view, await markdownForMediaFiles(files));
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : String(e));
+  }
+}
+
+function chooseMediaFiles(view: EditorView): boolean {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = 'image/*,audio/*,video/*,application/pdf,text/plain';
+  input.addEventListener('change', () => void insertMediaFiles(view, [...(input.files ?? [])]), { once: true });
+  input.click();
   return true;
+}
+
+function mediaFilesFromTransfer(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const direct = [...data.files].filter(file => isEmbeddableFileType(file.type));
+  if (direct.length > 0) return direct;
+  return [...data.items]
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter((file): file is File => !!file && isEmbeddableFileType(file.type));
 }
 
 function wrapSelectionMarkdown(view: EditorView, before: string, after: string): void {
@@ -153,6 +186,23 @@ async function clipboardReadText(): Promise<string> {
   }
 }
 
+async function clipboardReadMedia(): Promise<File[]> {
+  if (!navigator.clipboard.read) return [];
+  try {
+    const files: File[] = [];
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(type => type !== 'text/plain' && isEmbeddableFileType(type));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const extension = type.split('/')[1]?.replace('jpeg', 'jpg').replace('plain', 'txt') ?? 'bin';
+      files.push(new File([blob], `pasted-media.${extension}`, { type }));
+    }
+    return files;
+  } catch {
+    return [];
+  }
+}
+
 function editorCopy(view: EditorView): void {
   const sel = view.state.selection.main;
   const text = view.state.sliceDoc(sel.from, sel.to);
@@ -167,6 +217,11 @@ function editorCut(view: EditorView): void {
 }
 
 async function editorPaste(view: EditorView): Promise<void> {
+  const media = await clipboardReadMedia();
+  if (media.length > 0) {
+    await insertMediaFiles(view, media);
+    return;
+  }
   const text = normalizeLineSeparators(await clipboardReadText());
   if (!text) return;
   const sel = view.state.selection.main;
@@ -178,6 +233,8 @@ export interface EditorHandle {
   getBody: () => string;
   /** True when the buffer differs from the last server body applied (unsaved local edits). */
   isDirty: () => boolean;
+  /** Send the current buffer immediately and wait for its serialized save queue. */
+  flush: () => Promise<boolean>;
   scrollToLine: (line: number) => void;
   focus: () => void;
   /** When the title header is shown, move focus to the title field (e.g. after New Note). */
@@ -190,7 +247,8 @@ export interface EditorHandle {
 
 interface EditorProps {
   note: Note;
-  onUpdate: (id: string, title: string, body: string) => void;
+  onUpdate: (id: string, title: string, body: string) => Promise<boolean>;
+  onDirty?: (id: string) => void;
   onNavigate: (title: string) => void;
   showHeader?: boolean;
   saveSignal?: number;
@@ -212,6 +270,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   {
     note,
     onUpdate,
+    onDirty,
     onNavigate,
     showHeader = true,
     saveSignal,
@@ -231,13 +290,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const titleRef = useRef<HTMLInputElement>(null);
   const noteIdRef = useRef(note.id);
   const titleValueRef = useRef(note.title);
+  const syncedTitleRef = useRef(note.title);
   /** Last server body applied to the editor (normalized); used for dirty checks + remote sync. */
   const syncedBodyRef = useRef(normalizeLineSeparators(note.body));
   /** Last reloadNonce seen for the current note id — avoids re-applying when only `note` updates. */
   const reloadNonceSeenRef = useRef(0);
+  const applyingServerRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onUpdateRef = useRef(onUpdate);
+  const onDirtyRef = useRef(onDirty);
   const onEditorLiveBodyRef = useRef(onEditorLiveBody);
   const lineNumbersCompartment = useRef(new Compartment());
   const spellcheckCompartment = useRef(new Compartment());
@@ -255,6 +317,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     onUpdateRef.current = onUpdate;
   }, [onUpdate]);
   useEffect(() => {
+    onDirtyRef.current = onDirty;
+  }, [onDirty]);
+  useEffect(() => {
     onEditorLiveBodyRef.current = onEditorLiveBody;
   }, [onEditorLiveBody]);
 
@@ -269,13 +334,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     setPreviewLiveBody(normalizeLineSeparators(note.body));
   }, [note.id, note.body]);
 
-  const saveNow = useCallback(() => {
+  const saveNow = useCallback(async () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    onUpdateRef.current(
-      noteIdRef.current,
-      titleValueRef.current,
-      viewRef.current?.state.doc.toString() ?? note.body,
-    );
+    saveTimerRef.current = null;
+    const title = titleValueRef.current;
+    const body = viewRef.current?.state.doc.toString() ?? note.body;
+    const saved = await onUpdateRef.current(noteIdRef.current, title, body);
+    if (saved) {
+      syncedTitleRef.current = title;
+      syncedBodyRef.current = normalizeLineSeparators(body);
+    }
+    return saved;
   }, [note.body]);
 
   useEffect(() => {
@@ -286,7 +355,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const debouncedSave = useCallback((title: string, body: string) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      onUpdateRef.current(noteIdRef.current, title, body);
+      saveTimerRef.current = null;
+      void onUpdateRef.current(noteIdRef.current, title, body);
     }, 500);
   }, []);
 
@@ -331,10 +401,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const v = viewRef.current;
         if (!v) return false;
         return (
+          titleValueRef.current !== syncedTitleRef.current ||
           normalizeLineSeparators(v.state.doc.toString()) !==
           normalizeLineSeparators(syncedBodyRef.current)
         );
       },
+      flush: saveNow,
       scrollToLine: (line: number) => {
         const v = viewRef.current;
         if (!v) return;
@@ -402,9 +474,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     noteIdRef.current = note.id;
     titleValueRef.current = note.title;
+    syncedTitleRef.current = note.title;
 
     const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
+      if (update.docChanged && !applyingServerRef.current) {
+        onDirtyRef.current?.(noteIdRef.current);
         debouncedSave(titleValueRef.current, update.state.doc.toString());
         const cb = onEditorLiveBodyRef.current;
         if (cb) {
@@ -424,6 +498,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       contextmenu: (e) => {
         e.preventDefault();
         setCtxMenuRef.current({ x: e.clientX, y: e.clientY });
+        return true;
+      },
+      paste: (e, view) => {
+        const files = mediaFilesFromTransfer(e.clipboardData);
+        if (files.length === 0) return false;
+        e.preventDefault();
+        void insertMediaFiles(view, files);
+        return true;
+      },
+      drop: (e, view) => {
+        const files = mediaFilesFromTransfer(e.dataTransfer);
+        if (files.length === 0) return false;
+        e.preventDefault();
+        const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+        if (pos !== null) view.dispatch({ selection: { anchor: pos } });
+        void insertMediaFiles(view, files);
         return true;
       },
     });
@@ -489,7 +579,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             },
             { key: 'Mod-k', run: insertMarkdownLink },
             { key: 'Mod-Shift-t', run: insertMarkdownTable },
-            { key: 'Mod-Shift-i', run: insertMarkdownImage },
+            { key: 'Mod-Shift-i', run: chooseMediaFiles },
           ]),
         ),
         keymap.of([
@@ -557,9 +647,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       return;
     }
     if (doc === normalizeLineSeparators(syncedBodyRef.current)) {
+      applyingServerRef.current = true;
       v.dispatch({
         changes: { from: 0, to: v.state.doc.length, insert: server },
       });
+      applyingServerRef.current = false;
       syncedBodyRef.current = server;
       onEditorLiveBodyRef.current?.(server);
     }
@@ -577,11 +669,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const server = normalizeLineSeparators(note.body);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     if (previewThrottleRef.current) clearTimeout(previewThrottleRef.current);
-    v.dispatch({
-      changes: { from: 0, to: v.state.doc.length, insert: server },
-    });
+    applyingServerRef.current = true;
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: server } });
+    applyingServerRef.current = false;
     syncedBodyRef.current = server;
     titleValueRef.current = note.title;
+    syncedTitleRef.current = note.title;
     const t = titleRef.current;
     if (t && document.activeElement !== t) {
       t.value = note.title;
@@ -599,6 +692,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       t.value = note.title;
       titleValueRef.current = note.title;
     }
+    if (titleValueRef.current === note.title) syncedTitleRef.current = note.title;
   }, [note.id, note.title, note.modified]);
 
   useEffect(() => {
@@ -622,6 +716,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
   const handleTitleChange = (newTitle: string) => {
     titleValueRef.current = newTitle;
+    onDirtyRef.current?.(noteIdRef.current);
     debouncedSave(newTitle, viewRef.current?.state.doc.toString() ?? note.body);
   };
 
@@ -774,7 +869,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       >
         {bodyMode === 'preview' && (
           <div className="absolute inset-0 z-10 flex flex-col min-h-0 bg-mnemo-app overflow-hidden">
-            <MarkdownNoteBody body={previewLiveBody} />
+            <MarkdownNoteBody
+              body={previewLiveBody}
+              onBodyChange={(body) => {
+                const v = viewRef.current;
+                if (!v) return;
+                v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: body } });
+                setPreviewLiveBody(body);
+                saveNow();
+              }}
+            />
           </div>
         )}
         <div

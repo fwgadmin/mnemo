@@ -15,7 +15,7 @@ export const USER_GUIDE_PATHS_ROWS: string[][] = [
 
 /** MCP stdio without --db: same bootstrap paths as `mnemo note` (MNEMO_HOME / default userData), not cwd ./mnemo.db. */
 export const MCP_STDIO_DEFAULT_NOTE =
-  'MCP stdio without --db/--turso: uses the same bootstrap SQLite as mnemo note (see DATA LOCATIONS). Pass --workspace <id|index> to match a GUI vault when using the shared database.';
+  'MCP stdio without --db/--turso: uses the same bootstrap SQLite as mnemo note (see DATA LOCATIONS). Each MCP connection selects its workspace independently; pass --workspace <id|index> to pin it.';
 
 export const MCP_RESOURCES_HEADERS = ['URI', 'Description'] as const;
 export const MCP_RESOURCES_ROWS: string[][] = [
@@ -90,10 +90,7 @@ export const KEYBOARD_SHORTCUTS_ROWS: string[][] = [
     'Ctrl+Shift+C / ⌘⇧C',
     'Copy as summary (note editor, when Summary & LLM is configured with a valid default profile)',
   ],
-  [
-    'Ctrl+Shift+V / ⌘⇧V',
-    'Paste as summary in editor when configured; otherwise toggles Markdown preview panel',
-  ],
+  ['Ctrl+Shift+V / ⌘⇧V', 'Paste as summary in editor when configured; otherwise toggles Markdown preview panel'],
   ['Ctrl+Alt+C / ⌃⌥C', 'Copy as formatted Markdown summary (editor, when Summary is configured)'],
   ['Ctrl+Alt+V / ⌃⌥V', 'Paste as formatted Markdown summary (editor, when Summary is configured)'],
 ];
@@ -110,8 +107,12 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
     'Settings → Markdown: suggests fenced-block language ids after ``` and note titles after [[ (current vault).',
   ],
   [
+    'Embedded media',
+    'Paste, drop, or Ctrl+Shift+I to add images, audio, video, PDF, or text attachments (12 MB each). In Preview, use media controls to resize, align, move, copy/cut, rename, or delete.',
+  ],
+  [
     'Summary & LLM',
-    'Settings → Summary & LLM: named provider profiles (OpenAI-compatible chat, Ollama, Anthropic, Gemini), base URL, model, optional API key; pick a default profile. Keys live in userData llm-config.json only (not synced to Turso).',
+    'Settings → Summary & LLM: named provider profiles (OpenAI-compatible chat, Ollama, Anthropic, Gemini), base URL, model, optional API key; pick a default profile. Keys stay local in an owner-only file and use Electron safeStorage encryption when available (not synced to Turso). Requests time out after 60 seconds.',
   ],
   [
     'Guardrails',
@@ -176,7 +177,7 @@ GET STARTED
   mnemo <word>           If one word and not a command → same as find
 
 OTHER COMMANDS
-  mnemo workspace …      List / create / switch / archive / delete vault profiles (see mnemo help workspace)
+  mnemo workspace …      List / create / switch / archive / restore / delete vault profiles (see mnemo help workspace)
   mnemo sync push|pull   Additive merge with remote libSQL (local↔bootstrap DB; see mnemo help sync)
   mnemo mcp              MCP server on stdio (editors / agents; optional --workspace)
   mnemo mcp-http         Remote HTTP MCP (Turso / libSQL)
@@ -190,7 +191,7 @@ HELP SECTIONS (read these next)
   mnemo help topics      List section names
   mnemo help vault       Paths, --db/--vault, every vault command and flag
   mnemo help workspace   Vault profiles, tenant id, workspace-profiles.json, CLI commands
-  mnemo help sync        mnemo sync push / pull, additive rules, GUI buttons
+  mnemo help sync        mnemo sync push / pull, timestamp conflict rules, GUI buttons
   mnemo help mcp         MCP stdio: options, resources, tools
   mnemo help config      ~/.config/mnemo/cli.json and JSON output
   mnemo help desktop     Graphical app and keyboard shortcuts
@@ -210,12 +211,12 @@ ${paths}
 
   Next to mnemo.db (same bootstrap folder):
     workspace-profiles.json     Active workspace id, vault names/ids, optional per-vault storage overrides
-    config.json                 Global libSQL URL/token (Settings → Database tab); if missing remote creds here, the app may use workspaces/default/config.json
+    config.json                 Global libSQL URL/token (Settings → Database tab); desktop tokens use Electron safeStorage encryption when available
     ui-preferences.json         Default workspace UI state; ui-preferences.<workspaceId>.json for other vaults
   Workspaces use tenant_id = workspace id in the shared DB unless a profile uses dedicated SQLite/libSQL (tenant "default" in that file).
 
   Legacy ~/.config/mnemo may still apply when it holds Turso credentials and mnemo-note does not (same as the desktop app).
-  CLI loads remote DB credentials from the same bootstrap folder first (then other paths) so Turso URL/token stay aligned with workspace-profiles.json and mnemo.db.
+  CLI loads plaintext remote DB credentials from the same bootstrap folder first (then other paths). If the desktop has migrated a token to Electron safeStorage, pass the CLI/MCP token by flag or MNEMO_TURSO_TOKEN / MNEMO_LIBSQL_AUTH_TOKEN instead.
 `;
 }
 
@@ -229,7 +230,8 @@ function sectionRemoteDb(): string {
 
 function sectionSync(): string {
   return `SYNC (local ↔ remote libSQL)
-  Non-destructive: no deletes on either side. Notes merge by id using newer \`updated_at\`; links use INSERT OR IGNORE only.
+  Notes and deletion tombstones merge by timestamp, so deletes propagate without overwriting a newer recreation.
+  Outgoing links are replaced exactly for each accepted note version, so removed links stay removed.
 
   CLI (same remote credential rules as \`mnemo help vault\` — config, env, or flags)
   mnemo sync push [--db <path>] [--workspace <id|index>] [--turso-url …] [--turso-token …]
@@ -284,14 +286,17 @@ function sectionWorkspace(): string {
     Edit storage overrides (same as Settings → Workspace → Storage…). JSON form accepts the same \`storage\` object as \`workspace-profiles.json\`.
 
   mnemo workspace archive <id|index>
-    Non-default, non-active workspace only; removes the profile and purges that workspace’s notes (and deletes
-    dedicated SQLite files if the profile used dedicated storage).
+    Non-default, non-active workspace only; hides it from normal switching while retaining all notes, storage,
+    and dedicated files.
+
+  mnemo workspace restore <id|index>
+    Make an archived workspace selectable again with its original notes and storage.
 
   mnemo workspace delete <id|index>
-    Same constraints as archive; permanent removal.
+    Non-default, non-active workspace only; permanently removes the profile and purges its notes and files.
 
   MCP (stdio): \`list_workspace_profiles\`, \`switch_workspace\`, \`create_workspace\` (optional \`import_folder\`),
-  \`rename_workspace\`, \`set_workspace_storage\`, \`archive_workspace\`, \`delete_workspace\` — same semantics as this CLI when the MCP server uses bootstrap workspace profiles (Turso merge when configured).
+  \`rename_workspace\`, \`set_workspace_storage\`, \`archive_workspace\`, \`restore_workspace\`, \`delete_workspace\` — same semantics as this CLI when the MCP server uses bootstrap workspace profiles (Turso merge when configured).
 
   Optional: --json / --no-json (see mnemo help config).
 `;
@@ -387,6 +392,8 @@ function sectionVaultCommands(): string {
   mnemo note category demote <path> --under <parentPath>
 
   Categories: first tag = folder (General, Unassigned, or nested paths).
+  In the desktop sidebar, right-click any category or subcategory to choose alphabetical, newest-created,
+  or oldest-created note ordering. Subcategories inherit the closest parent setting until explicitly overridden.
 `;
 }
 
@@ -408,7 +415,10 @@ function sectionMcpStdio(): string {
   With --db: opens only that file (--workspace ignored; tenant "default").
   With global Turso credentials (config.json or env): same remote DB as Settings → Database; --workspace still applies.
 
-  Minimal client args (shared DB, active vault):  node …/mnemo-mcp.js
+  Workspace selection is connection-local. \`switch_workspace\` retargets only that MCP connection and does not
+  change the GUI/CLI active vault or another agent. Give each client \`--workspace <id|index>\` to pin its target.
+
+  Minimal client args (shared DB, initially active vault):  node …/mnemo-mcp.js
   Explicit file pair:  --db "$MNEMO_HOME/mnemo.db" --vault "$MNEMO_HOME/vault"
 
 MCP RESOURCES (stdio server)
@@ -423,9 +433,11 @@ ${mcpPrompts}
 }
 
 function sectionMcpHttp(): string {
-  return `MCP (HTTP/SSE)
+  return `MCP (Streamable HTTP)
   mnemo mcp-http    (needs dist/mnemo-mcp-http.js)
   Requires: TURSO_URL + TURSO_AUTH_TOKEN (or LIBSQL_*), MCP_API_KEY. Optional: PORT (default 3001).
+  Endpoint: /mcp. Each transport has an independent workspace selection. /health also requires bearer auth.
+  Limits: MCP_HTTP_MAX_SESSIONS, MCP_HTTP_IDLE_MS, MCP_HTTP_REQUEST_TIMEOUT_MS, MCP_HTTP_BODY_LIMIT.
   Remote libSQL only — not for local SQLite.
 `;
 }
@@ -454,8 +466,9 @@ ${mcpClients}
 
   Published npm package: command "mnemo", args ["mcp"] (optional --db/--vault/--workspace/--turso-*) via Electron.
 
-  Example args for the same vault as the GUI without listing paths:  "mcp"  (or "mcp", "--workspace", "my-vault-id")
-  when MNEMO_HOME points at app userData.
+  Example args when MNEMO_HOME points at app userData: "mcp", "--workspace", "my-vault-id".
+  Multiple clients can share that database with different --workspace values; later switch_workspace calls stay local
+  to the connection that made them.
 `;
 }
 
@@ -472,8 +485,8 @@ function sectionDesktop(): string {
     General       Theme, layout, note #refs, category color tips
     Markdown      Spell check / autocomplete toggles, editor font/CSS variables for preview
     Summary & LLM Optional local LLM profiles (OpenAI-compatible, Ollama, Anthropic, Gemini), guardrails, Copy/Paste as summary
-    Workspace     Folder sync (markdown import), vault list, storage overrides, create/archive/delete vaults
-    Database      libSQL URL/token, save/reconnect, upload + download (additive sync), hosted/self-hosted help
+    Workspace     Folder sync (markdown import), vault list, storage overrides, create/archive/restore/delete vaults
+    Database      libSQL URL/token, save/reconnect, upload + download sync, hosted/self-hosted help
 
   In-app documentation: Help → Documentation (this file in the app).
 
@@ -535,7 +548,7 @@ export function formatCliHelpTopicsIndex(): string {
   sync         mnemo sync push / pull, Settings buttons, merge rules
   note         Legacy mnemo note … only
   mcp          MCP stdio: --workspace, resources, tools, prompts
-  mcp-http     MCP over HTTP/SSE
+  mcp-http     MCP over Streamable HTTP
   config       cli.json and JSON output defaults
   clients      MCP client config files (Cursor, Claude, …)
   desktop      GUI: Settings tabs, vault switcher, shortcuts

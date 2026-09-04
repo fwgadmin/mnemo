@@ -1,0 +1,56 @@
+name: Validate
+
+on:
+  push:
+    branches: [master, main, dev]
+  pull_request:
+    branches: [master, main, dev]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/mnemo-mobile/package-lock.json
+
+      - name: Install desktop dependencies
+        run: npm ci
+
+      - name: Install mobile dependencies
+        run: npm ci --prefix apps/mnemo-mobile
+
+      - name: Typecheck and test
+        run: npm run check
+
+      - name: Build CLI and MCP bundles
+        run: |
+          npm run build:cli
+          npm run build:mcp
+          npm run build:mcp-http
+
+      - name: Build renderer
+        run: |
+          renderer_check_dir="$(mktemp -d /tmp/mnemo-renderer-check.XXXXXX)"
+          npx webpack-cli --config webpack.renderer.config.js \
+            --entry ./src/renderer/index.tsx \
+            --mode production \
+            --output-path "$renderer_check_dir" \
+            --output-filename renderer.js

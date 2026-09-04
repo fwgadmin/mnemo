@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+- **Bulk category operations:** Rename, promote, demote, archive, and category deletion now use transactional bulk store operations instead of one IPC/write per note. Remote operations use bounded batches, partial failures are reported, and category colors, stamps, and sort modes share one tested path-remapping implementation.
+- **Editor saves:** Autosaves now use one optimistic, atomic note-and-link operation. Per-note queues serialize writes, coalesce rapid edits, flush before navigation/close, retain failed drafts, and expose a persistent save state with retry instead of transient alerts.
+- **Category performance:** Desktop and mobile build indexed category models once per note-list update, including resolved paths, adjacency, sorted children, and bottom-up counts. The 10,000-note/1,000-path benchmark is reproducible with `npm run bench:category-model` and measured about 21× faster than the previous repeated filtering path.
+- **List performance:** Desktop, Turso, and mobile sidebar/backlink queries now select 120-character SQL snippets instead of transferring entire note bodies and embedded media. New tenant+updated/created/title indexes keep per-workspace sorting indexed; large-body payload and query-plan regressions are covered by integration tests.
+- **MCP HTTP:** Migrated the hosted endpoint from legacy SSE to Streamable HTTP at `/mcp`. Every transport now owns an independent workspace context and MCP server; authenticated diagnostics, idle expiry, bounded session count, request size/time limits, and deterministic close cleanup prevent session crossover and resource leaks.
+- **Desktop security:** Enabled Chromium renderer sandboxing, added a restrictive CSP and navigation/window guards, moved persisted-file access behind expiring per-window capabilities, hardened Mermaid rendering, encrypted database/LLM/workspace tokens with Electron `safeStorage` when available, set credential files owner-only, isolated dedicated store caches/vaults by workspace and token identity, and bounded all LLM requests to 60 seconds.
+- **Sync:** Note deletions now propagate through durable timestamped tombstones instead of allowing stale replicas to resurrect data. Synced outgoing links use exact replacement, so removed links stay removed; newer recreations still supersede older deletions.
+- **Workspaces:** Archive is now reversible and never deletes notes or dedicated files. Archived vaults stay visible in management views, remain unavailable to normal switching, and can be restored from Settings, CLI, or MCP; permanent Delete remains separate.
+- **Storage:** Local SQLite and Turso/libSQL now use one ordered, versioned migration ledger. Local databases receive one consistent backup per pre-migration schema version, and both stores write the same complete Markdown frontmatter.
+- **Data contracts:** Search results now retain tags and creation/modification timestamps, so category grouping and per-category creation-date sorting remain correct while searching. Stored tag JSON is decoded defensively across desktop and mobile list/read/search/backlink paths.
+- **Editor / media:** Fixed persisted media widths being read as the default 80% because the preview parser did not recognize Mnemo's own `mnemo:w=…` title prefix.
+- **Quality:** Added desktop unit and Electron-ABI integration test suites plus pull-request validation for desktop/mobile typechecks and CLI, MCP, and renderer builds.
+- **MCP / workspaces:** Each stdio MCP connection now owns its workspace selection. `--workspace` pins an agent to a vault, and `switch_workspace` retargets only that connection instead of changing `workspace-profiles.json` or another Codex window's target.
+- **Editor / media:** Paste, drop, or choose images, audio, video, PDF, and text attachments directly in note bodies. Rendered Preview provides controls for width, alignment, vertical movement, copy/cut, description changes, and deletion; embedded data stays with the Markdown note across local or remote databases.
+- **Categories:** New categories are automatically assigned theme-aware colors by default. Nested categories receive close, readable shades of their parent color; the new General setting can disable automatic colors without removing manual picks.
+- **Sidebar:** Note context menus and category rename/demote popovers now measure against the viewport and flip above bottom-edge rows instead of being clipped by the scrollable note list.
+- **Sidebar / sorting:** Each category and subcategory can independently sort notes alphabetically, newest-created first, or oldest-created first from its right-click menu. Nested folders inherit the closest parent mode until they set an override; sort preferences follow renames/archives and sync with workspace UI preferences.
+
+## 2.1.19 — 2026-04-16
+
+- **npm (`mnemo-note`):** **`bin`** now exposes **`mnemo-note`** as well as **`mnemo`** (same entry point) so the package name matches a command when using **`npx`**. **README** clarifies that **`npm install -g mnemo-note`** is required for a global **`mnemo`** on **`PATH`**; without **`-g`**, use **`npx mnemo`** / **`npx mnemo-note`** or **`node_modules/.bin/mnemo`**.
+- **npm / GitHub:** `mnemo-note@2.1.19`; tag **`v2.1.19`** when released.
+- **Mobile (Expo / App Store Connect):** Marketing version **2.1.19**, iOS build number **19**. In **`app.json`**: **`expo.version`** = **2.1.19**, **`ios.buildNumber`** = **19**. After merge, run **`eas build`** (production profiles) then **`eas submit --latest`** as needed.
+
 ## 2.1.18 — 2026-04-16
 
 - **Desktop (CI / packaging):** **`electron`** is listed in **`devDependencies`** again (same range as **`dependencies`**) — **`@electron-forge/plugin-webpack`** resolves the Electron version only from **`devDependencies`**, so **`npm run make`** / Release builds failed with *Could not find any Electron packages in devDependencies* after **`electron`** was moved for global npm installs (**2.1.16**).

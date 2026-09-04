@@ -7,87 +7,30 @@ import type {
   NoteListItem,
   CreateNoteInput,
   UpdateNoteInput,
+  SaveNoteInput,
+  SaveNoteResult,
   SearchResult,
   INoteStore,
   VaultSnapshot,
   SyncResult,
+  SyncNoteRow,
+  NoteTombstoneRow,
+  CategoryMoveInput,
+  BulkMutationResult,
 } from '../../shared/types';
+import {
+  categoryPathForMutation,
+  normalizeCategoryMutationPath,
+  tagsForCategoryMove,
+} from '../../shared/categoryMutation';
 import {
   ftsMatchFromUserQuery,
   likeWordsFromUserQuery,
   snippetForSearchResult,
 } from '../../shared/searchQuery';
-import { escapeYamlDoubleQuotedString } from '../../shared/yamlEscape';
-
-/** Add `ref` column + backfill; safe to call on every open. Exported for Turso sync from local file. */
-export function migrateNoteDatabaseRef(db: Database.Database): void {
-  const cols = db.prepare('PRAGMA table_info(notes)').all() as { name: string }[];
-  if (cols.some(c => c.name === 'ref')) return;
-  db.exec('ALTER TABLE notes ADD COLUMN ref INTEGER');
-  const tenants = db.prepare('SELECT DISTINCT tenant_id FROM notes').all() as { tenant_id: string }[];
-  for (const { tenant_id } of tenants) {
-    const rows = db
-      .prepare('SELECT id FROM notes WHERE tenant_id = ? ORDER BY created_at ASC')
-      .all(tenant_id) as { id: string }[];
-    let r = 1;
-    const upd = db.prepare('UPDATE notes SET ref = ? WHERE id = ?');
-    for (const row of rows) {
-      upd.run(r++, row.id);
-    }
-  }
-  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes (tenant_id, ref)');
-}
-
-/** Add hide_header (per-note editor chrome); safe to call on every open. */
-export function migrateNoteDatabaseHideHeader(db: Database.Database): void {
-  const cols = db.prepare('PRAGMA table_info(notes)').all() as { name: string }[];
-  if (cols.some(c => c.name === 'hide_header')) return;
-  db.exec('ALTER TABLE notes ADD COLUMN hide_header INTEGER NOT NULL DEFAULT 0');
-}
-
-const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS notes (
-  id          TEXT PRIMARY KEY,
-  title       TEXT NOT NULL DEFAULT 'Untitled',
-  body        TEXT NOT NULL DEFAULT '',
-  tags        TEXT NOT NULL DEFAULT '[]',
-  tenant_id   TEXT NOT NULL DEFAULT 'default',
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS note_links (
-  source_id   TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-  target_id   TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-  PRIMARY KEY (source_id, target_id)
-);
-
-CREATE TABLE IF NOT EXISTS embeddings (
-  note_id     TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-  model       TEXT NOT NULL DEFAULT 'all-MiniLM-L6-v2',
-  vector      BLOB NOT NULL,
-  created_at  TEXT NOT NULL,
-  PRIMARY KEY (note_id, model)
-);
-
-CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id);
-`;
-
-const FTS_SQL = [
-  `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, body, tags, content='notes', content_rowid='rowid')`,
-  `CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
-    INSERT INTO notes_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
-  END`,
-  `CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, title, body, tags) VALUES ('delete', old.rowid, old.title, old.body, old.tags);
-  END`,
-  `CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, title, body, tags) VALUES ('delete', old.rowid, old.title, old.body, old.tags);
-    INSERT INTO notes_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
-  END`,
-];
+import { parseStoredTags } from '../../shared/noteTags';
+import { migrateLocalNoteDatabase } from './migrations';
+import { serializeNoteMarkdown } from './noteMarkdown';
 
 /** Local SQLite-backed store (offline, default). */
 export class LocalNoteStore implements INoteStore {
@@ -100,17 +43,13 @@ export class LocalNoteStore implements INoteStore {
     fs.mkdirSync(vaultPath, { recursive: true });
 
     this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    this.initSchema();
-    migrateNoteDatabaseRef(this.db);
-    migrateNoteDatabaseHideHeader(this.db);
-  }
-
-  private initSchema(): void {
-    this.db.exec(SCHEMA_SQL);
-    for (const stmt of FTS_SQL) {
-      this.db.exec(stmt);
+    try {
+      this.db.pragma('foreign_keys = ON');
+      migrateLocalNoteDatabase(this.db, dbPath);
+      this.db.pragma('journal_mode = WAL');
+    } catch (error) {
+      this.db.close();
+      throw error;
     }
   }
 
@@ -176,8 +115,191 @@ export class LocalNoteStore implements INoteStore {
     return note;
   }
 
+  async save(input: SaveNoteInput, targetIds: string[]): Promise<SaveNoteResult> {
+    const row = this.db.prepare('SELECT * FROM notes WHERE id = ?').get(input.id) as any;
+    if (!row) return { status: 'not-found' };
+    const existing = this.rowToNote(row);
+    if (existing.modified !== input.expectedModified) return { status: 'conflict', current: existing };
+
+    const modified = new Date(Math.max(Date.now(), Date.parse(existing.modified) + 1)).toISOString();
+    const note: Note = {
+      ...existing,
+      title: input.title ?? existing.title,
+      body: input.body ?? existing.body,
+      tags: input.tags ?? existing.tags,
+      hideHeader: input.hideHeader ?? existing.hideHeader,
+      modified,
+      links: [...new Set(targetIds)].filter(id => id !== input.id),
+    };
+    const saveTransaction = this.db.transaction(() => {
+      const updated = this.db.prepare(`
+        UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ?, hide_header = ?
+        WHERE id = ? AND updated_at = ?
+      `).run(
+        note.title,
+        note.body,
+        JSON.stringify(note.tags),
+        modified,
+        note.hideHeader ? 1 : 0,
+        note.id,
+        input.expectedModified,
+      );
+      if (updated.changes !== 1) throw new Error('STALE_NOTE_REVISION');
+      this.db.prepare('DELETE FROM note_links WHERE source_id = ?').run(note.id);
+      const insertLink = this.db.prepare(
+        'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
+      );
+      for (const targetId of note.links) insertLink.run(note.id, targetId);
+    });
+    try {
+      saveTransaction();
+    } catch (error) {
+      if (error instanceof Error && error.message === 'STALE_NOTE_REVISION') {
+        const current = await this.read(input.id);
+        return current ? { status: 'conflict', current } : { status: 'not-found' };
+      }
+      throw error;
+    }
+    this.writeMdFile(note);
+    return {
+      status: 'saved',
+      note,
+      listItem: {
+        ref: note.ref,
+        id: note.id,
+        title: note.title,
+        tags: note.tags,
+        created: note.created,
+        modified: note.modified,
+        snippet: note.body.slice(0, 120),
+        hideHeader: note.hideHeader,
+      },
+    };
+  }
+
+  async moveCategoryPrefix(
+    input: CategoryMoveInput,
+    tenantId: string = 'default',
+  ): Promise<BulkMutationResult> {
+    const notes = await this.listNotes(tenantId);
+    const hasAssigned = notes.some(note => !!normalizeCategoryMutationPath(note.tags[0] ?? ''));
+    const updates = notes.flatMap(note => {
+      const currentPath = categoryPathForMutation(note.tags, hasAssigned);
+      const tags = tagsForCategoryMove(
+        note.tags,
+        currentPath,
+        input.sourcePath,
+        input.targetPath,
+        input.includeDescendants,
+      );
+      if (!tags) return [];
+      const modified = new Date(Math.max(Date.now(), Date.parse(note.modified) + 1)).toISOString();
+      return [{ note: { ...note, tags, modified } }];
+    });
+    if (updates.length === 0) return { requested: 0, affected: 0, affectedIds: [], failures: [], changes: [] };
+    const update = this.db.prepare(
+      'UPDATE notes SET tags = ?, updated_at = ? WHERE id = ? AND tenant_id = ?',
+    );
+    try {
+      this.db.transaction(() => {
+        for (const { note } of updates) {
+          const result = update.run(JSON.stringify(note.tags), note.modified, note.id, tenantId);
+          if (result.changes !== 1) throw new Error(`Note ${note.id} changed during category move.`);
+        }
+      })();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        requested: updates.length,
+        affected: 0,
+        affectedIds: [],
+        failures: updates.map(({ note }) => ({ id: note.id, error: message })),
+        changes: [],
+      };
+    }
+    const failures: BulkMutationResult['failures'] = [];
+    for (const { note } of updates) {
+      try {
+        this.writeMdFile(note);
+      } catch (error) {
+        failures.push({ id: note.id, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return {
+      requested: updates.length,
+      affected: updates.length,
+      affectedIds: updates.map(({ note }) => note.id),
+      failures,
+      changes: updates.map(({ note }) => ({ id: note.id, modified: note.modified, tags: note.tags })),
+    };
+  }
+
+  async deleteNotes(ids: string[], tenantId: string = 'default'): Promise<BulkMutationResult> {
+    const requestedIds = [...new Set(ids)];
+    if (requestedIds.length === 0) return { requested: 0, affected: 0, affectedIds: [], failures: [], changes: [] };
+    const existing = new Set(
+      (this.db.prepare('SELECT id FROM notes WHERE tenant_id = ?').all(tenantId) as Array<{ id: string }>)
+        .map(row => row.id),
+    );
+    const found = requestedIds.filter(id => existing.has(id));
+    const failures = requestedIds
+      .filter(id => !existing.has(id))
+      .map(id => ({ id, error: 'Note not found in the active workspace.' }));
+    const deletedAt = new Date().toISOString();
+    const tombstone = this.db.prepare(`
+      INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+      WHERE excluded.deleted_at > note_tombstones.deleted_at
+    `);
+    const remove = this.db.prepare('DELETE FROM notes WHERE id = ? AND tenant_id = ?');
+    try {
+      this.db.transaction(() => {
+        for (const id of found) {
+          tombstone.run(id, tenantId, deletedAt);
+          if (remove.run(id, tenantId).changes !== 1) throw new Error(`Note ${id} changed during deletion.`);
+        }
+      })();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        requested: requestedIds.length,
+        affected: 0,
+        affectedIds: [],
+        failures: [...failures, ...found.map(id => ({ id, error: message }))],
+        changes: [],
+      };
+    }
+    for (const id of found) {
+      try {
+        const filePath = path.join(this.vaultPath, `${id}.md`);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch (error) {
+        failures.push({ id, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return {
+      requested: requestedIds.length,
+      affected: found.length,
+      affectedIds: found,
+      failures,
+      changes: [],
+    };
+  }
+
   delete(id: string): Promise<boolean> {
-    const result = this.db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+    const row = this.db.prepare('SELECT tenant_id FROM notes WHERE id = ?').get(id) as
+      | { tenant_id: string }
+      | undefined;
+    if (!row) return Promise.resolve(false);
+    const deletedAt = new Date().toISOString();
+    const result = this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+        WHERE excluded.deleted_at > note_tombstones.deleted_at
+      `).run(id, row.tenant_id, deletedAt);
+      return this.db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+    })();
     if (result.changes > 0) {
       const filePath = path.join(this.vaultPath, `${id}.md`);
       if (fs.existsSync(filePath)) {
@@ -190,18 +312,40 @@ export class LocalNoteStore implements INoteStore {
 
   list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const rows = this.db.prepare(
-      'SELECT ref, id, title, body, tags, updated_at, hide_header FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
+      'SELECT ref, id, title, substr(body, 1, 120) AS snippet, tags, created_at, updated_at, hide_header FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
     ).all(tenantId) as any[];
 
     return Promise.resolve(rows.map(row => ({
       ref: row.ref,
       id: row.id,
       title: row.title,
-      tags: JSON.parse(row.tags),
+      tags: parseStoredTags(row.tags),
+      created: row.created_at,
       modified: row.updated_at,
-      snippet: row.body.substring(0, 120),
+      snippet: row.snippet,
       hideHeader: (row.hide_header ?? 0) === 1,
     })));
+  }
+
+  listNotes(tenantId: string = 'default'): Promise<Note[]> {
+    const rows = this.db
+      .prepare('SELECT * FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC')
+      .all(tenantId) as any[];
+    const links = this.db
+      .prepare(`
+        SELECT nl.source_id, nl.target_id
+        FROM note_links nl
+        JOIN notes n ON n.id = nl.source_id
+        WHERE n.tenant_id = ?
+      `)
+      .all(tenantId) as Array<{ source_id: string; target_id: string }>;
+    const bySource = new Map<string, string[]>();
+    for (const link of links) {
+      const targets = bySource.get(link.source_id) ?? [];
+      targets.push(link.target_id);
+      bySource.set(link.source_id, targets);
+    }
+    return Promise.resolve(rows.map(row => this.rowToNote(row, bySource.get(row.id) ?? [])));
   }
 
   search(query: string, tenantId: string = 'default'): Promise<SearchResult[]> {
@@ -213,6 +357,9 @@ export class LocalNoteStore implements INoteStore {
       ref: row.ref,
       id: row.id,
       title: row.title,
+      tags: parseStoredTags(row.tags),
+      created: row.created_at,
+      modified: row.updated_at,
       snippet: snippetForSearchResult(row.title, row.body, query),
       rank,
       hideHeader: (row.hide_header ?? 0) === 1,
@@ -220,7 +367,8 @@ export class LocalNoteStore implements INoteStore {
 
     try {
       const rows = this.db.prepare(`
-        SELECT n.ref, n.id, n.title, n.body, n.hide_header, notes_fts.rank
+        SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at,
+               n.hide_header, notes_fts.rank
         FROM notes_fts
         JOIN notes n ON n.rowid = notes_fts.rowid
         WHERE notes_fts MATCH ?
@@ -241,7 +389,7 @@ export class LocalNoteStore implements INoteStore {
       }
       const rows = this.db
         .prepare(
-          `SELECT ref, id, title, body, hide_header FROM notes
+          `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header FROM notes
            WHERE tenant_id = ? AND ${conds}
            LIMIT 50`,
         )
@@ -252,7 +400,7 @@ export class LocalNoteStore implements INoteStore {
 
   getBacklinks(noteId: string): Promise<NoteListItem[]> {
     const rows = this.db.prepare(`
-      SELECT n.ref, n.id, n.title, n.body, n.tags, n.updated_at
+      SELECT n.ref, n.id, n.title, substr(n.body, 1, 120) AS snippet, n.tags, n.created_at, n.updated_at
       FROM note_links nl
       JOIN notes n ON n.id = nl.source_id
       WHERE nl.target_id = ?
@@ -263,20 +411,28 @@ export class LocalNoteStore implements INoteStore {
       ref: row.ref,
       id: row.id,
       title: row.title,
-      tags: JSON.parse(row.tags),
+      tags: parseStoredTags(row.tags),
+      created: row.created_at,
       modified: row.updated_at,
-      snippet: row.body.substring(0, 120),
+      snippet: row.snippet,
     })));
   }
 
   updateLinks(sourceId: string, targetIds: string[]): Promise<void> {
+    return this.updateLinksBatch([{ sourceId, targetIds }]);
+  }
+
+  updateLinksBatch(updates: Array<{ sourceId: string; targetIds: string[] }>): Promise<void> {
+    if (updates.length === 0) return Promise.resolve();
     const del = this.db.prepare('DELETE FROM note_links WHERE source_id = ?');
     const ins = this.db.prepare('INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)');
 
     const transaction = this.db.transaction(() => {
-      del.run(sourceId);
-      for (const targetId of targetIds) {
-        ins.run(sourceId, targetId);
+      for (const { sourceId, targetIds } of updates) {
+        del.run(sourceId);
+        for (const targetId of targetIds) {
+          ins.run(sourceId, targetId);
+        }
       }
     });
     transaction();
@@ -341,24 +497,16 @@ export class LocalNoteStore implements INoteStore {
 
   /**
    * Merge remote/libSQL rows into this SQLite file and mirror .md files for affected notes.
-   * Last-write-wins by updated_at (same rule as Turso importNotes). Links are INSERT OR IGNORE only.
-   * Does not delete local notes or links missing from the payload.
+   * Last-write-wins across note updates and deletion tombstones. Links are replaced exactly for accepted source notes.
    */
-  async importNotesAdditiveFromRemote(
-    notes: Array<{
-      id: string;
-      title: string;
-      body: string;
-      tags: string;
-      tenant_id: string;
-      created_at: string;
-      updated_at: string;
-      ref: number | null;
-      hide_header: number;
-    }>,
+  async importNotesFromRemote(
+    notes: SyncNoteRow[],
     links: Array<{ source_id: string; target_id: string }>,
+    tombstones: NoteTombstoneRow[] = [],
   ): Promise<SyncResult> {
-    if (notes.length === 0 && links.length === 0) return { synced: 0, skipped: 0 };
+    if (notes.length === 0 && links.length === 0 && tombstones.length === 0) {
+      return { synced: 0, skipped: 0 };
+    }
 
     const upsert = this.db.prepare(`
       INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
@@ -375,10 +523,50 @@ export class LocalNoteStore implements INoteStore {
 
     let applied = 0;
     let skipped = 0;
-    const CHUNK = 50;
+    const acceptedSources = new Set<string>();
+    const deletedIds = new Set<string>();
+    const getNoteVersion = this.db.prepare('SELECT updated_at FROM notes WHERE id = ?');
+    const getTombstoneVersion = this.db.prepare('SELECT deleted_at FROM note_tombstones WHERE id = ?');
+    const upsertTombstone = this.db.prepare(`
+      INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+      WHERE excluded.deleted_at > note_tombstones.deleted_at
+    `);
+    const deleteNote = this.db.prepare('DELETE FROM notes WHERE id = ?');
+    const deleteTombstone = this.db.prepare('DELETE FROM note_tombstones WHERE id = ? AND deleted_at < ?');
+    const deleteLinks = this.db.prepare('DELETE FROM note_links WHERE source_id = ?');
+    const insertLink = this.db.prepare(
+      'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
+    );
 
-    const runNotes = this.db.transaction((chunk: typeof notes) => {
-      for (const n of chunk) {
+    this.db.transaction(() => {
+      for (const tombstone of tombstones) {
+        const note = getNoteVersion.get(tombstone.id) as { updated_at: string } | undefined;
+        if (note && note.updated_at > tombstone.deleted_at) {
+          skipped += 1;
+          continue;
+        }
+        const info = upsertTombstone.run(tombstone.id, tombstone.tenant_id, tombstone.deleted_at);
+        if (info.changes > 0) applied += 1;
+        else skipped += 1;
+        if (!note || tombstone.deleted_at < note.updated_at) continue;
+        deleteNote.run(tombstone.id);
+        deletedIds.add(tombstone.id);
+      }
+
+      for (const n of notes) {
+        const tombstone = getTombstoneVersion.get(n.id) as { deleted_at: string } | undefined;
+        if (tombstone && tombstone.deleted_at >= n.updated_at) {
+          skipped += 1;
+          continue;
+        }
+        const existing = getNoteVersion.get(n.id) as { updated_at: string } | undefined;
+        if (existing && existing.updated_at > n.updated_at) {
+          skipped += 1;
+          continue;
+        }
+        acceptedSources.add(n.id);
+        deleteTombstone.run(n.id, n.updated_at);
         const info = upsert.run(
           n.id,
           n.title,
@@ -393,28 +581,24 @@ export class LocalNoteStore implements INoteStore {
         if (info.changes > 0) applied += 1;
         else skipped += 1;
       }
-    });
 
-    for (let i = 0; i < notes.length; i += CHUNK) {
-      runNotes(notes.slice(i, i + CHUNK));
-    }
-
-    const existingIds = new Set(
-      (this.db.prepare('SELECT id FROM notes').all() as { id: string }[]).map(r => r.id),
-    );
-    const linkIns = this.db.prepare(
-      'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
-    );
-    const linkRows = links.filter(
-      l => existingIds.has(l.source_id) && existingIds.has(l.target_id),
-    );
-    const runLinks = this.db.transaction((chunk: typeof linkRows) => {
-      for (const l of chunk) {
-        linkIns.run(l.source_id, l.target_id);
+      for (const sourceId of acceptedSources) deleteLinks.run(sourceId);
+      const existingIds = new Set(
+        (this.db.prepare('SELECT id FROM notes').all() as { id: string }[]).map(row => row.id),
+      );
+      for (const link of links) {
+        if (acceptedSources.has(link.source_id) && existingIds.has(link.target_id)) {
+          insertLink.run(link.source_id, link.target_id);
+        }
       }
-    });
-    for (let i = 0; i < linkRows.length; i += CHUNK) {
-      runLinks(linkRows.slice(i, i + CHUNK));
+    })();
+
+    for (const id of deletedIds) {
+      try {
+        fs.unlinkSync(path.join(this.vaultPath, `${id}.md`));
+      } catch {
+        /* missing */
+      }
     }
 
     for (const n of notes) {
@@ -437,6 +621,7 @@ export class LocalNoteStore implements INoteStore {
       }
     }
     this.db.prepare('DELETE FROM notes WHERE tenant_id = ?').run(tenantId);
+    this.db.prepare('DELETE FROM note_tombstones WHERE tenant_id = ?').run(tenantId);
   }
 
   close(): void {
@@ -445,17 +630,17 @@ export class LocalNoteStore implements INoteStore {
 
   // --- Private helpers ---
 
-  private rowToNote(row: any): Note {
+  private rowToNote(row: any, links?: string[]): Note {
     return {
       id: row.id,
       ref: row.ref as number,
       title: row.title,
       body: row.body,
-      tags: JSON.parse(row.tags),
+      tags: parseStoredTags(row.tags),
       created: row.created_at,
       modified: row.updated_at,
       tenantId: row.tenant_id,
-      links: this.getLinksForNote(row.id),
+      links: links ?? this.getLinksForNote(row.id),
       hideHeader: (row.hide_header ?? 0) === 1,
     };
   }
@@ -468,21 +653,7 @@ export class LocalNoteStore implements INoteStore {
   }
 
   private writeMdFile(note: Note): void {
-    const frontmatter = [
-      '---',
-      `id: "${note.id}"`,
-      `ref: ${note.ref}`,
-      `title: "${escapeYamlDoubleQuotedString(note.title)}"`,
-      `tags: [${note.tags.map(t => `"${escapeYamlDoubleQuotedString(t)}"`).join(', ')}]`,
-      `created: "${note.created}"`,
-      `modified: "${note.modified}"`,
-      `tenantId: "${note.tenantId}"`,
-      `hideHeader: ${note.hideHeader}`,
-      '---',
-    ].join('\n');
-
-    const content = `${frontmatter}\n\n${note.body}`;
     const filePath = path.join(this.vaultPath, `${note.id}.md`);
-    fs.writeFileSync(filePath, content, 'utf-8');
+    fs.writeFileSync(filePath, serializeNoteMarkdown(note), 'utf-8');
   }
 }

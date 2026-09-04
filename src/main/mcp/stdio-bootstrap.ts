@@ -17,8 +17,7 @@ import { readWorkspaceProfilesMerged } from '../workspaceProfilesSync';
 import { resolveWorkspaceBootstrapRoot } from '../userConfig';
 import {
   closeDedicatedStores,
-  ensureActiveContext,
-  setActiveWorkspaceId,
+  createWorkspaceContextSession,
   setGlobalStore,
   setStoreResolverBootstrapRoot,
 } from '../storeResolver';
@@ -93,8 +92,8 @@ export async function runMcpStdioServer(argv: string[]): Promise<void> {
           process.exit(1);
         }
         const id = pickWorkspaceId(profiles, wsRes);
-        setActiveWorkspaceId(id);
-        return createMcpServer(ensureActiveContext);
+        const workspaceSession = createWorkspaceContextSession(id);
+        return createMcpServer(workspaceSession.resolve, { workspaceSession, bootstrapRoot: root });
       })();
 
   const transport = new StdioServerTransport();

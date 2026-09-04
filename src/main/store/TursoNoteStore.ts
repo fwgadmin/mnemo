@@ -12,36 +12,24 @@ import type {
   NoteListItem,
   CreateNoteInput,
   UpdateNoteInput,
+  SaveNoteInput,
+  SaveNoteResult,
   SearchResult,
   INoteStore,
   VaultSnapshot,
+  SyncNoteRow,
+  NoteTombstoneRow,
+  CategoryMoveInput,
+  BulkMutationResult,
 } from '../../shared/types';
-import { escapeYamlDoubleQuotedString } from '../../shared/yamlEscape';
-
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS notes (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL DEFAULT 'Untitled',
-    body        TEXT NOT NULL DEFAULT '',
-    tags        TEXT NOT NULL DEFAULT '[]',
-    tenant_id   TEXT NOT NULL DEFAULT 'default',
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS note_links (
-    source_id   TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    target_id   TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    PRIMARY KEY (source_id, target_id)
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id)`,
-  `CREATE TABLE IF NOT EXISTS app_kv (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-];
+import {
+  categoryPathForMutation,
+  normalizeCategoryMutationPath,
+  tagsForCategoryMove,
+} from '../../shared/categoryMutation';
+import { parseStoredTags } from '../../shared/noteTags';
+import { migrateRemoteNoteDatabase } from './migrations';
+import { serializeNoteMarkdown } from './noteMarkdown';
 
 function isTenantRefUniqueConstraint(err: unknown): boolean {
   const parts: string[] = [];
@@ -54,19 +42,7 @@ function isTenantRefUniqueConstraint(err: unknown): boolean {
   return msg.includes('UNIQUE constraint failed') && (msg.includes('notes.ref') || msg.includes('tenant_id'));
 }
 
-const FTS_STATEMENTS = [
-  `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, body, tags, content='notes', content_rowid='rowid')`,
-  `CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
-    INSERT INTO notes_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
-  END`,
-  `CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, title, body, tags) VALUES ('delete', old.rowid, old.title, old.body, old.tags);
-  END`,
-  `CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
-    INSERT INTO notes_fts(notes_fts, rowid, title, body, tags) VALUES ('delete', old.rowid, old.title, old.body, old.tags);
-    INSERT INTO notes_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
-  END`,
-];
+const BULK_MUTATION_CHUNK_SIZE = 100;
 
 /**
  * Remote async store via @libsql/client (Turso Cloud, self-hosted libSQL/sqld, or any compatible endpoint).
@@ -82,74 +58,7 @@ export class TursoNoteStore implements INoteStore {
 
   /** Run schema migrations — call once before using the store. */
   async initSchema(): Promise<void> {
-    const all = [...SCHEMA_STATEMENTS, ...FTS_STATEMENTS];
-    await this.client.batch(
-      all.map(sql => ({ sql })),
-      'write',
-    );
-    await this.migrateRefIfNeeded();
-    await this.migrateHideHeaderIfNeeded();
-  }
-
-  private async migrateRefIfNeeded(): Promise<void> {
-    const info = await this.client.execute({ sql: 'PRAGMA table_info(notes)', args: [] });
-    const hasRef = info.rows.some(r => r['name'] === 'ref');
-    if (hasRef) return;
-
-    await this.client.execute({ sql: 'ALTER TABLE notes ADD COLUMN ref INTEGER', args: [] });
-
-    const tenants = await this.client.execute({
-      sql: 'SELECT DISTINCT tenant_id FROM notes',
-      args: [],
-    });
-    for (const row of tenants.rows) {
-      const tenantId = row['tenant_id'] as string;
-      const ids = await this.client.execute({
-        sql: 'SELECT id FROM notes WHERE tenant_id = ? ORDER BY created_at ASC',
-        args: [tenantId],
-      });
-      let r = 1;
-      for (const ir of ids.rows) {
-        await this.client.execute({
-          sql: 'UPDATE notes SET ref = ? WHERE id = ?',
-          args: [r++, ir['id'] as string],
-        });
-      }
-    }
-    await this.client.execute({
-      sql: `
-        UPDATE notes
-        SET ref = (
-          SELECT ranked.ref
-          FROM (
-            SELECT
-              id,
-              ROW_NUMBER() OVER (
-                PARTITION BY tenant_id
-                ORDER BY created_at ASC, id ASC
-              ) AS ref
-            FROM notes
-          ) AS ranked
-          WHERE ranked.id = notes.id
-        )
-      `,
-      args: [],
-    });
-
-    await this.client.execute({
-      sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes (tenant_id, ref)',
-      args: [],
-    });
-  }
-
-  private async migrateHideHeaderIfNeeded(): Promise<void> {
-    const info = await this.client.execute({ sql: 'PRAGMA table_info(notes)', args: [] });
-    const has = info.rows.some(r => r['name'] === 'hide_header');
-    if (has) return;
-    await this.client.execute({
-      sql: 'ALTER TABLE notes ADD COLUMN hide_header INTEGER NOT NULL DEFAULT 0',
-      args: [],
-    });
+    await migrateRemoteNoteDatabase(this.client);
   }
 
   async create(input: CreateNoteInput): Promise<Note> {
@@ -198,23 +107,30 @@ export class TursoNoteStore implements INoteStore {
   }
 
   async read(id: string): Promise<Note | null> {
-    const result = await this.client.execute({
-      sql: 'SELECT * FROM notes WHERE id = ?',
-      args: [id],
-    });
-    const row = result.rows[0];
+    const [noteResult, linkResult] = await Promise.all([
+      this.client.execute({ sql: 'SELECT * FROM notes WHERE id = ?', args: [id] }),
+      this.client.execute({
+        sql: 'SELECT target_id FROM note_links WHERE source_id = ?',
+        args: [id],
+      }),
+    ]);
+    const row = noteResult.rows[0];
     if (!row) return null;
-    return this.rowToNote(id, row);
+    return this.rowToNote(
+      id,
+      row,
+      linkResult.rows.map(link => link['target_id'] as string),
+    );
   }
 
   async readByRef(ref: number, tenantId: string = 'default'): Promise<Note | null> {
     const result = await this.client.execute({
-      sql: 'SELECT * FROM notes WHERE tenant_id = ? AND ref = ?',
+      sql: 'SELECT id FROM notes WHERE tenant_id = ? AND ref = ?',
       args: [tenantId, ref],
     });
-    const row = result.rows[0];
-    if (!row) return null;
-    return this.rowToNote(row['id'] as string, row);
+    const id = result.rows[0]?.['id'] as string | undefined;
+    if (!id) return null;
+    return this.read(id);
   }
 
   async update(input: UpdateNoteInput): Promise<Note | null> {
@@ -237,12 +153,201 @@ export class TursoNoteStore implements INoteStore {
     return note;
   }
 
+  async save(input: SaveNoteInput, targetIds: string[]): Promise<SaveNoteResult> {
+    const existing = await this.read(input.id);
+    if (!existing) return { status: 'not-found' };
+    if (existing.modified !== input.expectedModified) return { status: 'conflict', current: existing };
+
+    const modified = new Date(Math.max(Date.now(), Date.parse(existing.modified) + 1)).toISOString();
+    const links = [...new Set(targetIds)].filter(id => id !== input.id);
+    const note: Note = {
+      ...existing,
+      title: input.title ?? existing.title,
+      body: input.body ?? existing.body,
+      tags: input.tags ?? existing.tags,
+      hideHeader: input.hideHeader ?? existing.hideHeader,
+      modified,
+      links,
+    };
+    const statements: import('@libsql/client').InStatement[] = [
+      {
+        sql: `UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ?, hide_header = ?
+              WHERE id = ? AND updated_at = ?`,
+        args: [
+          note.title,
+          note.body,
+          JSON.stringify(note.tags),
+          modified,
+          note.hideHeader ? 1 : 0,
+          note.id,
+          input.expectedModified,
+        ],
+      },
+      {
+        sql: `DELETE FROM note_links WHERE source_id = ?
+              AND EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at = ?)`,
+        args: [note.id, note.id, modified],
+      },
+      ...links.map(targetId => ({
+        sql: `INSERT OR IGNORE INTO note_links (source_id, target_id)
+              SELECT ?, ? WHERE EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at = ?)`,
+        args: [note.id, targetId, note.id, modified],
+      })),
+    ];
+    const results = await this.client.batch(statements, 'write');
+    if ((results[0]?.rowsAffected ?? 0) !== 1) {
+      const current = await this.read(input.id);
+      return current ? { status: 'conflict', current } : { status: 'not-found' };
+    }
+    this.writeMdFile(note);
+    return {
+      status: 'saved',
+      note,
+      listItem: {
+        ref: note.ref,
+        id: note.id,
+        title: note.title,
+        tags: note.tags,
+        created: note.created,
+        modified: note.modified,
+        snippet: note.body.slice(0, 120),
+        hideHeader: note.hideHeader,
+      },
+    };
+  }
+
+  async moveCategoryPrefix(
+    input: CategoryMoveInput,
+    tenantId: string = 'default',
+  ): Promise<BulkMutationResult> {
+    const notes = await this.listNotes(tenantId);
+    const hasAssigned = notes.some(note => !!normalizeCategoryMutationPath(note.tags[0] ?? ''));
+    const updates = notes.flatMap(note => {
+      const currentPath = categoryPathForMutation(note.tags, hasAssigned);
+      const tags = tagsForCategoryMove(
+        note.tags,
+        currentPath,
+        input.sourcePath,
+        input.targetPath,
+        input.includeDescendants,
+      );
+      if (!tags) return [];
+      const modified = new Date(Math.max(Date.now(), Date.parse(note.modified) + 1)).toISOString();
+      return [{ note: { ...note, tags, modified } }];
+    });
+    const failures: BulkMutationResult['failures'] = [];
+    const changes: BulkMutationResult['changes'] = [];
+    let affected = 0;
+    for (let offset = 0; offset < updates.length; offset += BULK_MUTATION_CHUNK_SIZE) {
+      const chunk = updates.slice(offset, offset + BULK_MUTATION_CHUNK_SIZE);
+      try {
+        const results = await this.client.batch(
+          chunk.map(({ note }) => ({
+            sql: 'UPDATE notes SET tags = ?, updated_at = ? WHERE id = ? AND tenant_id = ?',
+            args: [JSON.stringify(note.tags), note.modified, note.id, tenantId],
+          })),
+          'write',
+        );
+        for (let index = 0; index < chunk.length; index++) {
+          const { note } = chunk[index]!;
+          if ((results[index]?.rowsAffected ?? 0) !== 1) {
+            failures.push({ id: note.id, error: 'Note changed during category move.' });
+            continue;
+          }
+          affected++;
+          changes.push({ id: note.id, modified: note.modified, tags: note.tags });
+          try {
+            this.writeMdFile(note);
+          } catch (error) {
+            failures.push({ id: note.id, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(...chunk.map(({ note }) => ({ id: note.id, error: message })));
+      }
+    }
+    return {
+      requested: updates.length,
+      affected,
+      affectedIds: changes.map(change => change.id),
+      failures,
+      changes,
+    };
+  }
+
+  async deleteNotes(ids: string[], tenantId: string = 'default'): Promise<BulkMutationResult> {
+    const requestedIds = [...new Set(ids)];
+    if (requestedIds.length === 0) return { requested: 0, affected: 0, affectedIds: [], failures: [], changes: [] };
+    const existing = new Set((await this.list(tenantId)).map(note => note.id));
+    const found = requestedIds.filter(id => existing.has(id));
+    const failures = requestedIds
+      .filter(id => !existing.has(id))
+      .map(id => ({ id, error: 'Note not found in the active workspace.' }));
+    let affected = 0;
+    const affectedIds: string[] = [];
+    for (let offset = 0; offset < found.length; offset += BULK_MUTATION_CHUNK_SIZE) {
+      const chunk = found.slice(offset, offset + BULK_MUTATION_CHUNK_SIZE);
+      const deletedAt = new Date().toISOString();
+      const statements: import('@libsql/client').InStatement[] = [];
+      for (const id of chunk) {
+        statements.push(
+          {
+            sql: `INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+                  WHERE excluded.deleted_at > note_tombstones.deleted_at`,
+            args: [id, tenantId, deletedAt],
+          },
+          { sql: 'DELETE FROM note_links WHERE source_id = ? OR target_id = ?', args: [id, id] },
+          { sql: 'DELETE FROM notes WHERE id = ? AND tenant_id = ?', args: [id, tenantId] },
+        );
+      }
+      try {
+        const results = await this.client.batch(statements, 'write');
+        for (let index = 0; index < chunk.length; index++) {
+          const id = chunk[index]!;
+          if ((results[index * 3 + 2]?.rowsAffected ?? 0) !== 1) {
+            failures.push({ id, error: 'Note changed during deletion.' });
+            continue;
+          }
+          affected++;
+          affectedIds.push(id);
+          if (this.vaultPath) {
+            try {
+              const filePath = path.join(this.vaultPath, `${id}.md`);
+              if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            } catch (error) {
+              failures.push({ id, error: error instanceof Error ? error.message : String(error) });
+            }
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(...chunk.map(id => ({ id, error: message })));
+      }
+    }
+    return { requested: requestedIds.length, affected, affectedIds, failures, changes: [] };
+  }
+
   async delete(id: string): Promise<boolean> {
-    const result = await this.client.execute({
-      sql: 'DELETE FROM notes WHERE id = ?',
+    const existing = await this.client.execute({
+      sql: 'SELECT tenant_id FROM notes WHERE id = ?',
       args: [id],
     });
-    if ((result.rowsAffected ?? 0) > 0) {
+    const tenantId = existing.rows[0]?.['tenant_id'] as string | undefined;
+    if (!tenantId) return false;
+    const deletedAt = new Date().toISOString();
+    const results = await this.client.batch([
+      {
+        sql: `INSERT INTO note_tombstones (id, tenant_id, deleted_at) VALUES (?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+              WHERE excluded.deleted_at > note_tombstones.deleted_at`,
+        args: [id, tenantId, deletedAt],
+      },
+      { sql: 'DELETE FROM note_links WHERE source_id = ? OR target_id = ?', args: [id, id] },
+      { sql: 'DELETE FROM notes WHERE id = ?', args: [id] },
+    ], 'write');
+    if ((results[2]?.rowsAffected ?? 0) > 0) {
       if (this.vaultPath) {
         const filePath = path.join(this.vaultPath, `${id}.md`);
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -254,7 +359,7 @@ export class TursoNoteStore implements INoteStore {
 
   async list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT ref, id, title, body, tags, updated_at, hide_header
+      sql: `SELECT ref, id, title, substr(body, 1, 120) AS snippet, tags, created_at, updated_at, hide_header
             FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC`,
       args: [tenantId],
     });
@@ -262,11 +367,39 @@ export class TursoNoteStore implements INoteStore {
       ref: row['ref'] as number,
       id: row['id'] as string,
       title: row['title'] as string,
-      tags: JSON.parse(row['tags'] as string),
+      tags: parseStoredTags(row['tags']),
+      created: row['created_at'] as string,
       modified: row['updated_at'] as string,
-      snippet: (row['body'] as string).substring(0, 120),
+      snippet: row['snippet'] as string,
       hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
     }));
+  }
+
+  async listNotes(tenantId: string = 'default'): Promise<Note[]> {
+    const [noteResult, linkResult] = await Promise.all([
+      this.client.execute({
+        sql: 'SELECT * FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC',
+        args: [tenantId],
+      }),
+      this.client.execute({
+        sql: `SELECT nl.source_id, nl.target_id
+              FROM note_links nl
+              JOIN notes n ON n.id = nl.source_id
+              WHERE n.tenant_id = ?`,
+        args: [tenantId],
+      }),
+    ]);
+    const bySource = new Map<string, string[]>();
+    for (const row of linkResult.rows) {
+      const sourceId = row['source_id'] as string;
+      const targets = bySource.get(sourceId) ?? [];
+      targets.push(row['target_id'] as string);
+      bySource.set(sourceId, targets);
+    }
+    return noteResult.rows.map(row => {
+      const id = row['id'] as string;
+      return this.rowToNote(id, row, bySource.get(id) ?? []);
+    });
   }
 
   async search(query: string, tenantId: string = 'default'): Promise<SearchResult[]> {
@@ -278,6 +411,9 @@ export class TursoNoteStore implements INoteStore {
       ref: row['ref'] as number,
       id: row['id'] as string,
       title: row['title'] as string,
+      tags: parseStoredTags(row['tags']),
+      created: row['created_at'] as string,
+      modified: row['updated_at'] as string,
       snippet: snippetForSearchResult(
         row['title'] as string,
         row['body'] as string,
@@ -289,7 +425,8 @@ export class TursoNoteStore implements INoteStore {
 
     try {
       const result = await this.client.execute({
-        sql: `SELECT n.ref, n.id, n.title, n.body, n.hide_header, notes_fts.rank
+        sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at,
+                     n.hide_header, notes_fts.rank
               FROM notes_fts
               JOIN notes n ON n.rowid = notes_fts.rowid
               WHERE notes_fts MATCH ?
@@ -310,7 +447,7 @@ export class TursoNoteStore implements INoteStore {
         args.push(w, w);
       }
       const result = await this.client.execute({
-        sql: `SELECT ref, id, title, body, hide_header FROM notes
+        sql: `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header FROM notes
               WHERE tenant_id = ? AND ${conds}
               LIMIT 50`,
         args,
@@ -321,7 +458,7 @@ export class TursoNoteStore implements INoteStore {
 
   async getBacklinks(noteId: string): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.updated_at
+      sql: `SELECT n.ref, n.id, n.title, substr(n.body, 1, 120) AS snippet, n.tags, n.created_at, n.updated_at
             FROM note_links nl
             JOIN notes n ON n.id = nl.source_id
             WHERE nl.target_id = ?
@@ -332,21 +469,41 @@ export class TursoNoteStore implements INoteStore {
       ref: row['ref'] as number,
       id: row['id'] as string,
       title: row['title'] as string,
-      tags: JSON.parse(row['tags'] as string),
+      tags: parseStoredTags(row['tags']),
+      created: row['created_at'] as string,
       modified: row['updated_at'] as string,
-      snippet: (row['body'] as string).substring(0, 120),
+      snippet: row['snippet'] as string,
     }));
   }
 
   async updateLinks(sourceId: string, targetIds: string[]): Promise<void> {
-    const statements = [
-      { sql: 'DELETE FROM note_links WHERE source_id = ?', args: [sourceId] },
-      ...targetIds.map(targetId => ({
-        sql: 'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
-        args: [sourceId, targetId],
-      })),
-    ];
-    await this.client.batch(statements, 'write');
+    await this.updateLinksBatch([{ sourceId, targetIds }]);
+  }
+
+  async updateLinksBatch(updates: Array<{ sourceId: string; targetIds: string[] }>): Promise<void> {
+    const maxStatements = 256;
+    let statements: Array<{ sql: string; args: import('@libsql/client').InValue[] }> = [];
+    const flush = async () => {
+      if (statements.length === 0) return;
+      await this.client.batch(statements, 'write');
+      statements = [];
+    };
+    const pushStatement = async (statement: { sql: string; args: import('@libsql/client').InValue[] }) => {
+      if (statements.length >= maxStatements) {
+        await flush();
+      }
+      statements.push(statement);
+    };
+    for (const { sourceId, targetIds } of updates) {
+      await pushStatement({ sql: 'DELETE FROM note_links WHERE source_id = ?', args: [sourceId] });
+      for (const targetId of targetIds) {
+        await pushStatement({
+          sql: 'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
+          args: [sourceId, targetId],
+        });
+      }
+    }
+    await flush();
   }
 
   async resolveTitle(title: string, tenantId: string = 'default'): Promise<string | null> {
@@ -465,36 +622,31 @@ export class TursoNoteStore implements INoteStore {
       sql: 'DELETE FROM notes WHERE tenant_id = ?',
       args: [tenantId],
     });
+    await this.client.execute({
+      sql: 'DELETE FROM note_tombstones WHERE tenant_id = ?',
+      args: [tenantId],
+    });
   }
 
   /** No-op: HTTP client has no persistent connection to tear down. */
   close(): void { /* no-op */ }
 
   /**
-   * Full export of notes + links for additive merge into another store (e.g. local SQLite snapshot).
+   * Full export of notes, links, and deletion tombstones for synchronization.
    */
   async exportAllNotesAndLinks(): Promise<{
-    notes: Array<{
-      id: string;
-      title: string;
-      body: string;
-      tags: string;
-      tenant_id: string;
-      created_at: string;
-      updated_at: string;
-      ref: number | null;
-      hide_header: number;
-    }>;
+    notes: SyncNoteRow[];
     links: Array<{ source_id: string; target_id: string }>;
+    tombstones: NoteTombstoneRow[];
   }> {
-    const notesR = await this.client.execute({
-      sql: 'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',
-      args: [],
-    });
-    const linksR = await this.client.execute({
-      sql: 'SELECT source_id, target_id FROM note_links',
-      args: [],
-    });
+    const [notesR, linksR, tombstonesR] = await Promise.all([
+      this.client.execute({
+        sql: 'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',
+        args: [],
+      }),
+      this.client.execute({ sql: 'SELECT source_id, target_id FROM note_links', args: [] }),
+      this.client.execute({ sql: 'SELECT id, tenant_id, deleted_at FROM note_tombstones', args: [] }),
+    ]);
     const notes = notesR.rows.map(row => ({
       id: row['id'] as string,
       title: row['title'] as string,
@@ -510,87 +662,176 @@ export class TursoNoteStore implements INoteStore {
       source_id: row['source_id'] as string,
       target_id: row['target_id'] as string,
     }));
-    return { notes, links };
+    const tombstones = tombstonesR.rows.map(row => ({
+      id: row['id'] as string,
+      tenant_id: row['tenant_id'] as string,
+      deleted_at: row['deleted_at'] as string,
+    }));
+    return { notes, links, tombstones };
   }
 
   /**
    * Bulk-upsert notes from another store (e.g. local SQLite) into Turso.
    * Uses "last-write-wins by updated_at" — existing Turso notes are only
    * overwritten if the incoming version is newer.
-   * Links are inserted with INSERT OR IGNORE (additive, never deleted).
+   * Deletion tombstones participate in the same timestamp ordering. Links are replaced exactly for accepted notes.
    */
   async importNotes(
-    notes: Array<{
-      id: string;
-      title: string;
-      body: string;
-      tags: string;
-      tenant_id: string;
-      created_at: string;
-      updated_at: string;
-      ref: number | null;
-      hide_header: number;
-    }>,
+    notes: SyncNoteRow[],
     links: Array<{ source_id: string; target_id: string }>,
+    tombstones: NoteTombstoneRow[] = [],
   ): Promise<{ synced: number; skipped: number }> {
-    if (notes.length === 0) return { synced: 0, skipped: 0 };
+    if (notes.length === 0 && tombstones.length === 0) return { synced: 0, skipped: 0 };
 
-    let synced = 0;
-    const CHUNK = 50;
-
-    // Upsert notes in chunks to stay within libSQL batch limits
-    for (let i = 0; i < notes.length; i += CHUNK) {
-      const chunk = notes.slice(i, i + CHUNK);
-      const statements = chunk.map(n => ({
-        sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(id) DO UPDATE SET
-                title       = excluded.title,
-                body        = excluded.body,
-                tags        = excluded.tags,
-                updated_at  = excluded.updated_at,
-                ref         = COALESCE(excluded.ref, notes.ref),
-                hide_header = excluded.hide_header
-              WHERE excluded.updated_at > notes.updated_at`,
-        args: [
-          n.id,
-          n.title,
-          n.body,
-          n.tags,
-          n.tenant_id,
-          n.created_at,
-          n.updated_at,
-          n.ref,
-          n.hide_header ?? 0,
-        ] as import('@libsql/client').InValue[],
-      }));
-      await this.client.batch(statements, 'write');
-      synced += chunk.length;
+    const eventIds = [...new Set([...notes.map(note => note.id), ...tombstones.map(row => row.id)])];
+    const existingNotes = new Map<string, string>();
+    const existingTombstones = new Map<string, string>();
+    for (let offset = 0; offset < eventIds.length; offset += 100) {
+      const ids = eventIds.slice(offset, offset + 100);
+      const placeholders = ids.map(() => '?').join(', ');
+      const [noteRows, tombstoneRows] = await Promise.all([
+        this.client.execute({
+          sql: `SELECT id, updated_at FROM notes WHERE id IN (${placeholders})`,
+          args: ids,
+        }),
+        this.client.execute({
+          sql: `SELECT id, deleted_at FROM note_tombstones WHERE id IN (${placeholders})`,
+          args: ids,
+        }),
+      ]);
+      for (const row of noteRows.rows) {
+        existingNotes.set(row['id'] as string, row['updated_at'] as string);
+      }
+      for (const row of tombstoneRows.rows) {
+        existingTombstones.set(row['id'] as string, row['deleted_at'] as string);
+      }
     }
+    const incomingTombstones = new Map<string, string>();
+    for (const tombstone of tombstones) {
+      const current = incomingTombstones.get(tombstone.id);
+      if (!current || tombstone.deleted_at > current) incomingTombstones.set(tombstone.id, tombstone.deleted_at);
+    }
+    const incomingNotes = new Map(notes.map(note => [note.id, note]));
+    const acceptedNotes = notes.filter(note => {
+      const newestTombstone = [existingTombstones.get(note.id), incomingTombstones.get(note.id)]
+        .filter((value): value is string => Boolean(value))
+        .sort()
+        .at(-1);
+      return (!newestTombstone || note.updated_at > newestTombstone) &&
+        (!existingNotes.get(note.id) || note.updated_at >= existingNotes.get(note.id)!);
+    });
+    const acceptedTombstones = tombstones.filter(tombstone => {
+      const incomingNote = incomingNotes.get(tombstone.id);
+      return (!incomingNote || tombstone.deleted_at >= incomingNote.updated_at) &&
+        (!existingNotes.get(tombstone.id) || tombstone.deleted_at >= existingNotes.get(tombstone.id)!) &&
+        (!existingTombstones.get(tombstone.id) || tombstone.deleted_at > existingTombstones.get(tombstone.id)!);
+    });
+    const synced = acceptedNotes.filter(note => existingNotes.get(note.id) !== note.updated_at).length +
+      acceptedTombstones.length;
+    const skipped = notes.length + tombstones.length - synced;
+    const MAX_STATEMENTS = 200;
+    let statements: Array<{ sql: string; args: import('@libsql/client').InValue[] }> = [];
+    const flush = async () => {
+      if (statements.length === 0) return;
+      await this.client.batch(statements, 'write');
+      statements = [];
+    };
+    const append = async (group: typeof statements) => {
+      if (statements.length && statements.length + group.length > MAX_STATEMENTS) await flush();
+      statements.push(...group);
+    };
 
-    // Additive link sync — never remove existing Turso links
-    if (links.length > 0) {
-      for (let i = 0; i < links.length; i += CHUNK) {
-        const chunk = links.slice(i, i + CHUNK);
-        const statements = chunk.map(l => ({
-          sql: 'INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)',
-          args: [l.source_id, l.target_id] as import('@libsql/client').InValue[],
-        }));
-        await this.client.batch(statements, 'write');
+    for (const tombstone of acceptedTombstones) {
+      await append([
+        {
+          sql: `INSERT INTO note_tombstones (id, tenant_id, deleted_at)
+                SELECT ?, ?, ? WHERE NOT EXISTS (
+                  SELECT 1 FROM notes WHERE id = ? AND updated_at > ?
+                )
+                ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id, deleted_at = excluded.deleted_at
+                WHERE excluded.deleted_at > note_tombstones.deleted_at`,
+          args: [tombstone.id, tombstone.tenant_id, tombstone.deleted_at, tombstone.id, tombstone.deleted_at],
+        },
+        {
+          sql: `DELETE FROM note_links WHERE (source_id = ? OR target_id = ?)
+                AND EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at <= ?)`,
+          args: [tombstone.id, tombstone.id, tombstone.id, tombstone.deleted_at],
+        },
+        {
+          sql: 'DELETE FROM notes WHERE id = ? AND updated_at <= ?',
+          args: [tombstone.id, tombstone.deleted_at],
+        },
+      ]);
+    }
+    for (const note of acceptedNotes) {
+      await append([
+        {
+          sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                WHERE NOT EXISTS (SELECT 1 FROM note_tombstones WHERE id = ? AND deleted_at >= ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  title = excluded.title, body = excluded.body, tags = excluded.tags,
+                  updated_at = excluded.updated_at, ref = COALESCE(excluded.ref, notes.ref),
+                  hide_header = excluded.hide_header
+                WHERE excluded.updated_at > notes.updated_at`,
+          args: [note.id, note.title, note.body, note.tags, note.tenant_id, note.created_at,
+            note.updated_at, note.ref, note.hide_header ?? 0, note.id, note.updated_at],
+        },
+        { sql: 'DELETE FROM note_tombstones WHERE id = ? AND deleted_at < ?', args: [note.id, note.updated_at] },
+      ]);
+    }
+    await flush();
+
+    if (this.vaultPath) {
+      for (const tombstone of acceptedTombstones) {
+        try {
+          fs.unlinkSync(path.join(this.vaultPath, `${tombstone.id}.md`));
+        } catch {
+          /* missing */
+        }
       }
     }
 
-    return { synced, skipped: 0 };
+    const linksBySource = new Map<string, string[]>();
+    for (const link of links) {
+      const targets = linksBySource.get(link.source_id) ?? [];
+      targets.push(link.target_id);
+      linksBySource.set(link.source_id, targets);
+    }
+    for (const note of acceptedNotes) {
+      await append([{
+        sql: `DELETE FROM note_links WHERE source_id = ?
+              AND EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at <= ?)`,
+        args: [note.id, note.id, note.updated_at],
+      }]);
+      for (const targetId of linksBySource.get(note.id) ?? []) {
+        await append([{
+          sql: `INSERT OR IGNORE INTO note_links (source_id, target_id)
+                SELECT ?, ? WHERE EXISTS (SELECT 1 FROM notes WHERE id = ? AND updated_at <= ?)
+                AND EXISTS (SELECT 1 FROM notes WHERE id = ?)`,
+          args: [note.id, targetId, note.id, note.updated_at, targetId],
+        }]);
+      }
+    }
+    await flush();
+
+    if (this.vaultPath) {
+      for (const incoming of notes) {
+        const note = await this.read(incoming.id);
+        if (note) this.writeMdFile(note);
+      }
+    }
+
+    return { synced, skipped };
   }
 
-  private rowToNote(id: string, row: Record<string, unknown>): Note {
-    const links: string[] = [];  // links loaded lazily by consumers if needed
+  private rowToNote(id: string, row: Record<string, unknown>, links: string[]): Note {
     return {
       id,
       ref: row['ref'] as number,
       title: row['title'] as string,
       body: row['body'] as string,
-      tags: JSON.parse(row['tags'] as string),
+      tags: parseStoredTags(row['tags']),
       created: row['created_at'] as string,
       modified: row['updated_at'] as string,
       tenantId: row['tenant_id'] as string,
@@ -603,17 +844,6 @@ export class TursoNoteStore implements INoteStore {
     if (!this.vaultPath) return;
     fs.mkdirSync(this.vaultPath, { recursive: true });
     const filePath = path.join(this.vaultPath, `${note.id}.md`);
-    const content = [
-      '---',
-      `title: "${escapeYamlDoubleQuotedString(note.title)}"`,
-      `tags: [${note.tags.map(t => `"${escapeYamlDoubleQuotedString(t)}"`).join(', ')}]`,
-      `created: ${note.created}`,
-      `modified: ${note.modified}`,
-      `hideHeader: ${note.hideHeader}`,
-      '---',
-      '',
-      note.body,
-    ].join('\n');
-    fs.writeFileSync(filePath, content, 'utf-8');
+    fs.writeFileSync(filePath, serializeNoteMarkdown(note), 'utf-8');
   }
 }

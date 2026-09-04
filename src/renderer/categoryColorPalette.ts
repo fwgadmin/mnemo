@@ -179,12 +179,14 @@ function pickAutoColorForKey(
 /**
  * Merge user-stored colors with auto picks for paths the user never set.
  * Explicit hex picks are used as stored (no contrast nudge) so the UI matches the picker.
- * Auto colors for unset paths still use readability tweaks / swatches.
- * `General` / `Unassigned` get a readable auto color when unset so the chain resolves.
+ * Top-level paths use theme swatches; nested paths derive a nearby readable shade from their parent.
+ * `General` / `Unassigned` also receive readable defaults when automatic colors are enabled.
  */
 export function buildEffectiveCategoryColors(
   explicit: Record<string, string>,
   theme: ThemeDefinition,
+  categoryPaths: readonly string[] = [],
+  autoColorCategories = true,
 ): Record<string, string> {
   const panelBg = theme.variables['--mnemo-bg-panel'] ?? '#111111';
   const accentFallback = theme.variables['--mnemo-accent'] ?? '#7c7cff';
@@ -196,14 +198,37 @@ export function buildEffectiveCategoryColors(
     merged[k] = v;
   }
 
-  const generalKey = categoryColorStorageKey(GENERAL_PATH);
-  if (!merged[generalKey]) {
-    merged[generalKey] = pickAutoColorForKey(generalKey, swatches, accentFallback, panelBg);
+  if (!autoColorCategories) return merged;
+
+  const allPaths = new Set<string>([GENERAL_PATH, UNASSIGNED_PATH]);
+  for (const raw of categoryPaths) {
+    const normalized = categoryColorStorageKey(raw);
+    allPaths.add(normalized);
+    if (normalized === GENERAL_PATH || normalized === UNASSIGNED_PATH) continue;
+    const segments = normalized.split('/');
+    for (let i = 1; i < segments.length; i++) allPaths.add(segments.slice(0, i).join('/'));
   }
 
-  const unassignedKey = categoryColorStorageKey(UNASSIGNED_PATH);
-  if (!merged[unassignedKey]) {
-    merged[unassignedKey] = pickAutoColorForKey(unassignedKey, swatches, accentFallback, panelBg);
+  const ordered = [...allPaths].sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b));
+  for (const key of ordered) {
+    if (merged[key]) continue;
+    const slash = key.lastIndexOf('/');
+    const parent = slash > 0 ? key.slice(0, slash) : null;
+    const parentColor = parent ? merged[parent] : undefined;
+    if (!parentColor) {
+      merged[key] = pickAutoColorForKey(key, swatches, accentFallback, panelBg);
+      continue;
+    }
+    const base = hexToHsl(parentColor);
+    const hash = hashPathKey(key);
+    const hue = base.h + ((hash % 13) - 6);
+    const saturation = Math.max(0.35, Math.min(0.92, base.s + ((hash % 5) - 2) * 0.025));
+    const panelIsDark = relativeLuminance(parseHexChannels(panelBg) ?? [0, 0, 0]) < 0.45;
+    const lightnessStep = 0.055 + (hash % 3) * 0.012;
+    const lightness = panelIsDark
+      ? Math.min(0.86, base.l + lightnessStep)
+      : Math.max(0.16, base.l - lightnessStep);
+    merged[key] = tweakForContrast(hslToHex(hue, saturation, lightness), panelBg, panelIsDark);
   }
 
   return merged;

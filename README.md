@@ -14,9 +14,9 @@ Mnemo keeps a **stable ref** per note, **full-text search**, **wikilinks**, and 
 
 ## Features
 
-- **Desktop app (Electron)** — Markdown editor, graph, **IDE layout with editor tabs** as the default (classic sidebar and top layouts in Settings), remote DB in Settings with **upload + download** (additive sync), background vault sync + manual reload (Turso), **F11** fullscreen on Linux/Windows; optional **spell check**, **autocomplete** (fenced code languages and wikilinks), and **Copy/Paste as summary** via locally configured LLM profiles (see **Help → Documentation**)
-- **CLI** — `mnemo note …` for list/search/show/new/import, compose/edit in `$EDITOR`, categories, link graph, autolink; **`mnemo sync push` / `mnemo sync pull`** for additive merges with libSQL (see `mnemo help sync`); interactive list pager scrolls with selection
-- **MCP** — stdio server (`mnemo mcp`) for Cursor / Claude Desktop (list/categories/ref-based tools, autolink, etc.); HTTP/SSE (`mnemo mcp-http`) for remote libSQL + bearer auth
+- **Desktop app (Electron)** — Markdown editor, graph, **IDE layout with editor tabs** as the default (classic sidebar and top layouts in Settings), remote DB in Settings with **upload + download** synchronization, background vault sync + manual reload (Turso), **F11** fullscreen on Linux/Windows; optional **spell check**, **autocomplete** (fenced code languages and wikilinks), and **Copy/Paste as summary** via locally configured LLM profiles (see **Help → Documentation**)
+- **CLI** — `mnemo note …` for list/search/show/new/import, compose/edit in `$EDITOR`, categories, link graph, autolink; **`mnemo sync push` / `mnemo sync pull`** propagate updates, deletions, and exact links with libSQL (see `mnemo help sync`); interactive list pager scrolls with selection
+- **MCP** — stdio server (`mnemo mcp`) for Cursor / Claude Desktop (list/categories/ref-based tools, autolink, etc.); Streamable HTTP (`mnemo mcp-http`) for remote libSQL + bearer auth
 - **Optional cloud** — same credentials in GUI Settings or env vars for CLI/MCP
 
 ## Examples (CLI)
@@ -35,7 +35,9 @@ mnemo note new --title "Hello" --body "Markdown **here**." -c General
 mnemo 1
 ```
 
-`ref` in last command (1) is the **#** column from `note list` (not arbitrary IDs). See `**mnemo --help`** for every subcommand.
+Use **`-g`** so **`mnemo`** (and **`mnemo-note`**) are on your **`PATH`**. A **local** install (`npm install mnemo-note` without `-g`) only adds **`node_modules/.bin/`** — run **`npx mnemo`**, **`npx mnemo-note`**, or **`./node_modules/.bin/mnemo`** from that directory.
+
+`ref` in the last command (`1`) is the **#** column from `note list` (not an arbitrary ID). See `**mnemo --help`** for every subcommand.
 
 ## Prerequisites
 
@@ -78,7 +80,7 @@ To Be Shipped: Native iOS / Android lives under **`apps/mnemo-mobile`**. From th
 - **MCP stdio** — add `mnemo` / `mcp` to your IDE’s MCP config ([examples/mcp-stdio.md](examples/mcp-stdio.md))
 - **MCP HTTP** — for hosted setups with Turso + API key ([examples/mcp-http.md](examples/mcp-http.md))
 - **Deterministic refs** — cite `ref` or titles in prompts; no vector DB required
-- **Desktop summarization** — the GUI can send selected or clipboard text to OpenAI-compatible APIs, Ollama, Anthropic, or Gemini using **Settings → Summary & LLM**; keys stay in `llm-config.json` under app data. Use **Ctrl+Shift+C/V** in the note editor for plain summaries (when configured), **Ctrl+Alt+C/V** for Markdown-formatted summaries; **Ctrl+Shift+V** still toggles Markdown preview when summarization does not apply (see **Help → Documentation**)
+- **Desktop summarization** — the GUI can send selected or clipboard text to OpenAI-compatible APIs, Ollama, Anthropic, or Gemini using **Settings → Summary & LLM**; keys stay local, are encrypted with the OS-backed Electron `safeStorage` service when available, and are never returned in full to the renderer. Use **Ctrl+Shift+C/V** in the note editor for plain summaries (when configured), **Ctrl+Alt+C/V** for Markdown-formatted summaries; **Ctrl+Shift+V** still toggles Markdown preview when summarization does not apply (see **Help → Documentation**)
 
 ## Philosophy
 

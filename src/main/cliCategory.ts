@@ -2,12 +2,12 @@
  * Category path helpers for the Node CLI — mirrors App.tsx tag semantics (General / Unassigned / nested paths).
  */
 import type { INoteStore, NoteListItem } from '../shared/types';
+import { validateCategoryMoveInput } from './categoryBulk';
 import {
   GENERAL_PATH,
   UNASSIGNED_PATH,
   VIRTUAL_CATEGORY_ROOT,
   normalizePath,
-  categoryPathFromTags,
   buildCategoryTree,
   flattenTreeDFS,
   promoteCategoryPath,
@@ -95,58 +95,37 @@ export async function renameCategoryFolder(
   oldPathRaw: string,
   newPathRaw: string,
   opts?: { silent?: boolean; tenantId?: string },
-): Promise<{ updated: number; oldPath: string; newPath: string }> {
+): Promise<{ updated: number; oldPath: string; newPath: string; failures: Array<{ id: string; error: string }> }> {
   const oldPath = parseCliCategoryPath(oldPathRaw);
   const newPath = parseCliCategoryPath(newPathRaw);
   if (oldPath === newPath) {
     throw new Error('Old and new paths are the same.');
   }
-  const migrateSubtreePrefix = newPath !== UNASSIGNED_PATH;
-
-  const initialList = await store.list(opts?.tenantId);
-  let updated = 0;
-  for (const n of initialList) {
-    const cur = categoryPathFromTags(n.tags, initialList);
-    const otherTags = n.tags.slice(1);
-    let newTags: string[];
-
-    if (cur === oldPath) {
-      if (newPath === UNASSIGNED_PATH) {
-        newTags = otherTags;
-      } else if (newPath === GENERAL_PATH) {
-        newTags = [GENERAL_PATH, ...otherTags];
-      } else {
-        newTags = [newPath, ...otherTags];
-      }
-    } else if (migrateSubtreePrefix && cur.startsWith(`${oldPath}/`)) {
-      const suffix = cur.slice(oldPath.length + 1);
-      const first =
-        newPath === GENERAL_PATH
-          ? suffix
-            ? `${GENERAL_PATH}/${suffix}`
-            : GENERAL_PATH
-          : suffix
-            ? `${newPath}/${suffix}`
-            : newPath;
-      newTags = [first, ...otherTags];
-    } else {
-      continue;
-    }
-
-    await store.update({ id: n.id, tags: newTags });
-    updated++;
+  if (newPath.startsWith(`${oldPath}/`)) {
+    throw new Error('A category cannot be moved beneath itself.');
   }
+  const move = validateCategoryMoveInput({
+    sourcePath: oldPath,
+    targetPath: newPath,
+    includeDescendants: newPath !== UNASSIGNED_PATH,
+  });
+
+  const result = await store.moveCategoryPrefix(
+    move,
+    opts?.tenantId,
+  );
   if (!opts?.silent) {
-    console.log(`Renamed category: ${updated} note(s) moved from "${oldPath}" to "${newPath}".`);
+    console.log(`Renamed category: ${result.affected} note(s) moved from "${oldPath}" to "${newPath}".`);
+    if (result.failures.length) console.error(`${result.failures.length} note(s) could not be updated.`);
   }
-  return { updated, oldPath, newPath };
+  return { updated: result.affected, oldPath, newPath, failures: result.failures };
 }
 
 export async function promoteCategoryFolder(
   store: INoteStore,
   pathRaw: string,
   opts?: { silent?: boolean; tenantId?: string },
-): Promise<{ updated: number; oldPath: string; newPath: string }> {
+): Promise<{ updated: number; oldPath: string; newPath: string; failures: Array<{ id: string; error: string }> }> {
   const p = parseCliCategoryPath(pathRaw);
   const next = promoteCategoryPath(p);
   if (next === null) {
@@ -160,7 +139,7 @@ export async function demoteCategoryFolder(
   pathRaw: string,
   parentRaw: string,
   opts?: { silent?: boolean; tenantId?: string },
-): Promise<{ updated: number; oldPath: string; newPath: string }> {
+): Promise<{ updated: number; oldPath: string; newPath: string; failures: Array<{ id: string; error: string }> }> {
   const path = parseCliCategoryPath(pathRaw);
   const parent = parseCliCategoryPath(parentRaw);
   if (!isValidDemoteParent(path, parent)) {

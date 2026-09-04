@@ -1,3 +1,5 @@
+import { fetchLlm } from '../requestTimeout';
+
 export async function summarizeAnthropic(opts: {
   baseUrl: string;
   model: string;
@@ -10,7 +12,7 @@ export async function summarizeAnthropic(opts: {
   let b = opts.baseUrl.trim().replace(/\/$/, '');
   if (!b) b = 'https://api.anthropic.com';
   const url = b.endsWith('/v1/messages') ? b : `${b}/v1/messages`;
-  const res = await fetch(url, {
+  const res = await fetchLlm(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -33,7 +35,7 @@ export async function summarizeAnthropic(opts: {
     error?: { message?: string };
   };
   if (data.error?.message) throw new Error(data.error.message);
-  const block = data.content?.find(c => c.type === 'text');
+  const block = data.content?.find((c) => c.type === 'text');
   const text = block?.text;
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error('Empty response from Anthropic');

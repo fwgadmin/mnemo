@@ -70,7 +70,7 @@ export default function WorkspaceSwitcher({
             Vault workspaces
           </div>
           <ul className="max-h-56 overflow-y-auto py-1">
-            {profiles.workspaces.map(w => {
+            {profiles.workspaces.filter(w => !w.archivedAt).map(w => {
               const isActive = w.id === profiles.activeWorkspaceId;
               return (
                 <li key={w.id}>

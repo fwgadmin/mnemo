@@ -4,12 +4,11 @@
  * Communicates via stdio transport — designed for Claude Desktop, Cursor, etc.
  *
  * Usage:
- *   node mnemo-mcp.js [--db <path>] [--vault <path>]
+ *   node mnemo-mcp.js [--db <path>] [--vault <path>] [--workspace <id|index>]
  *   node mnemo-mcp.js --turso-url <url> --turso-token <token> [--vault <path>]
  *
- * Defaults:
- *   --db     ./mnemo.db
- *   --vault  ./vault
+ * Each server process keeps its workspace selection independently. Use
+ * --workspace to pin a client; switch_workspace only changes that connection.
  */
 import { runMcpStdioServer } from './stdio-bootstrap';
 
