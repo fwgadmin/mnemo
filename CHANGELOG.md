@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.1 — 2026-11-13
+
+- **Release:** `mnemo-note@2.2.1` on npm; tag **`v2.2.1`** on GitHub. Windows installers are still unsigned (see 2.2.0).
+- **Workspace names no longer revert to their ids** (`ws-…`). Any Mnemo process (app, CLI or MCP server) that read `workspace-profiles.json` mid-write, or found it missing, used to save a bare Default list over it and copy that to Turso; tenant repair then re-added each workspace named by its id. The file is now written atomically, an unreadable file is never overwritten with defaults, a missing file is not copied to Turso, and syncing keeps a real name over an id placeholder and keeps profiles only one side has (deletions stay tombstoned). Every write to the Turso copy now merges into it rather than replacing it, so a device with a missing or stale file can't erase names there, and tenant repair keeps deletion markers. Names already lost need renaming once; older CLI/MCP processes can still cause it until they are updated to 2.2.1.
+
 ## 2.2.0 — 2026-11-13
 
 - **Release:** `mnemo-note@2.2.0` on npm; tag **`v2.2.0`** on GitHub (Windows zip; Linux zip containing the `.deb` and the app folder). Includes everything listed below, plus the unreleased 2.1.19 npm change. The mobile app is not part of this release.

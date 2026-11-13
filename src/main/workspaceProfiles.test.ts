@@ -10,6 +10,9 @@ import {
   deleteWorkspaceProfile,
   mergeWorkspacesWhenCloudNewer,
   parseWorkspaceProfilesKvPayload,
+  readWorkspaceProfilesFileResult,
+  restoreWorkspaceNames,
+  mergeWorkspacesPreferring,
   restoreWorkspaceProfile,
   setActiveWorkspace,
   workspaceProfilesRemotePayload,
@@ -155,5 +158,74 @@ describe('workspace secret isolation', () => {
     });
     expect(first).not.toBe(second);
     expect(first).not.toContain('token-a');
+  });
+});
+
+describe('workspace names survive sync and bad reads', () => {
+  const named = (id: string, name: string) => ({ id, name, storage: { mode: 'inherit' as const } });
+
+  it('never lets a placeholder (id) name replace a real one, and keeps device-only profiles', () => {
+    const disk = [named('default', 'Default'), named('ws-a', 'Research'), named('ws-b', 'Ops')];
+    const cloud = [named('default', 'Default'), named('ws-a', 'ws-a'), named('ws-c', 'New on laptop')];
+    const merged = mergeWorkspacesWhenCloudNewer(disk, cloud);
+    expect(merged.map((w) => [w.id, w.name])).toEqual([
+      ['default', 'Default'],
+      ['ws-a', 'Research'],
+      ['ws-c', 'New on laptop'],
+      ['ws-b', 'Ops'],
+    ]);
+    // A real rename from the cloud still wins.
+    expect(mergeWorkspacesWhenCloudNewer(disk, [named('ws-a', 'Renamed')]).find((w) => w.id === 'ws-a')?.name).toBe(
+      'Renamed',
+    );
+    expect(restoreWorkspaceNames([named('ws-a', 'ws-a')], [named('ws-a', 'Research')])[0]?.name).toBe('Research');
+  });
+
+  it('reports a corrupt profiles file as unreadable and refuses to overwrite it', () => {
+    const { root } = fixture();
+    const p = path.join(root, 'workspace-profiles.json');
+    fs.writeFileSync(p, '{"workspaces": [');
+    expect(readWorkspaceProfilesFileResult(root).status).toBe('unreadable');
+    expect(() => setActiveWorkspace(root, 'default')).toThrow(/not overwriting/);
+    expect(fs.readFileSync(p, 'utf-8')).toBe('{"workspaces": [');
+    fs.rmSync(p);
+    expect(readWorkspaceProfilesFileResult(root).status).toBe('missing');
+  });
+
+  it('writes atomically without leaving temp files behind', () => {
+    const { root, state } = fixture();
+    writeWorkspaceProfilesFileDiskOnly(root, { ...state, workspaces: [...state.workspaces, named('ws-z', 'Zed')] });
+    expect(fs.readdirSync(root).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+    expect(readWorkspaceProfilesFileResult(root).state.workspaces.find((w) => w.id === 'ws-z')?.name).toBe('Zed');
+  });
+});
+
+describe('workspace sync review follow-ups', () => {
+  const named = (id: string, name: string) => ({ id, name, storage: { mode: 'inherit' as const } });
+
+  it('merges preferring one side while keeping the other side’s names and extra profiles', () => {
+    const merged = mergeWorkspacesPreferring(
+      [named('default', 'Default'), named('ws-a', 'ws-a'), named('ws-b', 'Local rename')],
+      [named('ws-a', 'Research'), named('ws-b', 'Old'), named('ws-c', 'Cloud only')],
+    );
+    expect(merged.map((w) => w.name)).toEqual(['Default', 'Research', 'Local rename', 'Cloud only']);
+  });
+
+  it('keeps deletion markers when tenant repair rewrites the profiles', async () => {
+    const { root } = fixture();
+    writeWorkspaceProfilesFileDiskOnly(root, {
+      activeWorkspaceId: 'default',
+      workspaces: [named('default', 'Default')],
+      deletedWorkspaceIds: ['ws-gone'],
+    });
+    const store = {
+      listDistinctTenantIds: async () => ['default', 'ws-new', 'ws-gone'],
+      getNoteCountsByTenant: async () => ({ default: 1 }),
+    } as unknown as import('../shared/types').INoteStore;
+    const { readWorkspaceProfilesMerged } = await import('./workspaceProfilesSync');
+    const state = await readWorkspaceProfilesMerged(store, root);
+    expect(state.workspaces.map((w) => w.id)).toEqual(['default', 'ws-new']);
+    expect(state.deletedWorkspaceIds).toEqual(['ws-gone']);
+    expect(readWorkspaceProfilesFileResult(root).state.deletedWorkspaceIds).toEqual(['ws-gone']);
   });
 });

@@ -213,9 +213,36 @@ export function filterWorkspacesByDeletedIds(
   return workspaces.filter((w) => w.id === DEFAULT_WORKSPACE_ID || !deletedIds.has(w.id));
 }
 
+/** True when a profile's name is only its id (what tenant repair writes when the real name is unknown). */
+export function hasPlaceholderName(w: WorkspaceProfileEntry): boolean {
+  return w.id !== DEFAULT_WORKSPACE_ID && w.name.trim() === w.id;
+}
+
+/** Fill placeholder names in `primary` from real names for the same id in `other`. */
+export function restoreWorkspaceNames(
+  primary: WorkspaceProfileEntry[],
+  other: WorkspaceProfileEntry[],
+): WorkspaceProfileEntry[] {
+  const named = new Map(other.filter((w) => !hasPlaceholderName(w)).map((w) => [w.id, w.name] as const));
+  return primary.map((w) => (hasPlaceholderName(w) && named.has(w.id) ? { ...w, name: named.get(w.id)! } : w));
+}
+
 /**
- * When Turso app_kv is newer than disk: cloud workspace list wins for inherit/remote profiles.
- * Dedicated `sqlite` entries that exist only on this device are merged in so local vaults are not dropped.
+ * `primary` wins field-by-field; placeholder names are filled from `other`, and profiles only `other`
+ * has are appended. Callers filter tombstoned ids.
+ */
+export function mergeWorkspacesPreferring(
+  primary: WorkspaceProfileEntry[],
+  other: WorkspaceProfileEntry[],
+): WorkspaceProfileEntry[] {
+  const ids = new Set(primary.map((w) => w.id));
+  return [...restoreWorkspaceNames(primary, other), ...other.filter((w) => !ids.has(w.id))];
+}
+
+/**
+ * When Turso app_kv is newer than disk: cloud entries win field-by-field, except that a placeholder
+ * name (the id) never replaces a real one. Entries only on this device are kept; the caller filters
+ * tombstoned ids.
  */
 export function mergeWorkspacesWhenCloudNewer(
   diskWorkspaces: WorkspaceProfileEntry[],
@@ -223,7 +250,7 @@ export function mergeWorkspacesWhenCloudNewer(
 ): WorkspaceProfileEntry[] {
   const cloudById = new Map(cloudWorkspaces.map((w) => [w.id, w] as const));
   const diskById = new Map(diskWorkspaces.map((w) => [w.id, w] as const));
-  const out: WorkspaceProfileEntry[] = cloudWorkspaces.map((w) => {
+  const out: WorkspaceProfileEntry[] = restoreWorkspaceNames(cloudWorkspaces, diskWorkspaces).map((w) => {
     const local = diskById.get(w.id);
     if (w.storage?.mode === 'remote' && local?.storage?.mode === 'remote') {
       return {
@@ -237,10 +264,10 @@ export function mergeWorkspacesWhenCloudNewer(
     }
     return { ...w };
   });
+  // Keep profiles this device knows about that the cloud copy lacks. Deletions are tombstoned (and
+  // filtered by the caller), so a missing row means a stale or truncated cloud copy, not a removal.
   for (const w of diskWorkspaces) {
-    if ((w.storage?.mode ?? 'inherit') === 'sqlite' && !cloudById.has(w.id)) {
-      out.push({ ...w });
-    }
+    if (!cloudById.has(w.id)) out.push({ ...w });
   }
   const seen = new Map<string, WorkspaceProfileEntry>();
   for (const w of out) {
@@ -308,14 +335,45 @@ export function parseWorkspaceProfilesState(j: unknown): WorkspaceProfilesState 
   return { activeWorkspaceId: active, workspaces, deletedWorkspaceIds };
 }
 
-export function readWorkspaceProfilesFile(root: string): WorkspaceProfilesState {
+export type WorkspaceProfilesFileStatus = 'ok' | 'missing' | 'unreadable';
+
+/**
+ * Read workspace-profiles.json and say whether it was actually read. A file that exists but does not
+ * parse (for example caught mid-write by an older CLI/MCP build) is retried briefly, then reported as
+ * `unreadable` so callers never persist the in-memory defaults over it — doing so used to wipe every
+ * workspace name, after which tenant repair re-added the workspaces named by their ids.
+ */
+export function readWorkspaceProfilesFileResult(root: string): {
+  state: WorkspaceProfilesState;
+  status: WorkspaceProfilesFileStatus;
+} {
   const p = profilesPath(root);
-  try {
-    const raw = fs.readFileSync(p, 'utf-8');
-    return parseWorkspaceProfilesState(JSON.parse(raw) as unknown);
-  } catch {
-    return defaultProfiles();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(p, 'utf-8');
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { state: defaultProfiles(), status: 'missing' };
+      raw = '';
+    }
+    try {
+      const j = JSON.parse(raw) as unknown;
+      if (j && typeof j === 'object' && !Array.isArray(j)) {
+        return { state: parseWorkspaceProfilesState(j), status: 'ok' };
+      }
+    } catch {
+      /* retry: another process may be rewriting the file */
+    }
+    const until = Date.now() + 20;
+    while (Date.now() < until) {
+      /* short synchronous back-off */
+    }
   }
+  return { state: defaultProfiles(), status: 'unreadable' };
+}
+
+export function readWorkspaceProfilesFile(root: string): WorkspaceProfilesState {
+  return readWorkspaceProfilesFileResult(root).state;
 }
 
 /** Disk only — use when rehydrating from Turso without double-mirroring. */
@@ -337,28 +395,66 @@ export function writeWorkspaceProfilesFileDiskOnly(root: string, data: Workspace
     }),
   };
   fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(p, JSON.stringify(stored, null, 2), {
-    encoding: 'utf-8',
-    mode: 0o600,
-  });
+  // Write a temp file and rename it into place so concurrent readers (app, CLI, MCP servers) never
+  // see a truncated file.
+  const tmp = `${p}.${process.pid}.${Date.now().toString(36)}.tmp`;
   try {
-    fs.chmodSync(p, 0o600);
-  } catch {
-    /* ignore unsupported permission bits */
+    fs.writeFileSync(tmp, JSON.stringify(stored, null, 2), { encoding: 'utf-8', mode: 0o600 });
+    try {
+      fs.chmodSync(tmp, 0o600);
+    } catch {
+      /* ignore unsupported permission bits */
+    }
+    fs.renameSync(tmp, p);
+  } catch (e) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* ignore */
+    }
+    throw e;
   }
 }
 
 /** app_kv key — mirrored with workspace-profiles.json when using Turso (same DB as notes). */
 export const WORKSPACE_PROFILES_KV_KEY = 'workspace_profiles';
 
+/**
+ * Merge into the cloud copy instead of replacing it: a device whose local file was missing or stale
+ * must not erase names, profiles or deletion markers that only the cloud copy holds.
+ */
+async function mirrorMergedToKv(st: TursoNoteStore, data: WorkspaceProfilesState): Promise<void> {
+  let next = data;
+  try {
+    const entry = await st.getKvEntry(WORKSPACE_PROFILES_KV_KEY);
+    if (entry) {
+      const cloud = parseWorkspaceProfilesKvPayload(JSON.parse(entry.value) as unknown);
+      const deleted = mergeDeletedWorkspaceIds(data.deletedWorkspaceIds, cloud.deletedWorkspaceIds);
+      next = {
+        ...data,
+        workspaces: filterWorkspacesByDeletedIds(
+          mergeWorkspacesPreferring(data.workspaces, cloud.workspaces),
+          new Set(deleted),
+        ),
+        deletedWorkspaceIds: deleted,
+      };
+    }
+  } catch {
+    /* unreadable cloud copy: overwrite it with ours */
+  }
+  try {
+    await st.setKv(WORKSPACE_PROFILES_KV_KEY, JSON.stringify(workspaceProfilesRemotePayload(next)));
+  } catch {
+    /* offline: the next merged read pushes it */
+  }
+}
+
 function mirrorWorkspaceProfilesToKv(data: WorkspaceProfilesState): void {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getGlobalStore } = require('./storeResolver') as typeof import('./storeResolver');
     const st = getGlobalStore();
-    if (st instanceof TursoNoteStore) {
-      void st.setKv(WORKSPACE_PROFILES_KV_KEY, JSON.stringify(workspaceProfilesRemotePayload(data)));
-    }
+    if (st instanceof TursoNoteStore) void mirrorMergedToKv(st, data);
   } catch {
     /* ignore */
   }
@@ -370,14 +466,20 @@ export function writeWorkspaceProfilesFile(root: string, data: WorkspaceProfiles
   mirrorWorkspaceProfilesToKv(data);
 }
 
+/**
+ * Profiles for a read-modify-write. A missing file is created locally only (never mirrored: the cloud
+ * copy may hold the real list). An unreadable file throws rather than being replaced by defaults.
+ */
 export function ensureWorkspaceProfilesOnDisk(root: string): WorkspaceProfilesState {
-  const p = profilesPath(root);
-  if (!fs.existsSync(p)) {
-    const d = defaultProfiles();
-    writeWorkspaceProfilesFile(root, d);
-    return d;
+  const { state, status } = readWorkspaceProfilesFileResult(root);
+  if (status === 'missing') {
+    writeWorkspaceProfilesFileDiskOnly(root, state);
+    return state;
   }
-  return readWorkspaceProfilesFile(root);
+  if (status === 'unreadable') {
+    throw new Error(`workspace-profiles.json in ${root} could not be read; not overwriting it`);
+  }
+  return state;
 }
 
 /**

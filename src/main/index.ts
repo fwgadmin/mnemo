@@ -56,6 +56,7 @@ import {
   setWorkspaceProfileStorage,
   setWorkspaceSecretCodec,
   readWorkspaceProfilesFile,
+  readWorkspaceProfilesFileResult,
   writeWorkspaceProfilesFileDiskOnly,
 } from './workspaceProfiles';
 import { readWorkspaceProfilesMerged } from './workspaceProfilesSync';
@@ -1156,9 +1157,11 @@ app.whenReady().then(async () => {
   });
   const configPath = getConfigPath();
   if (fs.existsSync(configPath)) writeConfig(readConfig());
-  const profilePath = path.join(app.getPath('userData'), 'workspace-profiles.json');
-  if (fs.existsSync(profilePath)) {
-    writeWorkspaceProfilesFileDiskOnly(app.getPath('userData'), readWorkspaceProfilesFile(app.getPath('userData')));
+  // Re-save once to apply the OS secret codec — only when the file was actually read, so a file caught
+  // mid-write by another process is never replaced by defaults.
+  const profilesRead = readWorkspaceProfilesFileResult(app.getPath('userData'));
+  if (profilesRead.status === 'ok') {
+    writeWorkspaceProfilesFileDiskOnly(app.getPath('userData'), profilesRead.state);
   }
   const llmPath = path.join(app.getPath('userData'), 'llm-config.json');
   if (fs.existsSync(llmPath)) writeLlmConfig(app.getPath('userData'), readLlmConfig(app.getPath('userData')));
