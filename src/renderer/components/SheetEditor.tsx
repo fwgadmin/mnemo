@@ -40,6 +40,7 @@ import {
   type StructuralEdit,
 } from '../../shared/sheetFormula';
 import type { EditorHandle } from './Editor';
+import { fillRange, sortRows } from '../../shared/sheetOps';
 
 const ROW_H = 24;
 const HEADER_H = 24;
@@ -181,6 +182,9 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<number | null>(null);
   const [status, setStatus] = useState('');
+  /** View-only row filter (never saved): rows whose displayed value in `col` contains `q`; row 1 always shows. */
+  const [filter, setFilter] = useState<{ col: number; q: string } | null>(null);
+  const [fillTarget, setFillTarget] = useState<Pos | null>(null);
 
   const gridRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -320,7 +324,33 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
 
   const evaluator = useMemo(() => createEvaluator(doc), [doc]);
   const extent = useMemo(() => sheetExtent(sheet), [sheet]);
-  const rows = Math.max(DEFAULT_SHEET_ROWS, extent.rows + 20, sel.focus.row + 20);
+  const baseRows = Math.max(DEFAULT_SHEET_ROWS, extent.rows + 20, sel.focus.row + 20);
+  /** Visible row indices when filtering (display order); null = every row. */
+  const visibleRows = useMemo(() => {
+    if (!filter || !filter.q.trim()) return null;
+    const q = filter.q.trim().toLowerCase();
+    const out: number[] = [0];
+    for (let r = 1; r < extent.rows; r++) {
+      if (cellDisplay(doc, sheet, r, filter.col, evaluator.value(sheet.name, r, filter.col)).toLowerCase().includes(q)) out.push(r);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, doc, sheet, extent.rows]);
+  const rows = visibleRows ? visibleRows.length : baseRows;
+
+  // Keep the selection on a visible row when a filter hides it.
+  useEffect(() => {
+    if (!visibleRows || visibleRows.includes(selRef.current.focus.row)) return;
+    const row = visibleRows[1] ?? visibleRows[0] ?? 0;
+    const col = selRef.current.focus.col;
+    setSel({ anchor: { row, col }, focus: { row, col } });
+  }, [visibleRows]);
+  const rowAt = (i: number) => (visibleRows ? visibleRows[Math.max(0, Math.min(i, visibleRows.length - 1))]! : i);
+  const indexOfRow = (r: number) => {
+    if (!visibleRows) return r;
+    const i = visibleRows.indexOf(r);
+    return i < 0 ? 0 : i;
+  };
   const cols = Math.min(MAX_SHEET_COLS, Math.max(DEFAULT_SHEET_COLS, extent.cols + 4, sel.focus.col + 4));
 
   const colW = useCallback((c: number) => sheet.colWidths?.[String(c)] ?? DEFAULT_COL_W, [sheet.colWidths]);
@@ -372,7 +402,7 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
   useEffect(() => {
     const el = gridRef.current;
     if (!el) return;
-    const top = active.row * ROW_H;
+    const top = indexOfRow(active.row) * ROW_H;
     const bottom = top + ROW_H + HEADER_H;
     if (top < el.scrollTop) el.scrollTop = top;
     else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight;
@@ -380,10 +410,12 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
     const right = left + colW(active.col) + ROWHEAD_W;
     if (left < el.scrollLeft) el.scrollLeft = left;
     else if (right > el.scrollLeft + el.clientWidth) el.scrollLeft = right - el.clientWidth;
-  }, [active.row, active.col, colLeft, colW]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active.row, active.col, colLeft, colW, visibleRows]);
 
   const move = (dr: number, dc: number, extend: boolean) => {
-    const focus = clamp({ row: active.row + dr, col: active.col + dc });
+    const row = visibleRows ? rowAt(indexOfRow(active.row) + dr) : active.row + dr;
+    const focus = clamp({ row, col: active.col + dc });
     setSel(s => (extend ? { anchor: s.anchor, focus } : { anchor: focus, focus }));
   };
 
@@ -572,7 +604,21 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
   };
 
   const r = rect(sel);
+  /** Rows to sort: the selected rows, or (single row selected) everything below the header row. */
+  const sortSpan = r.r2 > r.r1 ? { r1: r.r1, r2: r.r2 } : { r1: 1, r2: Math.max(1, extent.rows - 1) };
+  const sortBy = (descending: boolean) => {
+    updateSheet(s => sortRows(s, sortSpan, active.col, descending, (row, col) => evaluator.value(s.name, row, col)));
+    setMenu(null);
+  };
+  const sortLabel = r.r2 > r.r1 ? `rows ${r.r1 + 1}–${r.r2 + 1}` : 'below row 1';
   const menuItems: Array<[string, () => void] | null> = [
+    [`Sort ${sortLabel} by ${colName(active.col)}, A → Z`, () => sortBy(false)],
+    [`Sort ${sortLabel} by ${colName(active.col)}, Z → A`, () => sortBy(true)],
+    [filter ? 'Clear filter' : `Filter by column ${colName(active.col)}…`, () => {
+      setFilter(filter ? null : { col: active.col, q: '' });
+      setMenu(null);
+    }],
+    null,
     ['Insert row above', () => structural('row', r.r1, r.r2 - r.r1 + 1)],
     ['Insert row below', () => structural('row', r.r2 + 1, r.r2 - r.r1 + 1)],
     [r.r2 > r.r1 ? `Delete rows ${r.r1 + 1}–${r.r2 + 1}` : `Delete row ${r.r1 + 1}`, () => structural('row', r.r1, -(r.r2 - r.r1 + 1))],
@@ -691,6 +737,72 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
     [save],
   );
 
+  // ─── Fill handle ────────────────────────────────────────────────────────────
+  const startFill = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const src = rect(selRef.current);
+    let latest: Pos | null = null;
+    const toPos = (ev: MouseEvent): Pos | null => {
+      const el = gridRef.current;
+      if (!el) return null;
+      const box = el.getBoundingClientRect();
+      const x = ev.clientX - box.left + el.scrollLeft - ROWHEAD_W;
+      const y = ev.clientY - box.top + el.scrollTop - HEADER_H;
+      let col = 0;
+      while (col < cols - 1 && colLeft[col + 1]! <= Math.max(0, x)) col++;
+      return clamp({ row: Math.max(0, Math.floor(y / ROW_H)), col });
+    };
+    const onMove = (ev: MouseEvent) => {
+      latest = toPos(ev);
+      setFillTarget(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setFillTarget(null);
+      if (!latest) return;
+      const result = fillRange(sheet, src, latest);
+      if (!result) return;
+      updateSheet(s => {
+        const cells = { ...s.cells };
+        for (const [k, v] of Object.entries(result.cells)) {
+          if (v === '') delete cells[k];
+          else cells[k] = v;
+        }
+        const formats = { ...(s.formats ?? {}) };
+        for (const [k, f] of Object.entries(result.formats)) {
+          if (f) formats[k] = f;
+          else delete formats[k];
+        }
+        return { ...s, cells, formats };
+      });
+      setSel({ anchor: { row: result.filled.r1, col: result.filled.c1 }, focus: { row: result.filled.r2, col: result.filled.c2 } });
+      gridRef.current?.focus();
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  /** Dashed preview of the area a fill drag would cover. */
+  const fillPreview = (() => {
+    if (!fillTarget) return null;
+    const down = fillTarget.row - r.r2;
+    const up = r.r1 - fillTarget.row;
+    const right = fillTarget.col - r.c2;
+    const left = r.c1 - fillTarget.col;
+    const vertical = Math.max(down, up) >= Math.max(right, left);
+    if (Math.max(down, up, right, left) <= 0) return null;
+    const box = vertical
+      ? down >= up
+        ? { r1: r.r1, r2: fillTarget.row, c1: r.c1, c2: r.c2 }
+        : { r1: fillTarget.row, r2: r.r2, c1: r.c1, c2: r.c2 }
+      : right >= left
+        ? { r1: r.r1, r2: r.r2, c1: r.c1, c2: fillTarget.col }
+        : { r1: r.r1, r2: r.r2, c1: fillTarget.col, c2: r.c2 };
+    return box;
+  })();
+
   // ─── Mouse ──────────────────────────────────────────────────────────────────
   const posFromEvent = (e: React.MouseEvent): Pos | null => {
     const el = gridRef.current;
@@ -701,7 +813,7 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
     if (x < 0 || y < 0) return null;
     let col = 0;
     while (col < cols - 1 && colLeft[col + 1]! <= x) col++;
-    return clamp({ row: Math.floor(y / ROW_H), col });
+    return clamp({ row: rowAt(Math.floor(y / ROW_H)), col });
   };
 
   const onCellMouseDown = (e: React.MouseEvent) => {
@@ -785,7 +897,8 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
   const totalW = colLeft[cols] ?? 0;
   const activeRaw = edit && edit.pos.row === active.row && edit.pos.col === active.col ? edit.value : raw(active);
   const rowEls = [];
-  for (let row = firstRow; row <= lastRow; row++) {
+  for (let idx = firstRow; idx <= lastRow; idx++) {
+    const row = rowAt(idx);
     const cellsEls = [];
     for (let col = 0; col < cols; col++) {
       const v = evaluator.value(sheet.name, row, col);
@@ -807,7 +920,7 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
       );
     }
     rowEls.push(
-      <div key={row} className="absolute left-0 flex" style={{ top: HEADER_H + row * ROW_H, height: ROW_H, width: ROWHEAD_W + totalW }}>
+      <div key={row} className="absolute left-0 flex" style={{ top: HEADER_H + idx * ROW_H, height: ROW_H, width: ROWHEAD_W + totalW }}>
         <div
           className={`sticky left-0 z-[2] shrink-0 text-center text-[11px] leading-[23px] border-r border-b border-mnemo-border bg-mnemo-panel ${
             row >= r.r1 && row <= r.r2 ? 'text-mnemo-accent' : 'text-mnemo-dim'
@@ -927,6 +1040,33 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
               {btn('.0+', 'More decimals', false, () =>
                 formatSelection(f => ({ ...f, num: f.num ?? 'number', dp: Math.min(10, (f.dp ?? (f.num === 'percent' || f.num === 'integer' ? 0 : 2)) + 1) })),
               )}
+              {sep}
+              {filter ? (
+                <span className="flex items-center gap-1">
+                  <span className="text-mnemo-dim">Filter {colName(filter.col)}</span>
+                  <input
+                    autoFocus
+                    value={filter.q}
+                    onChange={e => setFilter({ ...filter, q: e.target.value })}
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') {
+                        setFilter(null);
+                        gridRef.current?.focus();
+                      }
+                    }}
+                    placeholder="contains…"
+                    className="h-6 w-32 bg-mnemo-app border border-mnemo-border rounded px-1.5 outline-none focus:border-mnemo-accent"
+                    aria-label={`Filter column ${colName(filter.col)}`}
+                  />
+                  {visibleRows && <span className="text-mnemo-dim">{visibleRows.length - 1} match{visibleRows.length === 2 ? '' : 'es'}</span>}
+                  {btn('✕', 'Clear filter', false, () => {
+                    setFilter(null);
+                    gridRef.current?.focus();
+                  })}
+                </span>
+              ) : (
+                btn('⏷', `Filter by column ${colName(active.col)}`, false, () => setFilter({ col: active.col, q: '' }))
+              )}
             </>
           );
         })()}
@@ -1011,6 +1151,29 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
             </div>
           </div>
           {rowEls}
+          {!edit && !visibleRows && (
+            <div
+              className="absolute z-[4] w-[7px] h-[7px] bg-[var(--mnemo-accent)] border border-mnemo-app cursor-crosshair"
+              style={{
+                left: ROWHEAD_W + (colLeft[r.c2] ?? 0) + colW(r.c2) - 4,
+                top: HEADER_H + (r.r2 + 1) * ROW_H - 4,
+              }}
+              onMouseDown={startFill}
+              title="Drag to fill"
+              aria-label="Fill handle"
+            />
+          )}
+          {fillPreview && (
+            <div
+              className="absolute z-[3] pointer-events-none border-2 border-dashed border-[var(--mnemo-accent)]"
+              style={{
+                left: ROWHEAD_W + (colLeft[fillPreview.c1] ?? 0),
+                top: HEADER_H + fillPreview.r1 * ROW_H,
+                width: (colLeft[fillPreview.c2 + 1] ?? 0) - (colLeft[fillPreview.c1] ?? 0),
+                height: (fillPreview.r2 - fillPreview.r1 + 1) * ROW_H,
+              }}
+            />
+          )}
           {edit && edit.source === 'cell' && (
             <input
               ref={cellInputRef}
@@ -1021,7 +1184,7 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
               onMouseDown={e => e.stopPropagation()}
               className="absolute z-[5] px-1.5 bg-mnemo-app text-mnemo-text outline outline-2 outline-[var(--mnemo-accent)] font-mono text-[12px]"
               style={{
-                top: HEADER_H + edit.pos.row * ROW_H,
+                top: HEADER_H + indexOfRow(edit.pos.row) * ROW_H,
                 left: ROWHEAD_W + (colLeft[edit.pos.col] ?? 0),
                 width: Math.max(colW(edit.pos.col), 160),
                 height: ROW_H,

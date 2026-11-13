@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Spreadsheet sort, filter, and fill handle:**
+  - **Sort:** the right-click menu sorts the selected rows, or everything below row 1, by the active column, A→Z or Z→A. Numbers sort before text, blanks always go last, and the sort is stable. Rows move whole, with their formats, and formulas in moved rows shift their relative references.
+  - **Filter:** the toolbar's ⏷ or the right-click menu filters by the active column ("contains"). It is view-only, never saved, and always keeps the header row.
+  - **Fill handle:** drag the corner of a selection down, up, left or right. Numbers and dates continue their step, single dates count by day, text ending in a number increments ("Item 1" → "Item 2", "Q09" → "Q10"), formulas shift their references, other text repeats, and formats are copied.
 - **Spreadsheet formatting:**
   - **Per-cell formats:** bold, italic, alignment, text colour, fill colour, and number formats (number with grouping, integer, percent, currency, date, plain text) with decimal controls.
   - **Where to apply:** the format toolbar above the grid, Ctrl/⌘+B/I in the grid, and right-click → Clear formatting.
