@@ -55,7 +55,8 @@ jobs:
       # See docs/CODE_SIGNING.md — forge.config.js uses PFX only if WINDOWS_CERTIFICATE_FILE exists.
       - name: Set up Azure Artifact Signing (NuGet dlib + metadata + SignTool)
         id: azure_signing
-        if: ${{ env.AZURE_CLIENT_ID != '' && vars.AZURE_CODESIGNING_ENDPOINT != '' && vars.AZURE_CODESIGNING_ACCOUNT_NAME != '' && vars.AZURE_CERTIFICATE_PROFILE_NAME != '' }}
+        # Repo variable WINDOWS_SIGNING_DISABLED=true skips signing (unsigned build) while Azure is unavailable.
+        if: ${{ vars.WINDOWS_SIGNING_DISABLED != 'true' && env.AZURE_CLIENT_ID != '' && vars.AZURE_CODESIGNING_ENDPOINT != '' && vars.AZURE_CODESIGNING_ACCOUNT_NAME != '' && vars.AZURE_CERTIFICATE_PROFILE_NAME != '' }}
         shell: pwsh
         env:
           AZURE_CODESIGNING_ENDPOINT: ${{ vars.AZURE_CODESIGNING_ENDPOINT }}
@@ -65,7 +66,7 @@ jobs:
 
       - name: Prepare Windows code signing certificate (PFX fallback)
         # Skip PFX when Azure Artifact Signing is fully configured (Trusted Signing takes precedence in forge.config.js).
-        if: ${{ env.WINDOWS_CERTIFICATE_PFX_B64 != '' && (env.AZURE_CLIENT_ID == '' || vars.AZURE_CODESIGNING_ENDPOINT == '' || vars.AZURE_CODESIGNING_ACCOUNT_NAME == '' || vars.AZURE_CERTIFICATE_PROFILE_NAME == '') }}
+        if: ${{ vars.WINDOWS_SIGNING_DISABLED != 'true' && env.WINDOWS_CERTIFICATE_PFX_B64 != '' && (env.AZURE_CLIENT_ID == '' || vars.AZURE_CODESIGNING_ENDPOINT == '' || vars.AZURE_CODESIGNING_ACCOUNT_NAME == '' || vars.AZURE_CERTIFICATE_PROFILE_NAME == '') }}
         shell: pwsh
         run: |
           $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_B64)

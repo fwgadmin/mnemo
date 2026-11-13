@@ -134,6 +134,7 @@ When all **three secrets** and **three variables** are set, the **Set up Azure A
 
 #### Troubleshooting CI
 
+- **Temporarily ship unsigned builds:** set the repository **variable** `WINDOWS_SIGNING_DISABLED` to `true` (Settings → Secrets and variables → Actions → Variables). The Azure and PFX setup steps are skipped and Windows installers build unsigned (users see a SmartScreen warning). Delete the variable to sign again; no code change is needed.
 - **403 Forbidden** during signing: wrong **endpoint** for the account region, or the app lacks the signing role on the Artifact Signing account.
 - **DLL / SignTool not found**: open an issue — the script expects `Azure.CodeSigning.Dlib.dll` under the NuGet package layout and SignTool under `C:\Program Files (x86)\Windows Kits\10\bin\<version>\x64\`.
 - **Fork PRs**: secrets from the base repo are not available to workflows from forks; Windows jobs will usually build **unsigned** unless you use a different policy.
