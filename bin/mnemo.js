@@ -66,6 +66,8 @@ function shouldRunVaultCli(argv) {
     cmd === 'note' ||
     cmd === 'completion' ||
     cmd === 'workspace' ||
+    cmd === 'sheet' ||
+    cmd === 'attachments' ||
     cmd === 'add' ||
     cmd === 'a' ||
     cmd === 'find' ||

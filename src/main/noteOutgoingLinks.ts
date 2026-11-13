@@ -2,12 +2,37 @@
  * Outgoing link graph maintenance for main-process code paths (CLI, MCP, rename, import).
  * Mirrors renderer save logic in App.tsx handleUpdateNote + autolinkRecompute.
  */
-import type { INoteStore } from '../shared/types';
+import type { INoteStore, SaveNoteInput, SaveNoteResult } from '../shared/types';
 import { extractWikilinks, parseWikilinkInner } from '../shared/wikilinks';
 import { inferLinkTargetIds, mergeOutgoingLinkTargets } from '../shared/linkInference';
 import { recomputeAutolinks } from './autolinkRecompute';
 
 const WIKILINK_BODY_RE = /\[\[([^\]]+)\]\]/g;
+const MAX_OUTGOING_LINKS_PER_NOTE = 500;
+
+/** Save note content and its exact outgoing graph from one preloaded title index. */
+export async function saveNoteWithOutgoingLinks(
+  store: INoteStore,
+  input: SaveNoteInput,
+  tenantId: string,
+): Promise<SaveNoteResult> {
+  const index = await store.list(tenantId);
+  const titleToId = new Map(index.map(note => [note.title, note.id]));
+  const body = input.body ?? '';
+  const explicitIds = extractWikilinks(body)
+    .map(title => titleToId.get(title))
+    .filter((id): id is string => !!id);
+  const inferredIds = inferLinkTargetIds(
+    body,
+    input.id,
+    index.map(note => ({ id: note.id, title: note.title, ref: note.ref })),
+  );
+  const targetIds = mergeOutgoingLinkTargets(explicitIds, inferredIds, input.id);
+  if (targetIds.length > MAX_OUTGOING_LINKS_PER_NOTE) {
+    throw new Error(`A note cannot save more than ${MAX_OUTGOING_LINKS_PER_NOTE} outgoing links.`);
+  }
+  return store.save(input, targetIds);
+}
 
 /**
  * Replace [[oldTitle]] and [[oldTitle|display]] when the target equals oldTitle (trimmed).

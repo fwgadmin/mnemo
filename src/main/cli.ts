@@ -3,6 +3,9 @@
  * Node CLI bundle: MCP stdio, MCP HTTP (spawn), and note subcommands.
  * The `mnemo` shell wrapper (bin/mnemo.js) also launches the Electron GUI when not using these subcommands.
  */
+import { cmdSheet } from './cliSheet';
+import { cmdAttachments } from './cliAttachments';
+import { recoverMisplacedDefaultWorkspace } from './workspaceLayoutRecovery';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync, spawn } from 'child_process';
@@ -26,9 +29,9 @@ import {
   getLocalWorkspaceDbPathsForCli,
   importFolderIntoWorkspaceProfile,
   listWorkspaceProfiles,
-  migrateLegacyFlatWorkspace,
   parseWorkspaceStorageRoot,
   renameWorkspaceProfile,
+  restoreWorkspaceProfile,
   setActiveWorkspace,
   setWorkspaceProfileStorage,
 } from './workspaceProfiles';
@@ -836,7 +839,7 @@ async function cmdSync(argv: string[]): Promise<void> {
   const parsed = parseMcpStdioArgs(tail);
   const { workspaceId: wsFlag, argv: rest } = stripWorkspaceFlag(tail);
   const root = resolveWorkspaceBootstrapRoot();
-  migrateLegacyFlatWorkspace(root);
+  await recoverMisplacedDefaultWorkspace(root);
 
   const creds = resolveTursoCredentials(parsed);
   const hasGlobalTurso = !!(creds.tursoUrl?.trim() && creds.tursoToken?.trim());
@@ -909,7 +912,7 @@ async function cmdSync(argv: string[]): Promise<void> {
       if (outJson) {
         printJson({ ok: true, direction: 'push', ...result, dbPath });
       } else {
-        console.log(`Upload: sent ${result.synced} note rows to remote (additive merge by updated_at).`);
+        console.log(`Upload: applied ${result.synced} note/deletion events to remote (${result.skipped} stale or unchanged).`);
         console.log(`Local database: ${dbPath}`);
       }
     }
@@ -924,7 +927,7 @@ async function openStoreForNote(argv: string[]): Promise<{ store: INoteStore; te
   const hasDb = av.includes('--db');
   const hasVault = av.includes('--vault');
   const root = resolveWorkspaceBootstrapRoot();
-  migrateLegacyFlatWorkspace(root);
+  await recoverMisplacedDefaultWorkspace(root);
   const profilesDisk = listWorkspaceProfiles(root);
   const ws = wsFlag?.trim();
   const wsResDisk = resolveWorkspaceSelector(profilesDisk, ws);
@@ -1076,7 +1079,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
   const sub = av[0]?.toLowerCase();
   const tail = av.slice(1);
   const root = resolveWorkspaceBootstrapRoot();
-  migrateLegacyFlatWorkspace(root);
+  await recoverMisplacedDefaultWorkspace(root);
 
   if (!sub || sub === 'list' || sub === 'ls') {
     const st = await loadWorkspaceProfilesForCli(tail, root);
@@ -1084,7 +1087,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       printJson(st);
     } else {
       st.workspaces.forEach((w, i) => {
-        const mark = w.id === st.activeWorkspaceId ? ' (active)' : '';
+        const mark = w.id === st.activeWorkspaceId ? ' (active)' : w.archivedAt ? ' (archived)' : '';
         console.log(`${i + 1}\t${w.id}\t${w.name}${mark}`);
       });
     }
@@ -1169,7 +1172,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const st = await loadWorkspaceProfilesForCli(tail, root);
-    const sel = resolveWorkspaceSelector(st, raw);
+    const sel = resolveWorkspaceSelector(st, raw, { includeArchived: true });
     if (sel.kind === 'error') {
       console.error(`mnemo: ${sel.message}`);
       process.exit(1);
@@ -1200,7 +1203,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
     }
     const idRaw = tail[0]!.trim();
     const st = await loadWorkspaceProfilesForCli(tail, root);
-    const sel = resolveWorkspaceSelector(st, idRaw);
+    const sel = resolveWorkspaceSelector(st, idRaw, { includeArchived: true });
     if (sel.kind === 'error') {
       console.error(`mnemo: ${sel.message}`);
       process.exit(1);
@@ -1271,21 +1274,43 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const id = pickWorkspaceId(st, sel);
-    const entry = st.workspaces.find(w => w.id === id);
     const r = archiveWorkspaceProfile(root, id);
     if (!r) {
       console.error(
-        'Cannot archive: need a non-default, non-active vault, at least two vaults, and a valid id.',
+        'Cannot archive: need a non-default, non-active, non-archived vault and at least one other active vault.',
       );
       process.exit(1);
-    }
-    if (entry) {
-      await applyWorkspaceRemovalDataPurge(root, entry);
     }
     if (outJson) {
       printJson({ ok: true, profiles: r.state });
     } else {
       console.log(`Archived workspace ${id}.`);
+    }
+    return;
+  }
+
+  if (sub === 'restore') {
+    const raw = tail[0]?.trim();
+    if (!raw || tail.length > 1) {
+      console.error('Usage: mnemo workspace restore <id|index>');
+      process.exit(1);
+    }
+    const st = await loadWorkspaceProfilesForCli(tail, root);
+    const sel = resolveWorkspaceSelector(st, raw, { includeArchived: true });
+    if (sel.kind === 'error') {
+      console.error(`mnemo: ${sel.message}`);
+      process.exit(1);
+    }
+    const id = pickWorkspaceId(st, sel);
+    const r = restoreWorkspaceProfile(root, id);
+    if (!r) {
+      console.error('Cannot restore: unknown workspace or workspace is not archived.');
+      process.exit(1);
+    }
+    if (outJson) {
+      printJson({ ok: true, profiles: r.state });
+    } else {
+      console.log(`Restored workspace ${id}.`);
     }
     return;
   }
@@ -1297,7 +1322,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const st = await loadWorkspaceProfilesForCli(tail, root);
-    const sel = resolveWorkspaceSelector(st, raw);
+    const sel = resolveWorkspaceSelector(st, raw, { includeArchived: true });
     if (sel.kind === 'error') {
       console.error(`mnemo: ${sel.message}`);
       process.exit(1);
@@ -1927,6 +1952,16 @@ async function main(): Promise<void> {
 
   if (cmd === 'workspace') {
     await cmdWorkspace(rest);
+    return;
+  }
+
+  if (cmd === 'sheet') {
+    await cmdSheet(rest, openStoreForNote);
+    return;
+  }
+
+  if (cmd === 'attachments') {
+    await cmdAttachments(rest, openStoreForNote);
     return;
   }
 

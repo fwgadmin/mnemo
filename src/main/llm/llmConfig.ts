@@ -3,6 +3,7 @@ import * as path from 'path';
 import type { LlmProfile, LlmSettingsFile } from '../../shared/types';
 import { DEFAULT_USER_GUARDRAILS } from '../../shared/llmGuardrails';
 import { isValidProviderKind } from '../../shared/llmProfile';
+import { protectSecret, unprotectSecret, writePrivateJson } from '../secretStorage';
 
 const MAX_PROFILES = 32;
 const MAX_URL = 2048;
@@ -10,8 +11,7 @@ const MAX_MODEL = 512;
 const MAX_NAME = 120;
 const MAX_GUARDRAILS = 12000;
 const MAX_KEY = 8192;
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function resolveLlmConfigPath(userData: string): string {
   return path.join(userData, 'llm-config.json');
@@ -72,7 +72,11 @@ export function readLlmConfig(userData: string): LlmSettingsFile {
   const fp = resolveLlmConfigPath(userData);
   try {
     const raw = JSON.parse(fs.readFileSync(fp, 'utf-8')) as unknown;
-    return sanitizeLlmSettings(raw);
+    const cleaned = sanitizeLlmSettings(raw);
+    for (const profile of cleaned.profiles) {
+      if (profile.apiKey) profile.apiKey = unprotectSecret(profile.apiKey) || undefined;
+    }
+    return cleaned;
   } catch {
     return { profiles: [] };
   }
@@ -80,9 +84,15 @@ export function readLlmConfig(userData: string): LlmSettingsFile {
 
 export function writeLlmConfig(userData: string, settings: LlmSettingsFile): void {
   const cleaned = sanitizeLlmSettings(settings);
+  const stored: LlmSettingsFile = {
+    ...cleaned,
+    profiles: cleaned.profiles.map((profile) => ({
+      ...profile,
+      apiKey: profile.apiKey ? protectSecret(profile.apiKey) : undefined,
+    })),
+  };
   const fp = resolveLlmConfigPath(userData);
-  fs.mkdirSync(path.dirname(fp), { recursive: true });
-  fs.writeFileSync(fp, JSON.stringify(cleaned, null, 2), 'utf-8');
+  writePrivateJson(fp, stored);
 }
 
 export function effectiveGuardrails(settings: LlmSettingsFile): string {

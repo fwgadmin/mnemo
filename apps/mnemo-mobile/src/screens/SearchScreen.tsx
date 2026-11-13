@@ -45,14 +45,7 @@ export function SearchScreen() {
             (n.snippet ?? '').toLowerCase().includes(ql),
         );
         setResults(
-          filtered.slice(0, 50).map((n, i) => ({
-            ref: n.ref,
-            id: n.id,
-            title: n.title,
-            snippet: n.snippet,
-            rank: i,
-            hideHeader: n.hideHeader,
-          })),
+          filtered.slice(0, 50).map((n, i) => ({ ...n, rank: i })),
         );
       }
     } catch {

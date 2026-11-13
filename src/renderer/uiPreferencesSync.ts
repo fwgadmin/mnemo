@@ -1,6 +1,7 @@
 import type { MnemoUiPreferences } from '../shared/types';
 import { DEFAULT_THEME_ID } from './theme/themes';
 import { readCategoryColors, readCategoryColorStamps } from './categoryColors';
+import { readCategorySortModes } from './categorySort';
 
 function loadBool(key: string, def: boolean): boolean {
   const v = localStorage.getItem(`mnemo.${key}`);
@@ -40,6 +41,8 @@ export function gatherLocalStoragePreferences(): MnemoUiPreferences {
     showNoteRefs: loadBool('showNoteRefs', false),
     grouped: localStorage.getItem('mnemo.grouped') !== 'false',
     categoryScopeSubtree: localStorage.getItem('mnemo.categoryScopeSubtree') !== 'false',
+    autoColorCategories: localStorage.getItem('mnemo.autoColorCategories') !== 'false',
+    categorySortModes: readCategorySortModes(),
     categoryColors: readCategoryColors(),
     categoryColorStamps: readCategoryColorStamps(),
     ideTabIds: readIdeTabIds(),

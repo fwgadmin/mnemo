@@ -6,8 +6,17 @@ import * as path from 'path';
 import * as os from 'os';
 import type { AppConfig } from '../shared/types';
 
+const PROTECTED_SECRET_PREFIX = 'mnemo-safe-storage:v1:';
+
+function usableSecret(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && !trimmed.startsWith(PROTECTED_SECRET_PREFIX) ? trimmed : undefined;
+}
+
 function configHasRemoteCredentials(cfg: AppConfig): boolean {
   const url = cfg.tursoUrl?.trim() || cfg.libsqlUrl?.trim();
+  // Protected Electron values still identify the correct bootstrap directory even though
+  // non-Electron processes must use an environment/flag credential instead.
   const token = cfg.tursoToken?.trim() || cfg.libsqlAuthToken?.trim();
   return Boolean(url && token);
 }
@@ -160,23 +169,20 @@ export function getRemoteLibsqlCredentials(
   env: NodeJS.ProcessEnv = process.env,
 ): { url?: string; token?: string } {
   const url =
-    cfg.tursoUrl?.trim() ||
-    cfg.libsqlUrl?.trim() ||
-    env['MNEMO_TURSO_URL']?.trim() ||
-    env['MNEMO_LIBSQL_URL']?.trim();
+    cfg.tursoUrl?.trim() || cfg.libsqlUrl?.trim() || env['MNEMO_TURSO_URL']?.trim() || env['MNEMO_LIBSQL_URL']?.trim();
   const token =
-    cfg.tursoToken?.trim() ||
-    cfg.libsqlAuthToken?.trim() ||
+    usableSecret(cfg.tursoToken) ||
+    usableSecret(cfg.libsqlAuthToken) ||
     env['MNEMO_TURSO_TOKEN']?.trim() ||
     env['MNEMO_LIBSQL_AUTH_TOKEN']?.trim();
   return { url, token };
 }
 
 /** Same precedence as GUI initStore: argv flags, then config.json, then MNEMO_TURSO_* / MNEMO_LIBSQL_* env. */
-export function resolveTursoCredentials(parsed: {
+export function resolveTursoCredentials(parsed: { tursoUrl?: string; tursoToken?: string }): {
   tursoUrl?: string;
   tursoToken?: string;
-}): { tursoUrl?: string; tursoToken?: string } {
+} {
   const cfg = readAppConfigFile();
   const fromCfg = getRemoteLibsqlCredentials(cfg);
   const url = parsed.tursoUrl?.trim() || fromCfg.url;

@@ -23,6 +23,7 @@ import {
   bracketMatching,
   foldGutter,
   foldKeymap,
+  syntaxTree,
 } from '@codemirror/language';
 import {
   acceptCompletion,
@@ -43,6 +44,12 @@ import { wikilinkDecorations } from './wikilinkPlugin';
 import { clampFixedContextMenu } from '../fixedMenuPosition';
 import type { Note } from '../../shared/types';
 import MarkdownNoteBody from './MarkdownNoteBody';
+import { isEmbeddableFileType, markdownForMediaFiles } from '../editor/mediaMarkdown';
+import { livePreview, markdownHighlight } from '../editor/livePreview';
+import { formatKeymap, formatToolbar } from '../editor/formatToolbar';
+import { inlineCommand } from '../editor/formatting';
+import { parseAttachmentUrl } from '../../shared/attachments';
+import { htmlToMarkdown, isBlockMarkdown, shouldConvertHtmlPaste, writeRichMarkdownToClipboard } from '../editor/richClipboard';
 
 function readNoteBodyMode(): 'edit' | 'preview' {
   try {
@@ -115,19 +122,44 @@ function insertMarkdownTable(view: EditorView): boolean {
   return true;
 }
 
-function insertMarkdownImage(view: EditorView): boolean {
+function insertTextAtSelection(view: EditorView, text: string): void {
   const sel = view.state.selection.main;
-  const text = view.state.sliceDoc(sel.from, sel.to);
-  const insert = text ? `![${text}](url)` : `![alt](url)`;
-  view.dispatch({ changes: { from: sel.from, to: sel.to, insert } });
+  const prefix = sel.from > 0 && view.state.sliceDoc(sel.from - 1, sel.from) !== '\n' ? '\n\n' : '';
+  const suffix = sel.to < view.state.doc.length && view.state.sliceDoc(sel.to, sel.to + 1) !== '\n' ? '\n\n' : '';
+  const insert = `${prefix}${text}${suffix}`;
+  view.dispatch({
+    changes: { from: sel.from, to: sel.to, insert },
+    selection: { anchor: sel.from + insert.length },
+  });
+}
+
+async function insertMediaFiles(view: EditorView, files: readonly File[]): Promise<void> {
+  if (files.length === 0) return;
+  try {
+    insertTextAtSelection(view, await markdownForMediaFiles(files));
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : String(e));
+  }
+}
+
+function chooseMediaFiles(view: EditorView): boolean {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = 'image/*,audio/*,video/*,application/pdf,text/plain';
+  input.addEventListener('change', () => void insertMediaFiles(view, [...(input.files ?? [])]), { once: true });
+  input.click();
   return true;
 }
 
-function wrapSelectionMarkdown(view: EditorView, before: string, after: string): void {
-  const sel = view.state.selection.main;
-  const text = view.state.sliceDoc(sel.from, sel.to);
-  const insert = text ? `${before}${text}${after}` : `${before}${after}`;
-  view.dispatch({ changes: { from: sel.from, to: sel.to, insert } });
+function mediaFilesFromTransfer(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const direct = [...data.files].filter(file => isEmbeddableFileType(file.type));
+  if (direct.length > 0) return direct;
+  return [...data.items]
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter((file): file is File => !!file && isEmbeddableFileType(file.type));
 }
 
 async function clipboardWriteText(text: string): Promise<void> {
@@ -153,24 +185,127 @@ async function clipboardReadText(): Promise<string> {
   }
 }
 
+async function clipboardReadMedia(): Promise<File[]> {
+  if (!navigator.clipboard.read) return [];
+  try {
+    const files: File[] = [];
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(type => type !== 'text/plain' && isEmbeddableFileType(type));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const extension = type.split('/')[1]?.replace('jpeg', 'jpg').replace('plain', 'txt') ?? 'bin';
+      files.push(new File([blob], `pasted-media.${extension}`, { type }));
+    }
+    return files;
+  } catch {
+    return [];
+  }
+}
+
 function editorCopy(view: EditorView): void {
   const sel = view.state.selection.main;
   const text = view.state.sliceDoc(sel.from, sel.to);
-  void clipboardWriteText(text);
+  void writeRichMarkdownToClipboard(text);
 }
 
 function editorCut(view: EditorView): void {
   const sel = view.state.selection.main;
   const text = view.state.sliceDoc(sel.from, sel.to);
-  void clipboardWriteText(text);
+  void writeRichMarkdownToClipboard(text);
   view.dispatch({ changes: { from: sel.from, to: sel.to, insert: '' } });
 }
 
-async function editorPaste(view: EditorView): Promise<void> {
-  const text = normalizeLineSeparators(await clipboardReadText());
+/** True when the selection starts inside a fenced/indented code block (paste stays literal there). */
+function selectionInCode(view: EditorView): boolean {
+  const pos = view.state.selection.main.from;
+  for (let node: { name: string; parent: unknown } | null = syntaxTree(view.state).resolveInner(pos, -1); node; ) {
+    if (/^(FencedCode|CodeBlock|CodeText|InlineCode)$/.test(node.name)) return true;
+    node = node.parent as typeof node;
+  }
+  return false;
+}
+
+function insertPlainText(view: EditorView, raw: string): void {
+  const text = normalizeLineSeparators(raw);
   if (!text) return;
   const sel = view.state.selection.main;
-  view.dispatch({ changes: { from: sel.from, to: sel.to, insert: text } });
+  view.dispatch({
+    changes: { from: sel.from, to: sel.to, insert: text },
+    selection: { anchor: sel.from + text.length },
+    userEvent: 'input.paste',
+  });
+}
+
+/** Block-level conversions get blank-line separation like media blocks; inline snippets insert in place. */
+function insertConvertedMarkdown(view: EditorView, md: string): void {
+  if (isBlockMarkdown(md)) insertTextAtSelection(view, md);
+  else insertPlainText(view, md);
+}
+
+/** Markdown to insert for clipboard HTML, or null when the plain-text flavour should be used. */
+function markdownFromClipboardHtml(view: EditorView, types: readonly string[], html: string): string | null {
+  if (selectionInCode(view) || !shouldConvertHtmlPaste(types, html)) return null;
+  const md = htmlToMarkdown(html);
+  return md || null;
+}
+
+async function clipboardReadHtml(): Promise<{ types: string[]; html: string } | null> {
+  if (!navigator.clipboard.read) return null;
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      if (!item.types.includes('text/html')) continue;
+      return { types: [...item.types], html: await (await item.getType('text/html')).text() };
+    }
+  } catch {
+    /* permission or format unavailable */
+  }
+  return null;
+}
+
+async function editorPaste(view: EditorView, plainOnly = false): Promise<void> {
+  if (!plainOnly) {
+    const media = await clipboardReadMedia();
+    if (media.length > 0) {
+      await insertMediaFiles(view, media);
+      return;
+    }
+    const rich = await clipboardReadHtml();
+    const md = rich ? markdownFromClipboardHtml(view, rich.types, rich.html) : null;
+    if (md) {
+      insertConvertedMarkdown(view, md);
+      return;
+    }
+  }
+  insertPlainText(view, await clipboardReadText());
+}
+
+/** Ctrl/⌘-click target from live preview: web links open externally, attachments open a Save dialog. */
+function openLivePreviewLink(href: string): void {
+  if (parseAttachmentUrl(href)) {
+    void window.mnemo.attachments.saveAs(href).catch((err: unknown) => {
+      window.alert(err instanceof Error ? err.message : String(err));
+    });
+    return;
+  }
+  if (/^https:\/\//i.test(href)) window.open(href, '_blank', 'noopener');
+}
+
+/**
+ * Single non-empty selection: put exact Markdown on the clipboard synchronously, then upgrade it to
+ * Markdown + rendered HTML asynchronously. Anything else (empty / multiple selections) uses CodeMirror's default.
+ */
+function richCopyEvent(e: ClipboardEvent, view: EditorView, cut: boolean): boolean {
+  const ranges = view.state.selection.ranges;
+  const sel = view.state.selection.main;
+  if (ranges.length !== 1 || sel.empty || !e.clipboardData) return false;
+  const text = view.state.sliceDoc(sel.from, sel.to);
+  e.preventDefault();
+  e.clipboardData.setData('text/plain', text);
+  void writeRichMarkdownToClipboard(text);
+  if (cut) {
+    view.dispatch({ changes: { from: sel.from, to: sel.to, insert: '' }, userEvent: 'delete.cut' });
+  }
+  return true;
 }
 
 export interface EditorHandle {
@@ -178,6 +313,8 @@ export interface EditorHandle {
   getBody: () => string;
   /** True when the buffer differs from the last server body applied (unsaved local edits). */
   isDirty: () => boolean;
+  /** Send the current buffer immediately and wait for its serialized save queue. */
+  flush: () => Promise<boolean>;
   scrollToLine: (line: number) => void;
   focus: () => void;
   /** When the title header is shown, move focus to the title field (e.g. after New Note). */
@@ -190,7 +327,8 @@ export interface EditorHandle {
 
 interface EditorProps {
   note: Note;
-  onUpdate: (id: string, title: string, body: string) => void;
+  onUpdate: (id: string, title: string, body: string) => Promise<boolean>;
+  onDirty?: (id: string) => void;
   onNavigate: (title: string) => void;
   showHeader?: boolean;
   saveSignal?: number;
@@ -203,6 +341,10 @@ interface EditorProps {
   reloadNonce?: number;
   editorSpellcheck?: boolean;
   editorAutocomplete?: boolean;
+  /** Obsidian-style live preview: hide Markdown syntax away from the cursor (default true). */
+  editorLivePreview?: boolean;
+  /** Floating formatting toolbar above a selection (default true). */
+  editorFormatToolbar?: boolean;
   /** When false, context menu omits Copy/Paste as summary. */
   showSummaryMenuItems?: boolean;
   tenantId?: string;
@@ -212,6 +354,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   {
     note,
     onUpdate,
+    onDirty,
     onNavigate,
     showHeader = true,
     saveSignal,
@@ -221,6 +364,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     reloadNonce = 0,
     editorSpellcheck = true,
     editorAutocomplete = true,
+    editorLivePreview = true,
+    editorFormatToolbar = true,
     showSummaryMenuItems = false,
     tenantId = 'default',
   },
@@ -231,17 +376,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const titleRef = useRef<HTMLInputElement>(null);
   const noteIdRef = useRef(note.id);
   const titleValueRef = useRef(note.title);
+  const syncedTitleRef = useRef(note.title);
   /** Last server body applied to the editor (normalized); used for dirty checks + remote sync. */
   const syncedBodyRef = useRef(normalizeLineSeparators(note.body));
   /** Last reloadNonce seen for the current note id — avoids re-applying when only `note` updates. */
   const reloadNonceSeenRef = useRef(0);
+  const applyingServerRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onUpdateRef = useRef(onUpdate);
+  const onDirtyRef = useRef(onDirty);
   const onEditorLiveBodyRef = useRef(onEditorLiveBody);
   const lineNumbersCompartment = useRef(new Compartment());
   const spellcheckCompartment = useRef(new Compartment());
   const autocompleteCompartment = useRef(new Compartment());
+  const livePreviewCompartment = useRef(new Compartment());
+  const formatToolbarCompartment = useRef(new Compartment());
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const summarizingRef = useRef(false);
@@ -254,6 +404,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   useEffect(() => {
     onUpdateRef.current = onUpdate;
   }, [onUpdate]);
+  useEffect(() => {
+    onDirtyRef.current = onDirty;
+  }, [onDirty]);
   useEffect(() => {
     onEditorLiveBodyRef.current = onEditorLiveBody;
   }, [onEditorLiveBody]);
@@ -269,13 +422,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     setPreviewLiveBody(normalizeLineSeparators(note.body));
   }, [note.id, note.body]);
 
-  const saveNow = useCallback(() => {
+  const saveNow = useCallback(async () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    onUpdateRef.current(
-      noteIdRef.current,
-      titleValueRef.current,
-      viewRef.current?.state.doc.toString() ?? note.body,
-    );
+    saveTimerRef.current = null;
+    const title = titleValueRef.current;
+    const body = viewRef.current?.state.doc.toString() ?? note.body;
+    const saved = await onUpdateRef.current(noteIdRef.current, title, body);
+    if (saved) {
+      syncedTitleRef.current = title;
+      syncedBodyRef.current = normalizeLineSeparators(body);
+    }
+    return saved;
   }, [note.body]);
 
   useEffect(() => {
@@ -286,7 +443,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const debouncedSave = useCallback((title: string, body: string) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      onUpdateRef.current(noteIdRef.current, title, body);
+      saveTimerRef.current = null;
+      void onUpdateRef.current(noteIdRef.current, title, body);
     }, 500);
   }, []);
 
@@ -331,10 +489,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const v = viewRef.current;
         if (!v) return false;
         return (
+          titleValueRef.current !== syncedTitleRef.current ||
           normalizeLineSeparators(v.state.doc.toString()) !==
           normalizeLineSeparators(syncedBodyRef.current)
         );
       },
+      flush: saveNow,
       scrollToLine: (line: number) => {
         const v = viewRef.current;
         if (!v) return;
@@ -402,9 +562,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     noteIdRef.current = note.id;
     titleValueRef.current = note.title;
+    syncedTitleRef.current = note.title;
 
     const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
+      if (update.docChanged && !applyingServerRef.current) {
+        onDirtyRef.current?.(noteIdRef.current);
         debouncedSave(titleValueRef.current, update.state.doc.toString());
         const cb = onEditorLiveBodyRef.current;
         if (cb) {
@@ -426,9 +588,39 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setCtxMenuRef.current({ x: e.clientX, y: e.clientY });
         return true;
       },
+      paste: (e, view) => {
+        const files = mediaFilesFromTransfer(e.clipboardData);
+        if (files.length > 0) {
+          e.preventDefault();
+          void insertMediaFiles(view, files);
+          return true;
+        }
+        const data = e.clipboardData;
+        const html = data?.getData('text/html') ?? '';
+        const md = data && html ? markdownFromClipboardHtml(view, [...data.types], html) : null;
+        if (!md) return false;
+        e.preventDefault();
+        insertConvertedMarkdown(view, md);
+        return true;
+      },
+      copy: (e, view) => richCopyEvent(e, view, false),
+      cut: (e, view) => richCopyEvent(e, view, true),
+      drop: (e, view) => {
+        const files = mediaFilesFromTransfer(e.dataTransfer);
+        if (files.length === 0) return false;
+        e.preventDefault();
+        const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+        if (pos !== null) view.dispatch({ selection: { anchor: pos } });
+        void insertMediaFiles(view, files);
+        return true;
+      },
     });
 
-    const markdownSupport = markdown({ base: markdownLanguage, codeLanguages: mnemoMarkdownCodeLanguages });
+    const markdownSupport = markdown({
+      base: markdownLanguage,
+      codeLanguages: mnemoMarkdownCodeLanguages,
+      extensions: [markdownHighlight],
+    });
 
     /** Fold gutter left of line numbers so folding sits outside the number column. */
     const gutterExtensions = showLineNumbers
@@ -489,7 +681,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             },
             { key: 'Mod-k', run: insertMarkdownLink },
             { key: 'Mod-Shift-t', run: insertMarkdownTable },
-            { key: 'Mod-Shift-i', run: insertMarkdownImage },
+            { key: 'Mod-Shift-i', run: chooseMediaFiles },
           ]),
         ),
         keymap.of([
@@ -503,6 +695,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         updateListener,
         clickHandler,
         wikilinkDecorations(),
+        livePreviewCompartment.current.of(editorLivePreview !== false ? livePreview(openLivePreviewLink) : []),
+        formatToolbarCompartment.current.of(editorFormatToolbar !== false ? formatToolbar() : []),
+        formatKeymap,
         EditorView.lineWrapping,
         EditorView.clipboardInputFilter.of((text) => normalizeLineSeparators(text)),
       ],
@@ -540,6 +735,24 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const v = viewRef.current;
     if (!v) return;
     v.dispatch({
+      effects: livePreviewCompartment.current.reconfigure(
+        editorLivePreview !== false ? livePreview(openLivePreviewLink) : [],
+      ),
+    });
+  }, [editorLivePreview]);
+
+  useEffect(() => {
+    const v = viewRef.current;
+    if (!v) return;
+    v.dispatch({
+      effects: formatToolbarCompartment.current.reconfigure(editorFormatToolbar !== false ? formatToolbar() : []),
+    });
+  }, [editorFormatToolbar]);
+
+  useEffect(() => {
+    const v = viewRef.current;
+    if (!v) return;
+    v.dispatch({
       effects: autocompleteCompartment.current.reconfigure(
         editorAutocomplete !== false ? [...mnemoBaseAutocompletionExtensions()] : [],
       ),
@@ -557,9 +770,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       return;
     }
     if (doc === normalizeLineSeparators(syncedBodyRef.current)) {
+      applyingServerRef.current = true;
       v.dispatch({
         changes: { from: 0, to: v.state.doc.length, insert: server },
       });
+      applyingServerRef.current = false;
       syncedBodyRef.current = server;
       onEditorLiveBodyRef.current?.(server);
     }
@@ -577,11 +792,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const server = normalizeLineSeparators(note.body);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     if (previewThrottleRef.current) clearTimeout(previewThrottleRef.current);
-    v.dispatch({
-      changes: { from: 0, to: v.state.doc.length, insert: server },
-    });
+    applyingServerRef.current = true;
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: server } });
+    applyingServerRef.current = false;
     syncedBodyRef.current = server;
     titleValueRef.current = note.title;
+    syncedTitleRef.current = note.title;
     const t = titleRef.current;
     if (t && document.activeElement !== t) {
       t.value = note.title;
@@ -599,6 +815,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       t.value = note.title;
       titleValueRef.current = note.title;
     }
+    if (titleValueRef.current === note.title) syncedTitleRef.current = note.title;
   }, [note.id, note.title, note.modified]);
 
   useEffect(() => {
@@ -622,6 +839,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
   const handleTitleChange = (newTitle: string) => {
     titleValueRef.current = newTitle;
+    onDirtyRef.current?.(noteIdRef.current);
     debouncedSave(newTitle, viewRef.current?.state.doc.toString() ?? note.body);
   };
 
@@ -774,7 +992,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       >
         {bodyMode === 'preview' && (
           <div className="absolute inset-0 z-10 flex flex-col min-h-0 bg-mnemo-app overflow-hidden">
-            <MarkdownNoteBody body={previewLiveBody} />
+            <MarkdownNoteBody
+              body={previewLiveBody}
+              onBodyChange={(body) => {
+                const v = viewRef.current;
+                if (!v) return;
+                // The doc change runs the normal debounced autosave (per-note save queue), so rapid
+                // slider moves coalesce into one ordered save instead of one save per event.
+                v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: body } });
+                setPreviewLiveBody(body);
+              }}
+            />
           </div>
         )}
         <div
@@ -830,6 +1058,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             >
               Paste
             </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
+              onClick={() => {
+                const v = viewRef.current;
+                if (!v) return;
+                v.focus();
+                void editorPaste(v, true).then(() => {
+                  saveNow();
+                  closeCtx();
+                });
+              }}
+            >
+              Paste as plain text
+            </button>
             {showSummaryMenuItems && (
               <>
                 <div className="border-t border-mnemo-border my-1" />
@@ -880,7 +1124,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
               type="button"
               role="menuitem"
               className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
-              onClick={() => runWithView(v => wrapSelectionMarkdown(v, '**', '**'))}
+              onClick={() => runWithView(v => void inlineCommand('bold')(v))}
             >
               Bold
             </button>
@@ -888,7 +1132,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
               type="button"
               role="menuitem"
               className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
-              onClick={() => runWithView(v => wrapSelectionMarkdown(v, '*', '*'))}
+              onClick={() => runWithView(v => void inlineCommand('italic')(v))}
             >
               Italic
             </button>

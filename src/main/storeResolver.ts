@@ -3,6 +3,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import type { INoteStore, WorkspaceProfileEntry, WorkspaceProfilesState } from '../shared/types';
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
@@ -12,7 +13,7 @@ let globalStore: INoteStore | null = null;
 let bootstrapRoot = '';
 let activeWorkspaceId = 'default';
 
-/** Dedicated stores keyed by stable string (sqlite path or remote URL). */
+/** Dedicated stores keyed by workspace identity and credentials. */
 const dedicatedStores = new Map<string, INoteStore>();
 
 export function setStoreResolverBootstrapRoot(root: string): void {
@@ -35,30 +36,40 @@ export function getActiveWorkspaceId(): string {
   return activeWorkspaceId;
 }
 
-function storageKey(w: WorkspaceProfileEntry): string {
+export function workspaceStorageCacheKey(w: WorkspaceProfileEntry): string {
   const s = w.storage ?? { mode: 'inherit' as const };
   if (s.mode === 'inherit') return 'global';
-  if (s.mode === 'sqlite') return `sqlite:${path.resolve(s.dbPath)}`;
+  if (s.mode === 'sqlite') return `sqlite:${w.id}:${path.resolve(s.dbPath)}`;
   const url = (s.tursoUrl || s.libsqlUrl || '').trim();
-  return `remote:${url}`;
+  const token = (s.tursoToken || s.libsqlAuthToken || '').trim();
+  const identity = createHash('sha256').update(token).digest('hex').slice(0, 16);
+  return `remote:${w.id}:${url}:${identity}`;
 }
 
 function getProfiles(): WorkspaceProfilesState {
   return readWorkspaceProfilesFile(bootstrapRoot);
 }
 
-export async function ensureActiveContext(): Promise<{
+export interface WorkspaceStoreContext {
   store: INoteStore;
   /** Row filter for notes (inherit: workspace id; dedicated DB: default). */
   tenantId: string;
   /** Profile id for ui-preferences namespacing. */
   workspaceId: string;
-}> {
+}
+
+export interface WorkspaceContextSession {
+  resolve: () => Promise<WorkspaceStoreContext>;
+  getWorkspaceId: () => string;
+  setWorkspaceId: (id: string) => void;
+}
+
+async function resolveWorkspaceContext(preferredWorkspaceId: string): Promise<WorkspaceStoreContext> {
   const profiles = getProfiles();
-  const id = profiles.workspaces.some(w => w.id === activeWorkspaceId)
-    ? activeWorkspaceId
+  const id = profiles.workspaces.some((w) => w.id === preferredWorkspaceId && !w.archivedAt)
+    ? preferredWorkspaceId
     : profiles.activeWorkspaceId;
-  const w = profiles.workspaces.find(x => x.id === id);
+  const w = profiles.workspaces.find((x) => x.id === id);
   if (!w) {
     throw new Error('No active workspace profile');
   }
@@ -68,7 +79,7 @@ export async function ensureActiveContext(): Promise<{
     return { store: globalStore, tenantId: w.id, workspaceId: w.id };
   }
 
-  const key = storageKey(w);
+  const key = workspaceStorageCacheKey(w);
   let st = dedicatedStores.get(key);
   if (!st) {
     if (s.mode === 'sqlite') {
@@ -79,7 +90,7 @@ export async function ensureActiveContext(): Promise<{
       if (!url || !token) {
         throw new Error('Workspace remote storage is missing URL or token');
       }
-      const vault = path.join(bootstrapRoot, 'vault');
+      const vault = path.join(bootstrapRoot, 'workspaces', w.id, 'vault');
       fs.mkdirSync(vault, { recursive: true });
       const turso = new TursoNoteStore(url, token, vault);
       await turso.initSchema();
@@ -88,6 +99,22 @@ export async function ensureActiveContext(): Promise<{
     dedicatedStores.set(key, st);
   }
   return { store: st, tenantId: 'default', workspaceId: w.id };
+}
+
+export async function ensureActiveContext(): Promise<WorkspaceStoreContext> {
+  return resolveWorkspaceContext(activeWorkspaceId);
+}
+
+/** An independent workspace selection for one MCP connection/server. */
+export function createWorkspaceContextSession(initialWorkspaceId: string): WorkspaceContextSession {
+  let workspaceId = initialWorkspaceId;
+  return {
+    resolve: () => resolveWorkspaceContext(workspaceId),
+    getWorkspaceId: () => workspaceId,
+    setWorkspaceId: (id: string) => {
+      workspaceId = id;
+    },
+  };
 }
 
 export function closeDedicatedStores(): void {
@@ -101,7 +128,7 @@ export function closeDedicatedStores(): void {
   dedicatedStores.clear();
 }
 
-/** Purge notes for a workspace when archiving/deleting a profile (inherit: tenant on global DB; remote: dedicated Turso). */
+/** Purge notes for a workspace during permanent deletion (inherit: tenant on global DB; remote: dedicated Turso). */
 export async function purgeWorkspaceNotesForProfile(entry: WorkspaceProfileEntry): Promise<void> {
   const st = entry.storage ?? { mode: 'inherit' as const };
   if (st.mode === 'sqlite') return;

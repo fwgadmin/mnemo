@@ -86,7 +86,7 @@ export async function flushOutbox(client: Client, tenantId: string): Promise<{ o
         await createNote(client, item.input);
         await refreshOutgoingLinksForNote(client, item.input.id, tenantId);
       } else if (item.kind === 'delete') {
-        await deleteNote(client, item.id);
+        await deleteNote(client, item.id, item.tenantId, item.at);
       }
       ok += 1;
     } catch {

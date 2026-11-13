@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # Dispatches `mnemo` on Linux: GUI (Electron) vs CLI (same Electron binary as Node + bundled deps).
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# /usr/bin/mnemo is a symlink to this script: resolve it so paths point at the install dir.
+HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 ELECTRON="$ROOT/Mnemo"
 CLI_JS="$HERE/mnemo-cli.js"
 HTTP_JS="$HERE/mnemo-mcp-http.js"
 NODE_PATH="$HERE/node_modules"
-
-# Chromium’s setuid sandbox helper is not root-owned in shipped bundles; Electron aborts without this.
-export ELECTRON_DISABLE_SANDBOX=1
 
 if [[ ! -x "$ELECTRON" ]]; then
   echo "Mnemo: expected Electron binary at $ELECTRON" >&2
@@ -26,17 +24,22 @@ run_cli() {
   exec "$ELECTRON" "$CLI_JS" "$@"
 }
 
+# Run a short script with the bundled Electron as Node (no system Node.js required).
+electron_node() {
+  ELECTRON_RUN_AS_NODE=1 "$ELECTRON" "$@"
+}
+
 # Matches bin/mnemo.js shouldRunVaultCli — keep routing in sync.
 should_run_vault_cli() {
-  node -e '
+  electron_node -e '
   const argv = process.argv.slice(1);
   if (argv.length === 0) {
     process.exit(0);
   }
   const cmd = argv[0];
   const vault = new Set([
-    "help","mcp","note","completion","workspace","add","a","find","f","search","import","graph",
-    "categories","autolink","list","set-category","category","compose","write","edit",
+    "help","mcp","note","completion","workspace","sheet","attachments","add","a","find","f","search","import","graph",
+    "categories","autolink","list","set-category","category","compose","write","edit","delete","rm","sync",
   ]);
   if (vault.has(cmd)) process.exit(0);
   if (/^\d+$/.test(cmd)) process.exit(0);
@@ -53,7 +56,7 @@ read_bare_command() {
       gui|recent) echo "${MNEMO_CLI_BARE}"; return ;;
     esac
   fi
-  node -e "
+  electron_node -e "
   const fs=require('fs');const p=require('path');const os=require('os');
   function cp(){const x=process.env.XDG_CONFIG_HOME||p.join(os.homedir(),'.config');return p.join(x,'mnemo','cli.json');}
   try{const j=JSON.parse(fs.readFileSync(cp(),'utf8'));if(j.bareCommand==='gui'||j.bareCommand==='recent'){process.stdout.write(j.bareCommand);process.exit(0)}}catch(e){}
@@ -61,9 +64,28 @@ read_bare_command() {
   " 2>/dev/null || echo recent
 }
 
+# Chromium aborts with a cryptic SUID-sandbox error when unprivileged user namespaces are restricted
+# (Ubuntu 23.10+) and no AppArmor profile allows them. Explain the fix instead.
+sandbox_hint() {
+  [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" == "1" ]] || return 0
+  [[ -f /etc/apparmor.d/mnemo ]] && return 0
+  [[ -u "$ROOT/chrome-sandbox" && "$(stat -c %U "$ROOT/chrome-sandbox" 2>/dev/null)" == "root" ]] && return 0
+  cat >&2 <<HINT
+Mnemo: this system restricts unprivileged user namespaces, which Mnemo's sandbox needs.
+  Install the AppArmor profile once (needs sudo):
+    sudo "$HERE/apparmor-profile.sh" install "$ELECTRON"
+  or install the .deb package, which does this automatically.
+HINT
+}
+
+run_gui() {
+  sandbox_hint
+  exec "$ELECTRON" "$@"
+}
+
 if [[ $# -eq 0 ]]; then
   if [[ "$(read_bare_command)" == "gui" ]]; then
-    exec "$ELECTRON" "$@"
+    run_gui "$@"
   else
     run_cli "$@"
   fi
@@ -81,7 +103,7 @@ if [[ $# -ge 1 ]]; then
       exec /usr/bin/env node "$HTTP_JS"
       ;;
     gui)
-      exec "$ELECTRON" "$@"
+      run_gui "$@"
       ;;
   esac
   if should_run_vault_cli "$@"; then
@@ -89,4 +111,4 @@ if [[ $# -ge 1 ]]; then
   fi
 fi
 
-exec "$ELECTRON" "$@"
+run_gui "$@"

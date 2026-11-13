@@ -122,11 +122,11 @@ export default function HelpView({ onClose }: HelpViewProps) {
               Optional <strong>Storage</strong> overrides per workspace (dedicated SQLite files or libSQL URL) are edited
               under <Mono>Settings</Mono> (<strong>Workspace</strong> tab → <Mono>Storage…</Mono> on a vault). Use{' '}
               <Mono>File › New Vault Workspace…</Mono> or <Mono>File › Manage Vault Workspaces…</Mono> to create, import,
-              archive, or delete profiles (new vaults open immediately after creation).
+              archive, restore, or permanently delete profiles (new vaults open immediately after creation).
             </p>
             <p className="mt-2 text-xs text-mnemo-dim leading-relaxed">
               CLI: <Mono>mnemo workspace list</Mono>, <Mono>mnemo workspace new</Mono>, <Mono>mnemo workspace switch</Mono>,{' '}
-              <Mono>archive</Mono>, <Mono>delete</Mono>. Note commands use the active workspace when <Mono>--db</Mono> is
+              <Mono>archive</Mono>, <Mono>restore</Mono>, <Mono>delete</Mono>. Archiving retains the vault’s data; note commands use the active workspace when <Mono>--db</Mono> is
               omitted; pass <Mono>--workspace &lt;id&gt;</Mono> for a one-off tenant. MCP stdio: same <Mono>--workspace</Mono>{' '}
               flag, or rely on <Mono>workspace-profiles.json</Mono> when using the bootstrap DB. See{' '}
               <Mono>mnemo help workspace</Mono> and <Mono>mnemo help mcp</Mono>.

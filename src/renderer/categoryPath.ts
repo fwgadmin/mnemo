@@ -26,8 +26,10 @@ export function isArchiveCategoryPath(folderPath: string): boolean {
 export function countNotesInCategorySubtree(
   notes: NoteListItem[],
   folderPath: string,
+  model?: CategoryModel,
 ): number {
   const fp = normalizePath(folderPath) || GENERAL_PATH;
+  if (model) return model.nodesByPath.get(fp)?.subtreeNoteCount ?? 0;
   let c = 0;
   for (const n of notes) {
     const cur = categoryPathFromTags(n.tags, notes);
@@ -45,23 +47,25 @@ export function vaultHasAssignedCategories(notes: NoteListItem[]): boolean {
   return notes.some(n => hasNonEmptyFirstTag(n.tags));
 }
 
+/** Resolve a note category using a vault-level value computed once by the caller. */
+export function resolveCategoryPath(tags: string[], hasAssignedCategories: boolean): string {
+  if (!tags.length) return hasAssignedCategories ? UNASSIGNED_PATH : GENERAL_PATH;
+  const n = normalizePath(tags[0]);
+  if (!n) return hasAssignedCategories ? UNASSIGNED_PATH : GENERAL_PATH;
+  return n === GENERAL_PATH ? GENERAL_PATH : n;
+}
+
 /**
  * Category path from note tags. Empty first tag → General when no one else is categorized,
  * otherwise Unassigned. Explicit first tag "General" → General bucket.
  * Pass `vaultNotes` so empty tags resolve to Unassigned when the vault has other categories (UI and `mnemo note list -v`).
  */
 export function categoryPathFromTags(tags: string[], vaultNotes?: NoteListItem[] | null): string {
-  if (!tags.length) {
-    if (vaultNotes && vaultHasAssignedCategories(vaultNotes)) return UNASSIGNED_PATH;
-    return GENERAL_PATH;
+  if (tags.length) {
+    const normalized = normalizePath(tags[0]);
+    if (normalized) return normalized === GENERAL_PATH ? GENERAL_PATH : normalized;
   }
-  const n = normalizePath(tags[0]);
-  if (!n) {
-    if (vaultNotes && vaultHasAssignedCategories(vaultNotes)) return UNASSIGNED_PATH;
-    return GENERAL_PATH;
-  }
-  if (n === GENERAL_PATH) return GENERAL_PATH;
-  return n;
+  return resolveCategoryPath(tags, !!vaultNotes && vaultHasAssignedCategories(vaultNotes));
 }
 
 export function splitPath(path: string): string[] {
@@ -152,10 +156,11 @@ export function filterNotesByCategory(
   notes: NoteListItem[],
   folderPath: string | null,
   includeDescendants: boolean,
+  model?: CategoryModel,
 ): NoteListItem[] {
   if (folderPath === null) return notes;
   return notes.filter(n => {
-    const p = categoryPathFromTags(n.tags, notes);
+    const p = model?.pathByNoteId.get(n.id) ?? categoryPathFromTags(n.tags, notes);
     return pathInSubtree(p, folderPath, includeDescendants);
   });
 }
@@ -188,54 +193,79 @@ export interface CategoryTreeNode {
 /** Internal tree root (not a real folder — never shown or stored as a tag). */
 export const VIRTUAL_CATEGORY_ROOT = '';
 
-/** Multi-root category tree: top-level folders are siblings (General, Unassigned, agntsea, …), not children of General. */
-export function buildCategoryTree(notes: NoteListItem[]): CategoryTreeNode {
-  const byPath = new Map<string, NoteListItem[]>();
-  for (const n of notes) {
-    const p = categoryPathFromTags(n.tags, notes);
-    if (!byPath.has(p)) byPath.set(p, []);
-    byPath.get(p)!.push(n);
-  }
+export interface CategoryModel {
+  hasAssignedCategories: boolean;
+  root: CategoryTreeNode;
+  notesByPath: Map<string, NoteListItem[]>;
+  pathByNoteId: Map<string, string>;
+  nodesByPath: Map<string, CategoryTreeNode>;
+}
 
-  const allPaths = new Set<string>(byPath.keys());
-  for (const p of [...allPaths]) {
-    for (const a of ancestorPaths(p)) allPaths.add(a);
+function categorySegment(path: string): string {
+  if (path === GENERAL_PATH) return 'General';
+  if (path === UNASSIGNED_PATH) return 'Unassigned';
+  return splitPath(path).at(-1) ?? path;
+}
+
+function compareCategoryPaths(a: string, b: string): number {
+  return categorySegment(a).localeCompare(categorySegment(b), undefined, { sensitivity: 'base' });
+}
+
+/**
+ * Build all category indexes in one pass over notes and one pass over category paths.
+ * Child ordering and subtree counts are finalized once, before rendering.
+ */
+export function buildCategoryModel(
+  notes: NoteListItem[],
+  assignedCategories = vaultHasAssignedCategories(notes),
+): CategoryModel {
+  const notesByPath = new Map<string, NoteListItem[]>();
+  const pathByNoteId = new Map<string, string>();
+  const allPaths = new Set<string>();
+
+  for (const note of notes) {
+    const path = resolveCategoryPath(note.tags, assignedCategories);
+    pathByNoteId.set(note.id, path);
+    const pathNotes = notesByPath.get(path);
+    if (pathNotes) pathNotes.push(note);
+    else notesByPath.set(path, [note]);
+    for (const ancestor of ancestorPaths(path)) allPaths.add(ancestor);
   }
   if (allPaths.size === 0) allPaths.add(GENERAL_PATH);
 
+  const childrenByParent = new Map<string, string[]>();
+  for (const path of allPaths) {
+    const parent = parentPath(path) ?? VIRTUAL_CATEGORY_ROOT;
+    const children = childrenByParent.get(parent);
+    if (children) children.push(path);
+    else childrenByParent.set(parent, [path]);
+  }
+  for (const children of childrenByParent.values()) children.sort(compareCategoryPaths);
+
+  const nodesByPath = new Map<string, CategoryTreeNode>();
   function buildNode(path: string): CategoryTreeNode {
-    const segment =
-      path === VIRTUAL_CATEGORY_ROOT
-        ? ''
-        : path === GENERAL_PATH
-          ? 'General'
-          : path === UNASSIGNED_PATH
-            ? 'Unassigned'
-            : splitPath(path).slice(-1)[0] ?? path;
-    const nodeDepth =
-      path === VIRTUAL_CATEGORY_ROOT ? -1 : categoryDisplayDepth(path);
-    const direct = byPath.get(path)?.length ?? 0;
-    const childPaths = [...allPaths]
-      .filter(c => {
-        const pp = parentPath(c);
-        if (path === VIRTUAL_CATEGORY_ROOT) return pp === null;
-        return pp === path;
-      })
-      .filter(c => c !== path)
-      .sort((a, b) => (splitPath(a).pop() ?? '').localeCompare(splitPath(b).pop() ?? ''));
-    const children = childPaths.map(c => buildNode(c));
-    const sub = direct + children.reduce((a, c) => a + c.subtreeNoteCount, 0);
-    return {
+    const children = (childrenByParent.get(path) ?? []).map(buildNode);
+    const directNoteCount = notesByPath.get(path)?.length ?? 0;
+    const node: CategoryTreeNode = {
       path,
-      segment,
-      depth: nodeDepth,
-      directNoteCount: direct,
-      subtreeNoteCount: sub,
+      segment: path === VIRTUAL_CATEGORY_ROOT ? '' : categorySegment(path),
+      depth: path === VIRTUAL_CATEGORY_ROOT ? -1 : categoryDisplayDepth(path),
+      directNoteCount,
+      subtreeNoteCount:
+        directNoteCount + children.reduce((total, child) => total + child.subtreeNoteCount, 0),
       children,
     };
+    nodesByPath.set(path, node);
+    return node;
   }
 
-  return buildNode(VIRTUAL_CATEGORY_ROOT);
+  const root = buildNode(VIRTUAL_CATEGORY_ROOT);
+  return { hasAssignedCategories: assignedCategories, root, notesByPath, pathByNoteId, nodesByPath };
+}
+
+/** Multi-root category tree: top-level folders are siblings (General, Unassigned, agntsea, …), not children of General. */
+export function buildCategoryTree(notes: NoteListItem[]): CategoryTreeNode {
+  return buildCategoryModel(notes).root;
 }
 
 /** Keep only folders that have a direct note or a descendant with a note in the map (for tree UI). */
@@ -247,8 +277,15 @@ export function pruneCategoryTree(
   const childPruned = node.children
     .map(c => pruneCategoryTree(c, notesByPath))
     .filter((x): x is CategoryTreeNode => x !== null);
-  if (hasDirect || childPruned.length > 0) {
-    return { ...node, children: childPruned };
+  if (hasDirect || childPruned.length > 0 || node.path === VIRTUAL_CATEGORY_ROOT) {
+    const directNoteCount = notesByPath.get(node.path)?.length ?? 0;
+    return {
+      ...node,
+      directNoteCount,
+      subtreeNoteCount:
+        directNoteCount + childPruned.reduce((total, child) => total + child.subtreeNoteCount, 0),
+      children: childPruned,
+    };
   }
   return null;
 }
@@ -282,13 +319,13 @@ export function sortPathsByTreeOrder(paths: string[], tree: CategoryTreeNode): s
 }
 
 /** Sorted distinct paths for combobox */
-export function distinctCategoryPaths(notes: NoteListItem[]): string[] {
+export function distinctCategoryPaths(notes: NoteListItem[], model?: CategoryModel): string[] {
   const s = new Set<string>();
-  const hasDirectGeneral = notes.some(
-    n => categoryPathFromTags(n.tags, notes) === GENERAL_PATH,
-  );
+  const hasDirectGeneral = model
+    ? (model.notesByPath.get(GENERAL_PATH)?.length ?? 0) > 0
+    : notes.some(n => categoryPathFromTags(n.tags, notes) === GENERAL_PATH);
   for (const n of notes) {
-    const p = categoryPathFromTags(n.tags, notes);
+    const p = model?.pathByNoteId.get(n.id) ?? categoryPathFromTags(n.tags, notes);
     s.add(p);
     for (const a of ancestorPaths(p)) s.add(a);
   }

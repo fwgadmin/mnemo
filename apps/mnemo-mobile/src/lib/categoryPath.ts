@@ -44,18 +44,19 @@ export function vaultHasAssignedCategories(notes: NoteListItem[]): boolean {
   return notes.some(n => hasNonEmptyFirstTag(n.tags));
 }
 
-export function categoryPathFromTags(tags: string[], vaultNotes?: NoteListItem[] | null): string {
-  if (!tags.length) {
-    if (vaultNotes && vaultHasAssignedCategories(vaultNotes)) return UNASSIGNED_PATH;
-    return GENERAL_PATH;
-  }
+export function resolveCategoryPath(tags: string[], hasAssignedCategories: boolean): string {
+  if (!tags.length) return hasAssignedCategories ? UNASSIGNED_PATH : GENERAL_PATH;
   const n = normalizePath(tags[0]);
-  if (!n) {
-    if (vaultNotes && vaultHasAssignedCategories(vaultNotes)) return UNASSIGNED_PATH;
-    return GENERAL_PATH;
+  if (!n) return hasAssignedCategories ? UNASSIGNED_PATH : GENERAL_PATH;
+  return n === GENERAL_PATH ? GENERAL_PATH : n;
+}
+
+export function categoryPathFromTags(tags: string[], vaultNotes?: NoteListItem[] | null): string {
+  if (tags.length) {
+    const normalized = normalizePath(tags[0]);
+    if (normalized) return normalized === GENERAL_PATH ? GENERAL_PATH : normalized;
   }
-  if (n === GENERAL_PATH) return GENERAL_PATH;
-  return n;
+  return resolveCategoryPath(tags, !!vaultNotes && vaultHasAssignedCategories(vaultNotes));
 }
 
 export function splitPath(path: string): string[] {
@@ -138,10 +139,11 @@ export function filterNotesByCategory(
   notes: NoteListItem[],
   folderPath: string | null,
   includeDescendants: boolean,
+  model?: CategoryModel,
 ): NoteListItem[] {
   if (folderPath === null) return notes;
   return notes.filter(n => {
-    const p = categoryPathFromTags(n.tags, notes);
+    const p = model?.pathByNoteId.get(n.id) ?? categoryPathFromTags(n.tags, notes);
     return pathInSubtree(p, folderPath, includeDescendants);
   });
 }
@@ -171,52 +173,75 @@ export interface CategoryTreeNode {
 
 export const VIRTUAL_CATEGORY_ROOT = '';
 
-export function buildCategoryTree(notes: NoteListItem[]): CategoryTreeNode {
-  const byPath = new Map<string, NoteListItem[]>();
-  for (const n of notes) {
-    const p = categoryPathFromTags(n.tags, notes);
-    if (!byPath.has(p)) byPath.set(p, []);
-    byPath.get(p)!.push(n);
-  }
+export interface CategoryModel {
+  hasAssignedCategories: boolean;
+  root: CategoryTreeNode;
+  notesByPath: Map<string, NoteListItem[]>;
+  pathByNoteId: Map<string, string>;
+  nodesByPath: Map<string, CategoryTreeNode>;
+}
 
-  const allPaths = new Set<string>(byPath.keys());
-  for (const p of [...allPaths]) {
-    for (const a of ancestorPaths(p)) allPaths.add(a);
+function categorySegment(path: string): string {
+  if (path === GENERAL_PATH) return 'General';
+  if (path === UNASSIGNED_PATH) return 'Unassigned';
+  return splitPath(path).at(-1) ?? path;
+}
+
+function compareCategoryPaths(a: string, b: string): number {
+  return categorySegment(a).localeCompare(categorySegment(b), undefined, { sensitivity: 'base' });
+}
+
+/** Keep this pure implementation aligned with desktop's category model. */
+export function buildCategoryModel(
+  notes: NoteListItem[],
+  assignedCategories = vaultHasAssignedCategories(notes),
+): CategoryModel {
+  const notesByPath = new Map<string, NoteListItem[]>();
+  const pathByNoteId = new Map<string, string>();
+  const allPaths = new Set<string>();
+
+  for (const note of notes) {
+    const path = resolveCategoryPath(note.tags, assignedCategories);
+    pathByNoteId.set(note.id, path);
+    const pathNotes = notesByPath.get(path);
+    if (pathNotes) pathNotes.push(note);
+    else notesByPath.set(path, [note]);
+    for (const ancestor of ancestorPaths(path)) allPaths.add(ancestor);
   }
   if (allPaths.size === 0) allPaths.add(GENERAL_PATH);
 
+  const childrenByParent = new Map<string, string[]>();
+  for (const path of allPaths) {
+    const parent = parentPath(path) ?? VIRTUAL_CATEGORY_ROOT;
+    const children = childrenByParent.get(parent);
+    if (children) children.push(path);
+    else childrenByParent.set(parent, [path]);
+  }
+  for (const children of childrenByParent.values()) children.sort(compareCategoryPaths);
+
+  const nodesByPath = new Map<string, CategoryTreeNode>();
   function buildNode(path: string): CategoryTreeNode {
-    const segment =
-      path === VIRTUAL_CATEGORY_ROOT
-        ? ''
-        : path === GENERAL_PATH
-          ? 'General'
-          : path === UNASSIGNED_PATH
-            ? 'Unassigned'
-            : splitPath(path).slice(-1)[0] ?? path;
-    const nodeDepth = path === VIRTUAL_CATEGORY_ROOT ? -1 : categoryDisplayDepth(path);
-    const direct = byPath.get(path)?.length ?? 0;
-    const childPaths = [...allPaths]
-      .filter(c => {
-        const pp = parentPath(c);
-        if (path === VIRTUAL_CATEGORY_ROOT) return pp === null;
-        return pp === path;
-      })
-      .filter(c => c !== path)
-      .sort((a, b) => (splitPath(a).pop() ?? '').localeCompare(splitPath(b).pop() ?? ''));
-    const children = childPaths.map(c => buildNode(c));
-    const sub = direct + children.reduce((a, c) => a + c.subtreeNoteCount, 0);
-    return {
+    const children = (childrenByParent.get(path) ?? []).map(buildNode);
+    const directNoteCount = notesByPath.get(path)?.length ?? 0;
+    const node: CategoryTreeNode = {
       path,
-      segment,
-      depth: nodeDepth,
-      directNoteCount: direct,
-      subtreeNoteCount: sub,
+      segment: path === VIRTUAL_CATEGORY_ROOT ? '' : categorySegment(path),
+      depth: path === VIRTUAL_CATEGORY_ROOT ? -1 : categoryDisplayDepth(path),
+      directNoteCount,
+      subtreeNoteCount:
+        directNoteCount + children.reduce((total, child) => total + child.subtreeNoteCount, 0),
       children,
     };
+    nodesByPath.set(path, node);
+    return node;
   }
 
-  return buildNode(VIRTUAL_CATEGORY_ROOT);
+  const root = buildNode(VIRTUAL_CATEGORY_ROOT);
+  return { hasAssignedCategories: assignedCategories, root, notesByPath, pathByNoteId, nodesByPath };
+}
+
+export function buildCategoryTree(notes: NoteListItem[]): CategoryTreeNode {
+  return buildCategoryModel(notes).root;
 }
 
 export function flattenTreeDFS(node: CategoryTreeNode): CategoryTreeNode[] {
@@ -269,10 +294,10 @@ export function distinctCategoryPaths(notes: NoteListItem[]): string[] {
 }
 
 /** Distinct leaf paths only (notes’ categories), sorted — for simple flat lists. */
-export function uniqueCategoryPaths(notes: NoteListItem[]): string[] {
+export function uniqueCategoryPaths(notes: NoteListItem[], model?: CategoryModel): string[] {
   const set = new Set<string>();
   for (const n of notes) {
-    set.add(categoryPathFromTags(n.tags, notes));
+    set.add(model?.pathByNoteId.get(n.id) ?? categoryPathFromTags(n.tags, notes));
   }
   return [...set].sort((a, b) => a.localeCompare(b));
 }

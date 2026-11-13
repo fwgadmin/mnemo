@@ -8,7 +8,20 @@ CREATE TABLE IF NOT EXISTS notes (
   tags        TEXT NOT NULL DEFAULT '[]',   -- JSON array of strings
   tenant_id   TEXT NOT NULL DEFAULT 'default',
   created_at  TEXT NOT NULL,                -- ISO 8601
-  updated_at  TEXT NOT NULL                 -- ISO 8601
+  updated_at  TEXT NOT NULL,                -- ISO 8601
+  ref         INTEGER,
+  hide_header INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version    INTEGER PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS note_tombstones (
+  id         TEXT PRIMARY KEY,
+  tenant_id  TEXT NOT NULL,
+  deleted_at TEXT NOT NULL
 );
 
 -- Links between notes (directed: source → target)
@@ -25,6 +38,12 @@ CREATE TABLE IF NOT EXISTS embeddings (
   vector      BLOB NOT NULL,
   created_at  TEXT NOT NULL,
   PRIMARY KEY (note_id, model)
+);
+
+CREATE TABLE IF NOT EXISTS app_kv (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 -- Full-text search index
@@ -57,4 +76,9 @@ END;
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_notes_tenant ON notes(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_tenant_updated ON notes(tenant_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_tenant_created ON notes(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_tenant_title ON notes(tenant_id, title COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_tenant_ref ON notes(tenant_id, ref);
+CREATE INDEX IF NOT EXISTS idx_note_tombstones_tenant ON note_tombstones(tenant_id, deleted_at);

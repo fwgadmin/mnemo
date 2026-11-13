@@ -1,5 +1,6 @@
 import type { Note, NoteListItem } from '../types';
 import { kvGetItem, kvRemoveItem, kvSetItem } from '../storage/asyncStorageSafe';
+import { parseStoredTags } from '../lib/noteTags';
 
 const PREFIX = 'mnemo_v1_';
 
@@ -19,7 +20,18 @@ export async function loadNoteListCache(tenantId: string): Promise<NoteListItem[
   const raw = await kvGetItem(listKey(tenantId));
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as NoteListItem[];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.flatMap(item => {
+      if (!item || typeof item !== 'object') return [];
+      const candidate = item as NoteListItem;
+      return {
+        ...candidate,
+        tags: parseStoredTags(candidate.tags),
+        // Lists cached before this contract did not include created.
+        created: typeof candidate.created === 'string' ? candidate.created : candidate.modified,
+      };
+    });
   } catch {
     return null;
   }
@@ -33,7 +45,8 @@ export async function loadNoteCache(id: string): Promise<Note | null> {
   const raw = await kvGetItem(noteKey(id));
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as Note;
+    const parsed = JSON.parse(raw) as Note;
+    return { ...parsed, tags: parseStoredTags(parsed.tags) };
   } catch {
     return null;
   }
@@ -49,6 +62,7 @@ function listItemFromNote(n: Note): NoteListItem {
     id: n.id,
     title: n.title,
     tags: n.tags,
+    created: n.created,
     modified: n.modified,
     snippet: n.body.substring(0, 120),
     hideHeader: n.hideHeader,

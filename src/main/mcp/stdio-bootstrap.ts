@@ -1,6 +1,7 @@
 /**
  * Shared bootstrap for the MCP stdio server (used by mnemo-mcp.js and mnemo CLI).
  */
+import { recoverMisplacedDefaultWorkspace } from '../workspaceLayoutRecovery';
 import * as path from 'path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { LocalNoteStore } from '../store/NoteStore';
@@ -10,15 +11,13 @@ import { resolveTursoCredentials } from '../userConfig';
 import {
   getLocalWorkspaceDbPathsForCli,
   listWorkspaceProfiles,
-  migrateLegacyFlatWorkspace,
 } from '../workspaceProfiles';
 import { pickWorkspaceId, resolveWorkspaceSelector } from '../workspaceResolve';
 import { readWorkspaceProfilesMerged } from '../workspaceProfilesSync';
 import { resolveWorkspaceBootstrapRoot } from '../userConfig';
 import {
   closeDedicatedStores,
-  ensureActiveContext,
-  setActiveWorkspaceId,
+  createWorkspaceContextSession,
   setGlobalStore,
   setStoreResolverBootstrapRoot,
 } from '../storeResolver';
@@ -64,7 +63,7 @@ export async function runMcpStdioServer(argv: string[]): Promise<void> {
   const { tursoUrl, tursoToken } = resolveTursoCredentials(parsed);
   const usedExplicitDb = argv.includes('--db');
   const root = resolveWorkspaceBootstrapRoot();
-  migrateLegacyFlatWorkspace(root);
+  await recoverMisplacedDefaultWorkspace(root);
   setStoreResolverBootstrapRoot(root);
 
   let store: INoteStore;
@@ -93,8 +92,8 @@ export async function runMcpStdioServer(argv: string[]): Promise<void> {
           process.exit(1);
         }
         const id = pickWorkspaceId(profiles, wsRes);
-        setActiveWorkspaceId(id);
-        return createMcpServer(ensureActiveContext);
+        const workspaceSession = createWorkspaceContextSession(id);
+        return createMcpServer(workspaceSession.resolve, { workspaceSession, bootstrapRoot: root });
       })();
 
   const transport = new StdioServerTransport();

@@ -1,13 +1,26 @@
 /** Shared types for Mnemo */
 
+/** What a note's body holds: Markdown text, or a Mnemo spreadsheet document (JSON, see shared/sheet.ts). */
+export type NoteKind = 'markdown' | 'sheet';
+
+export function normalizeNoteKind(value: unknown): NoteKind {
+  return value === 'sheet' ? 'sheet' : 'markdown';
+}
+
+import type { AttachmentMeta, PutAttachmentInput, SyncAttachmentRow } from './attachments';
+export type { AttachmentMeta, PutAttachmentInput, SyncAttachmentRow } from './attachments';
+
+/** Renderer-safe stand-in for an at-rest secret that is already configured. */
+export const STORED_SECRET_PLACEHOLDER = '••••••••';
+
 export interface NoteFrontmatter {
   id: string;
   title: string;
   tags: string[];
-  created: string;   // ISO 8601
-  modified: string;   // ISO 8601
+  created: string; // ISO 8601
+  modified: string; // ISO 8601
   tenantId: string;
-  links: string[];    // IDs of linked notes
+  links: string[]; // IDs of linked notes
 }
 
 export interface Note {
@@ -15,7 +28,7 @@ export interface Note {
   /** Stable human-friendly index per tenant (1-based), for CLI / links */
   ref: number;
   title: string;
-  body: string;       // Markdown content (without frontmatter)
+  body: string; // Markdown content (without frontmatter)
   tags: string[];
   created: string;
   modified: string;
@@ -23,6 +36,8 @@ export interface Note {
   links: string[];
   /** When true, editor omits the title row and metadata (per-note; global "Show note header" still applies when false). */
   hideHeader: boolean;
+  /** Body format; fixed at creation. */
+  kind: NoteKind;
   /**
    * When set, this tab edits this path on disk (IDE file tabs). Not stored in the vault until synced/imported.
    * Tab id uses `encodeFileTabId(filePath)`.
@@ -35,18 +50,15 @@ export interface NoteListItem {
   id: string;
   title: string;
   tags: string[];
+  created: string;
   modified: string;
-  snippet: string;    // First ~100 chars of body
+  snippet: string; // First ~100 chars of body
   hideHeader?: boolean;
+  kind?: NoteKind;
 }
 
-export interface SearchResult {
-  ref: number;
-  id: string;
-  title: string;
-  snippet: string;
+export interface SearchResult extends NoteListItem {
   rank: number;
-  hideHeader?: boolean;
 }
 
 export interface CreateNoteInput {
@@ -55,6 +67,7 @@ export interface CreateNoteInput {
   tags?: string[];
   tenantId?: string;
   hideHeader?: boolean;
+  kind?: NoteKind;
 }
 
 export interface UpdateNoteInput {
@@ -63,6 +76,41 @@ export interface UpdateNoteInput {
   body?: string;
   tags?: string[];
   hideHeader?: boolean;
+  kind?: NoteKind;
+}
+
+export interface SaveNoteInput {
+  id: string;
+  title: string;
+  body: string;
+  tags?: string[];
+  hideHeader?: boolean;
+  /** Optimistic concurrency token from the last note read/save. */
+  expectedModified: string;
+}
+
+export type SaveNoteResult =
+  | { status: 'saved'; note: Note; listItem: NoteListItem }
+  | { status: 'conflict'; current: Note }
+  | { status: 'not-found' };
+
+export interface CategoryMoveInput {
+  sourcePath: string;
+  targetPath: string;
+  includeDescendants: boolean;
+}
+
+export interface BulkMutationFailure {
+  id: string;
+  error: string;
+}
+
+export interface BulkMutationResult {
+  requested: number;
+  affected: number;
+  affectedIds: string[];
+  failures: BulkMutationFailure[];
+  changes: Array<{ id: string; modified: string; tags: string[] }>;
 }
 
 export interface GraphData {
@@ -72,12 +120,34 @@ export interface GraphData {
 
 /**
  * Result of a sync operation.
- * - Push (local→Turso): `synced` is rows processed; `skipped` is unused (0).
- * - Pull (Turso→local): `synced` is rows updated/inserted; `skipped` is rows left unchanged (local newer or tie).
+ * `synced` counts applied note/deletion events; `skipped` counts stale or unchanged events.
+ * Exact link replacement for an accepted but unchanged note does not increment `synced`.
  */
 export interface SyncResult {
   synced: number;
   skipped: number;
+}
+
+/** Database-shaped note event used by local ↔ libSQL synchronization. */
+export interface SyncNoteRow {
+  id: string;
+  title: string;
+  body: string;
+  tags: string;
+  tenant_id: string;
+  created_at: string;
+  updated_at: string;
+  ref: number | null;
+  hide_header: number;
+  /** Absent from rows exported by builds before schema v7 (treated as markdown). */
+  kind?: string;
+}
+
+/** Durable deletion event. Kept until the supported-client protocol floor permits bounded cleanup. */
+export interface NoteTombstoneRow {
+  id: string;
+  tenant_id: string;
+  deleted_at: string;
 }
 
 /**
@@ -102,6 +172,8 @@ export interface WorkspaceProfileEntry {
   name: string;
   /** Defaults to inherit when omitted (multi-tenant rows in the global DB). */
   storage?: WorkspaceStorage;
+  /** ISO timestamp. Archived workspaces retain their profile and all data but cannot be selected. */
+  archivedAt?: string;
 }
 
 export interface WorkspaceProfilesState {
@@ -128,6 +200,7 @@ export interface AppConfig {
 
 /** GUI layout override (Settings) — mirrors renderer */
 export type LayoutOverridePreference = 'inherit' | 'sidebar' | 'top' | 'ide';
+export type CategorySortMode = 'alphabetical' | 'created-desc' | 'created-asc';
 
 /**
  * Customizable UI state shared by the Electron app (via IPC), on-disk JSON
@@ -145,6 +218,10 @@ export interface MnemoUiPreferences {
   grouped?: boolean;
   /** Include subfolders when filtering by category */
   categoryScopeSubtree?: boolean;
+  /** Automatically color new categories; nested paths receive nearby shades of their parent. Default true. */
+  autoColorCategories?: boolean;
+  /** Per-category note ordering; subcategories inherit the closest parent override. */
+  categorySortModes?: Record<string, CategorySortMode>;
   /** Folder path → #hex color */
   categoryColors?: Record<string, string>;
   /** Per-folder-path last update time (ms) for merge with remote `app_kv` — clears win over stale cloud colors. */
@@ -165,6 +242,13 @@ export interface MnemoUiPreferences {
    * When true (default), show autocomplete for fenced code block languages and `[[` wikilinks.
    */
   editorAutocomplete?: boolean;
+  /**
+   * When true (default), the note editor uses Obsidian-style live preview: Markdown syntax is hidden away from the
+   * cursor, images render inline, and task boxes are clickable. False shows plain Markdown source.
+   */
+  editorLivePreview?: boolean;
+  /** When true (default), show a floating formatting toolbar above a text selection in the note editor. */
+  editorFormatToolbar?: boolean;
   /**
    * Optional absolute path to a project folder. Markdown files are imported into the vault (category `Workspace/…`)
    * and kept in sync via **File → Open Workspace Folder…** / **Sync workspace**.
@@ -229,11 +313,19 @@ export interface INoteStore {
   /** Load by stable ref (same as list column); tenant defaults to "default". */
   readByRef(ref: number, tenantId?: string): Promise<Note | null>;
   update(input: UpdateNoteInput): Promise<Note | null>;
+  /** Atomically persist note fields and replace its outgoing links. */
+  save(input: SaveNoteInput, targetIds: string[]): Promise<SaveNoteResult>;
+  moveCategoryPrefix(input: CategoryMoveInput, tenantId?: string): Promise<BulkMutationResult>;
+  deleteNotes(ids: string[], tenantId?: string): Promise<BulkMutationResult>;
   delete(id: string): Promise<boolean>;
   list(tenantId?: string): Promise<NoteListItem[]>;
+  /** Load every full note and its outgoing links in a bounded number of store round trips. */
+  listNotes(tenantId?: string): Promise<Note[]>;
   search(query: string, tenantId?: string): Promise<SearchResult[]>;
   getBacklinks(noteId: string): Promise<NoteListItem[]>;
   updateLinks(sourceId: string, targetIds: string[]): Promise<void>;
+  /** Replace outgoing links for multiple source notes without one remote round trip per note. */
+  updateLinksBatch(updates: Array<{ sourceId: string; targetIds: string[] }>): Promise<void>;
   resolveTitle(title: string, tenantId?: string): Promise<string | null>;
   getAllLinks(tenantId?: string): Promise<Array<{ source: string; target: string }>>;
   /** Single round-trip: counts + max(updated_at) for vault change detection. */
@@ -244,14 +336,39 @@ export interface INoteStore {
   listDistinctTenantIds(): Promise<string[]>;
   /** Note counts per tenant_id in this store (inherit / global DB). */
   getNoteCountsByTenant(): Promise<Record<string, number>>;
+  /** Store a content-addressed attachment (idempotent: same bytes → same hash, no duplicate rows). */
+  putAttachment(input: PutAttachmentInput): Promise<AttachmentMeta>;
+  /** Load and integrity-check an attachment; null when missing, incomplete, or corrupt. */
+  getAttachment(hash: string, tenantId?: string): Promise<StoredAttachment | null>;
+  /** Remove one attachment (metadata, chunks, and vault mirror copy); false if it did not exist. */
+  deleteAttachment(hash: string, tenantId?: string): Promise<boolean>;
+  /** Metadata for every complete attachment in this store (all tenants), for synchronization. */
+  listAttachmentRows(): Promise<SyncAttachmentRow[]>;
+  /** Insert an attachment from another store, keeping its metadata; false when bytes do not match the hash. */
+  importAttachment(row: SyncAttachmentRow, bytes: Uint8Array): Promise<boolean>;
   close(): void;
+}
+
+export interface StoredAttachment {
+  meta: AttachmentMeta;
+  bytes: Uint8Array;
 }
 
 /** IPC channel names */
 export const IPC = {
   NOTE_CREATE: 'note:create',
+  ATTACHMENT_PUT: 'attachment:put',
+  ATTACHMENT_SAVE_AS: 'attachment:saveAs',
+  ATTACHMENT_STATS: 'attachment:stats',
+  ATTACHMENT_CONVERT_INLINE: 'attachment:convertInline',
+  ATTACHMENT_REMOVE_UNUSED: 'attachment:removeUnused',
+  SHEET_IMPORT_FILE: 'sheet:importFile',
+  SHEET_EXPORT_FILE: 'sheet:exportFile',
   NOTE_READ: 'note:read',
   NOTE_UPDATE: 'note:update',
+  NOTE_SAVE: 'note:save',
+  NOTE_MOVE_CATEGORY: 'note:moveCategory',
+  NOTE_DELETE_MANY: 'note:deleteMany',
   NOTE_DELETE: 'note:delete',
   NOTE_LIST: 'note:list',
   NOTE_VAULT_SNAPSHOT: 'note:vaultSnapshot',
@@ -265,7 +382,8 @@ export const IPC = {
   // File operations
   FILE_SAVE_AS: 'file:saveAs',
   FILE_OPEN: 'file:open',
-  /** Read/write a single file by absolute path (IDE filesystem-backed tabs; local-first). */
+  /** Reauthorize a persisted filesystem tab; access itself uses an opaque main-process capability. */
+  FILE_AUTHORIZE_PATH: 'file:authorizePath',
   FILE_READ_PATH: 'file:readPath',
   FILE_WRITE_PATH: 'file:writePath',
   FILE_OPENED_EXTERNALLY: 'file:openedExternally',
@@ -274,7 +392,7 @@ export const IPC = {
   CONFIG_SAVE: 'config:save',
   CONFIG_STORE_TYPE: 'config:storeType',
   CONFIG_SYNC_LOCAL: 'config:syncLocal',
-  /** Merge remote libSQL rows into local bootstrap mnemo.db + vault (additive; same semantics as `mnemo sync pull`). */
+  /** Merge remote note/deletion events and exact links into local bootstrap storage. */
   CONFIG_SYNC_PULL_LOCAL: 'config:syncPullLocal',
   // UI preferences (disk + MCP)
   UI_PREFERENCES_READ: 'uiPreferences:read',
@@ -292,6 +410,7 @@ export const IPC = {
   WORKSPACE_PROFILES_SWITCH: 'workspaceProfiles:switch',
   WORKSPACE_PROFILES_PICK_FOLDER: 'workspaceProfiles:pickFolder',
   WORKSPACE_PROFILES_ARCHIVE: 'workspaceProfiles:archive',
+  WORKSPACE_PROFILES_RESTORE: 'workspaceProfiles:restore',
   WORKSPACE_PROFILES_DELETE: 'workspaceProfiles:delete',
   WORKSPACE_PROFILES_SET_STORAGE: 'workspaceProfiles:setStorage',
   WORKSPACE_PROFILES_RENAME: 'workspaceProfiles:rename',

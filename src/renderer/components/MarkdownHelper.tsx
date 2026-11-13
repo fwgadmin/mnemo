@@ -44,7 +44,7 @@ export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
         <Group title="Links &amp; Images">
           <Row syntax="[[Note Title]]"       result="wikilink" />
           <Row syntax="[text](url)"          result="hyperlink" />
-          <Row syntax="![alt](url)"          result="image" />
+          <Row syntax="![alt](url)"          result="image (paste/drop or Ctrl+Shift+I)" />
         </Group>
 
         <Group title="Code Blocks">
@@ -105,7 +105,14 @@ export default function MarkdownHelper({ onClose }: MarkdownHelperProps) {
             keys="Ctrl+Alt+C / Ctrl+Alt+V"
             action="Copy / paste formatted Markdown summary (same requirements)"
           />
-          <ShortcutRow keys="Ctrl+B"         action="Toggle sidebar" />
+          <ShortcutRow keys="Ctrl+B"         action="Bold (with text selected in the editor); otherwise toggle sidebar" />
+          <ShortcutRow keys="Ctrl+I"         action="Italic" />
+          <ShortcutRow keys="Ctrl+Shift+X"   action="Strikethrough" />
+          <ShortcutRow keys="Ctrl+Alt+H"     action="==Highlight==" />
+          <ShortcutRow keys="Ctrl+E"         action="Inline code" />
+          <ShortcutRow keys="Ctrl+1 / 2 / 3" action="Heading 1–3 (Ctrl+0: plain paragraph)" />
+          <ShortcutRow keys="Ctrl+Shift+8 / 7 / 9" action="Bulleted / numbered / task list" />
+          <ShortcutRow keys="Ctrl+Shift+." action="Quote" />
           <ShortcutRow keys="Ctrl+K"         action="Insert markdown link" />
           <ShortcutRow keys="Ctrl+Shift+T"    action="Insert table" />
           <ShortcutRow keys="Ctrl+Shift+I"   action="Insert image" />

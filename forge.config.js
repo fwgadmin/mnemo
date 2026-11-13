@@ -136,6 +136,19 @@ function installCliNodeModulesForPackage(appDir) {
   }
 }
 
+/** chmod go-w recursively (files and directories); leaves owner bits and exec bits alone. */
+function stripGroupOtherWrite(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    const mode = fs.statSync(p).mode;
+    if (mode & 0o022) fs.chmodSync(p, mode & ~0o022 & 0o7777);
+    if (entry.isDirectory()) stripGroupOtherWrite(p);
+  }
+  const mode = fs.statSync(dir).mode;
+  if (mode & 0o022) fs.chmodSync(dir, mode & ~0o022 & 0o7777);
+}
+
 module.exports = {
   hooks: {
     prePackage: async () => {
@@ -149,10 +162,13 @@ module.exports = {
     postPackage: async (_config, result) => {
       if (result.platform !== 'linux') return;
       for (const appDir of result.outputPaths) {
+        // Electron's extracted binaries can arrive mode 0777; never ship group/world-writable files.
+        stripGroupOtherWrite(appDir);
         copyIntoResources(appDir, [
           path.join(__dirname, 'dist', 'mnemo-cli.js'),
           path.join(__dirname, 'dist', 'mnemo-mcp-http.js'),
           path.join(__dirname, 'scripts', 'mnemo-launcher.sh'),
+          path.join(__dirname, 'scripts', 'linux', 'apparmor-profile.sh'),
         ]);
         installCliNodeModulesForPackage(appDir);
       }
@@ -265,6 +281,12 @@ module.exports = {
             '256x256': path.join(__dirname, 'src', 'assets', 'icon-256.png'),
           },
           bin: 'resources/mnemo-launcher.sh',
+          // Ubuntu 23.10+ restricts unprivileged user namespaces; install an AppArmor profile so the
+          // Chromium sandbox can start (see scripts/linux/apparmor-profile.sh).
+          scripts: {
+            postinst: path.join(__dirname, 'scripts', 'linux', 'postinst'),
+            postrm: path.join(__dirname, 'scripts', 'linux', 'postrm'),
+          },
         },
       },
     },
@@ -285,6 +307,13 @@ module.exports = {
         // Default 3000 often conflicts (e.g. Next, Vite, other apps). Override with:
         //   MNEMO_DEV_SERVER_PORT=3000 npm start
         port: Number(process.env.MNEMO_DEV_SERVER_PORT || 13000),
+        // `npm start` only: the dev server sends this as a CSP header on top of index.html's meta CSP. Forge's
+        // default (`default-src 'self' 'unsafe-inline' data:`) blocks mnemo-asset:// attachments in dev builds.
+        // Keep in step with the meta CSP in src/renderer/index.html; 'unsafe-eval' is for webpack dev source maps.
+        devContentSecurityPolicy:
+          "default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' data:; " +
+          "img-src 'self' data: blob: mnemo-asset:; media-src 'self' data: blob: mnemo-asset:; " +
+          "connect-src 'self' data: blob: mnemo-asset: ws: wss:",
         mainConfig: './webpack.main.config.js',
         renderer: {
           config: './webpack.renderer.config.js',

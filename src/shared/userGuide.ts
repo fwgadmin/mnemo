@@ -15,7 +15,7 @@ export const USER_GUIDE_PATHS_ROWS: string[][] = [
 
 /** MCP stdio without --db: same bootstrap paths as `mnemo note` (MNEMO_HOME / default userData), not cwd ./mnemo.db. */
 export const MCP_STDIO_DEFAULT_NOTE =
-  'MCP stdio without --db/--turso: uses the same bootstrap SQLite as mnemo note (see DATA LOCATIONS). Pass --workspace <id|index> to match a GUI vault when using the shared database.';
+  'MCP stdio without --db/--turso: uses the same bootstrap SQLite as mnemo note (see DATA LOCATIONS). Each MCP connection selects its workspace independently; pass --workspace <id|index> to pin it.';
 
 export const MCP_RESOURCES_HEADERS = ['URI', 'Description'] as const;
 export const MCP_RESOURCES_ROWS: string[][] = [
@@ -79,7 +79,10 @@ export const KEYBOARD_SHORTCUTS_ROWS: string[][] = [
   ['Ctrl+Shift+O', 'Open file as editor tab (filesystem)'],
   ['Ctrl+P', 'Command palette'],
   ['Ctrl+G', 'Toggle graph view'],
-  ['Ctrl+B', 'Toggle sidebar'],
+  ['Ctrl+B', 'Bold when text is selected in the note editor; otherwise toggle sidebar'],
+  ['Ctrl+I / Ctrl+Shift+X / Ctrl+Alt+H / Ctrl+E', 'Italic / strikethrough / ==highlight== / inline code (toggle)'],
+  ['Ctrl+1 / 2 / 3, Ctrl+0', 'Heading 1–3 / plain paragraph (toggle)'],
+  ['Ctrl+Shift+8 / 7 / 9, Ctrl+Shift+.', 'Bulleted / numbered / task list, quote (toggle)'],
   ['F11', 'Toggle fullscreen (Linux / Windows; macOS: View menu or F11)'],
   ['Ctrl+M', 'Toggle Markdown helper panel'],
   ['Ctrl+Shift+H', 'Toggle note header'],
@@ -90,10 +93,7 @@ export const KEYBOARD_SHORTCUTS_ROWS: string[][] = [
     'Ctrl+Shift+C / ⌘⇧C',
     'Copy as summary (note editor, when Summary & LLM is configured with a valid default profile)',
   ],
-  [
-    'Ctrl+Shift+V / ⌘⇧V',
-    'Paste as summary in editor when configured; otherwise toggles Markdown preview panel',
-  ],
+  ['Ctrl+Shift+V / ⌘⇧V', 'Paste as summary in editor when configured; otherwise toggles Markdown preview panel'],
   ['Ctrl+Alt+C / ⌃⌥C', 'Copy as formatted Markdown summary (editor, when Summary is configured)'],
   ['Ctrl+Alt+V / ⌃⌥V', 'Paste as formatted Markdown summary (editor, when Summary is configured)'],
 ];
@@ -110,8 +110,28 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
     'Settings → Markdown: suggests fenced-block language ids after ``` and note titles after [[ (current vault).',
   ],
   [
+    'Embedded media',
+    'Paste, drop, or Ctrl+Shift+I to add images, audio, video, PDF, or text attachments (10 MB each). Files are stored once per vault as attachments (mnemo-asset:// links), sync with remote libSQL, and are copied to vault/_attachments/ (Settings → Database → Attachments shows usage, converts old inline media, and removes unused files). In Preview, use media controls to resize, align, move, copy/cut, rename, or delete; click a 📎 link to save the file.',
+  ],
+  [
+    'Live preview',
+    'Settings → Markdown → Live preview (on by default): Obsidian-style editing. Markdown syntax (#, **, `, [](), >, ==) is hidden except on the element under the cursor; images and attachments render inline; bullets, task boxes (click to toggle), quotes, rules, and code blocks are drawn as formatted blocks; tables render as tables (click a cell to edit the table source); mermaid code blocks render as diagrams; audio/video attachments show players. A line that is only ![[Note title]] embeds that note read-only; for a spreadsheet note it shows a table of values, optionally ![[Budget#A1:D10]] or ![[Budget#Sheet2!A1:D10]]. ==text== highlights. Ctrl/⌘-click a link to open it (https links open in the browser, 📎 attachments open a Save dialog). Turn it off to edit plain Markdown source.',
+  ],
+  [
+    'Formatting toolbar',
+    'Settings → Markdown → Formatting toolbar (on by default): selecting text shows a toolbar for bold, italic, strikethrough, highlight, inline code, link, headings 1–3, quote, and bulleted / numbered / task lists. Every button and shortcut toggles, so applying it again removes the formatting.',
+  ],
+  [
+    'Spreadsheets',
+    'File → New Spreadsheet (or the command palette) creates a spreadsheet note: a grid with a formula bar, multiple sheets (tabs: + to add, double-click to rename, right-click to delete), ~400 Excel functions (=SUM(A1:A9), =VLOOKUP(…), =Sheet2!B4, =\'Q1 Totals\'!A1), Excel-style keyboard navigation, undo/redo, copy/paste (formulas shift like Excel; pastes from Excel/Sheets arrive as values), right-click to insert/delete rows and columns (formulas are rewritten), draggable column widths, and cell formatting (toolbar or Ctrl+B/I: bold, italic, alignment, colors, number formats such as currency, percent, and dates; typed YYYY-MM-DD values are dates), sorting and filtering by column (right-click or the ⏷ toolbar button), and a fill handle at the selection corner that continues number, date, and "Item 1" series and copies formulas; charts (📊 or right-click → Insert chart from selection: column, bar, line, or stacked; first column = labels, other columns = series). Import… reads CSV/TSV/XLSX; CSV exports the current sheet\'s values, XLSX exports every sheet with formulas. From the terminal: mnemo help sheet. MCP: create_sheet, read_sheet, update_sheet_cells.',
+  ],
+  [
+    'Rich copy & paste',
+    'Pasting formatted text from a browser, Google Docs, Word, or email converts it to Markdown (headings, lists, links, tables, ==highlights==). Code blocks and code-editor copies stay literal; use right-click → Paste as plain text to skip conversion. Copying a selection puts both Markdown and formatted HTML (with images) on the clipboard.',
+  ],
+  [
     'Summary & LLM',
-    'Settings → Summary & LLM: named provider profiles (OpenAI-compatible chat, Ollama, Anthropic, Gemini), base URL, model, optional API key; pick a default profile. Keys live in userData llm-config.json only (not synced to Turso).',
+    'Settings → Summary & LLM: named provider profiles (OpenAI-compatible chat, Ollama, Anthropic, Gemini), base URL, model, optional API key; pick a default profile. Keys stay local in an owner-only file and use Electron safeStorage encryption when available (not synced to Turso). Requests time out after 60 seconds.',
   ],
   [
     'Guardrails',
@@ -146,6 +166,8 @@ export const CLI_HELP_TOPICS = [
   'workspace',
   'sync',
   'note',
+  'sheet',
+  'attachments',
   'mcp',
   'mcp-http',
   'config',
@@ -176,7 +198,7 @@ GET STARTED
   mnemo <word>           If one word and not a command → same as find
 
 OTHER COMMANDS
-  mnemo workspace …      List / create / switch / archive / delete vault profiles (see mnemo help workspace)
+  mnemo workspace …      List / create / switch / archive / restore / delete vault profiles (see mnemo help workspace)
   mnemo sync push|pull   Additive merge with remote libSQL (local↔bootstrap DB; see mnemo help sync)
   mnemo mcp              MCP server on stdio (editors / agents; optional --workspace)
   mnemo mcp-http         Remote HTTP MCP (Turso / libSQL)
@@ -190,7 +212,7 @@ HELP SECTIONS (read these next)
   mnemo help topics      List section names
   mnemo help vault       Paths, --db/--vault, every vault command and flag
   mnemo help workspace   Vault profiles, tenant id, workspace-profiles.json, CLI commands
-  mnemo help sync        mnemo sync push / pull, additive rules, GUI buttons
+  mnemo help sync        mnemo sync push / pull, timestamp conflict rules, GUI buttons
   mnemo help mcp         MCP stdio: options, resources, tools
   mnemo help config      ~/.config/mnemo/cli.json and JSON output
   mnemo help desktop     Graphical app and keyboard shortcuts
@@ -210,12 +232,12 @@ ${paths}
 
   Next to mnemo.db (same bootstrap folder):
     workspace-profiles.json     Active workspace id, vault names/ids, optional per-vault storage overrides
-    config.json                 Global libSQL URL/token (Settings → Database tab); if missing remote creds here, the app may use workspaces/default/config.json
+    config.json                 Global libSQL URL/token (Settings → Database tab); desktop tokens use Electron safeStorage encryption when available
     ui-preferences.json         Default workspace UI state; ui-preferences.<workspaceId>.json for other vaults
   Workspaces use tenant_id = workspace id in the shared DB unless a profile uses dedicated SQLite/libSQL (tenant "default" in that file).
 
   Legacy ~/.config/mnemo may still apply when it holds Turso credentials and mnemo-note does not (same as the desktop app).
-  CLI loads remote DB credentials from the same bootstrap folder first (then other paths) so Turso URL/token stay aligned with workspace-profiles.json and mnemo.db.
+  CLI loads plaintext remote DB credentials from the same bootstrap folder first (then other paths). If the desktop has migrated a token to Electron safeStorage, pass the CLI/MCP token by flag or MNEMO_TURSO_TOKEN / MNEMO_LIBSQL_AUTH_TOKEN instead.
 `;
 }
 
@@ -229,7 +251,8 @@ function sectionRemoteDb(): string {
 
 function sectionSync(): string {
   return `SYNC (local ↔ remote libSQL)
-  Non-destructive: no deletes on either side. Notes merge by id using newer \`updated_at\`; links use INSERT OR IGNORE only.
+  Notes and deletion tombstones merge by timestamp, so deletes propagate without overwriting a newer recreation.
+  Outgoing links are replaced exactly for each accepted note version, so removed links stay removed.
 
   CLI (same remote credential rules as \`mnemo help vault\` — config, env, or flags)
   mnemo sync push [--db <path>] [--workspace <id|index>] [--turso-url …] [--turso-token …]
@@ -284,14 +307,17 @@ function sectionWorkspace(): string {
     Edit storage overrides (same as Settings → Workspace → Storage…). JSON form accepts the same \`storage\` object as \`workspace-profiles.json\`.
 
   mnemo workspace archive <id|index>
-    Non-default, non-active workspace only; removes the profile and purges that workspace’s notes (and deletes
-    dedicated SQLite files if the profile used dedicated storage).
+    Non-default, non-active workspace only; hides it from normal switching while retaining all notes, storage,
+    and dedicated files.
+
+  mnemo workspace restore <id|index>
+    Make an archived workspace selectable again with its original notes and storage.
 
   mnemo workspace delete <id|index>
-    Same constraints as archive; permanent removal.
+    Non-default, non-active workspace only; permanently removes the profile and purges its notes and files.
 
   MCP (stdio): \`list_workspace_profiles\`, \`switch_workspace\`, \`create_workspace\` (optional \`import_folder\`),
-  \`rename_workspace\`, \`set_workspace_storage\`, \`archive_workspace\`, \`delete_workspace\` — same semantics as this CLI when the MCP server uses bootstrap workspace profiles (Turso merge when configured).
+  \`rename_workspace\`, \`set_workspace_storage\`, \`archive_workspace\`, \`restore_workspace\`, \`delete_workspace\` — same semantics as this CLI when the MCP server uses bootstrap workspace profiles (Turso merge when configured).
 
   Optional: --json / --no-json (see mnemo help config).
 `;
@@ -387,6 +413,8 @@ function sectionVaultCommands(): string {
   mnemo note category demote <path> --under <parentPath>
 
   Categories: first tag = folder (General, Unassigned, or nested paths).
+  In the desktop sidebar, right-click any category or subcategory to choose alphabetical, newest-created,
+  or oldest-created note ordering. Subcategories inherit the closest parent setting until explicitly overridden.
 `;
 }
 
@@ -408,7 +436,10 @@ function sectionMcpStdio(): string {
   With --db: opens only that file (--workspace ignored; tenant "default").
   With global Turso credentials (config.json or env): same remote DB as Settings → Database; --workspace still applies.
 
-  Minimal client args (shared DB, active vault):  node …/mnemo-mcp.js
+  Workspace selection is connection-local. \`switch_workspace\` retargets only that MCP connection and does not
+  change the GUI/CLI active vault or another agent. Give each client \`--workspace <id|index>\` to pin its target.
+
+  Minimal client args (shared DB, initially active vault):  node …/mnemo-mcp.js
   Explicit file pair:  --db "$MNEMO_HOME/mnemo.db" --vault "$MNEMO_HOME/vault"
 
 MCP RESOURCES (stdio server)
@@ -423,9 +454,11 @@ ${mcpPrompts}
 }
 
 function sectionMcpHttp(): string {
-  return `MCP (HTTP/SSE)
+  return `MCP (Streamable HTTP)
   mnemo mcp-http    (needs dist/mnemo-mcp-http.js)
   Requires: TURSO_URL + TURSO_AUTH_TOKEN (or LIBSQL_*), MCP_API_KEY. Optional: PORT (default 3001).
+  Endpoint: /mcp. Each transport has an independent workspace selection. /health also requires bearer auth.
+  Limits: MCP_HTTP_MAX_SESSIONS, MCP_HTTP_IDLE_MS, MCP_HTTP_REQUEST_TIMEOUT_MS, MCP_HTTP_BODY_LIMIT.
   Remote libSQL only — not for local SQLite.
 `;
 }
@@ -454,8 +487,9 @@ ${mcpClients}
 
   Published npm package: command "mnemo", args ["mcp"] (optional --db/--vault/--workspace/--turso-*) via Electron.
 
-  Example args for the same vault as the GUI without listing paths:  "mcp"  (or "mcp", "--workspace", "my-vault-id")
-  when MNEMO_HOME points at app userData.
+  Example args when MNEMO_HOME points at app userData: "mcp", "--workspace", "my-vault-id".
+  Multiple clients can share that database with different --workspace values; later switch_workspace calls stay local
+  to the connection that made them.
 `;
 }
 
@@ -472,8 +506,8 @@ function sectionDesktop(): string {
     General       Theme, layout, note #refs, category color tips
     Markdown      Spell check / autocomplete toggles, editor font/CSS variables for preview
     Summary & LLM Optional local LLM profiles (OpenAI-compatible, Ollama, Anthropic, Gemini), guardrails, Copy/Paste as summary
-    Workspace     Folder sync (markdown import), vault list, storage overrides, create/archive/delete vaults
-    Database      libSQL URL/token, save/reconnect, upload + download (additive sync), hosted/self-hosted help
+    Workspace     Folder sync (markdown import), vault list, storage overrides, create/archive/restore/delete vaults
+    Database      libSQL URL/token, save/reconnect, upload + download sync, hosted/self-hosted help
 
   In-app documentation: Help → Documentation (this file in the app).
 
@@ -534,8 +568,10 @@ export function formatCliHelpTopicsIndex(): string {
   workspace    workspace-profiles.json, mnemo workspace …, tenants
   sync         mnemo sync push / pull, Settings buttons, merge rules
   note         Legacy mnemo note … only
+  sheet        Spreadsheet notes: mnemo sheet new / show / set / list
+  attachments  Stored files: stats, convert inline data: media, remove unused
   mcp          MCP stdio: --workspace, resources, tools, prompts
-  mcp-http     MCP over HTTP/SSE
+  mcp-http     MCP over Streamable HTTP
   config       cli.json and JSON output defaults
   clients      MCP client config files (Cursor, Claude, …)
   desktop      GUI: Settings tabs, vault switcher, shortcuts
@@ -559,6 +595,10 @@ export function formatCliHelpTopic(topic: string): string | null {
       return [sectionDataLocations(), sectionRemoteDb(), sectionSync()].join('\n');
     case 'note':
       return sectionNoteLegacy();
+    case 'sheet':
+      return sectionSheet();
+    case 'attachments':
+      return sectionAttachments();
     case 'mcp':
       return sectionMcpStdio();
     case 'mcp-http':
@@ -574,6 +614,34 @@ export function formatCliHelpTopic(topic: string): string | null {
     default:
       return null;
   }
+}
+
+function sectionAttachments(): string {
+  return `Attachments (images and files pasted or dropped into notes)
+
+  mnemo attachments [stats] [--json]      counts and sizes for the workspace
+  mnemo attachments convert               move base64 data: media inside notes into stored attachments
+  mnemo attachments gc [--dry-run]        delete attachments no note references (older than 24 h)
+
+Notes link files as mnemo-asset://asset/<sha256>.<ext>; files are stored once per workspace (10 MB each), sync
+with remote libSQL, and are mirrored to vault/_attachments/. gc only affects the store it runs against: another
+device that still has a file and a note using it uploads it again on its next push. MCP: get_attachment,
+attachment_stats. Desktop: Settings → Database → Attachments.
+`;
+}
+
+function sectionSheet(): string {
+  return `Spreadsheet notes (kind "sheet")
+
+  mnemo sheet new --title "Budget" [-c Category] [--from file.csv|file.xlsx]
+  mnemo sheet show <ref|uuid> [--sheet NAME] [--range A1:D20] [--csv|--tsv|--json] [--formulas]
+  mnemo sheet set <ref|uuid> <A1> <value> [--sheet NAME]     value "=…" is a formula; "" clears the cell
+  mnemo sheet list
+
+Cells hold raw input; formulas (=SUM(A1:A3), =Sheet2!B4, ='Q1 Totals'!A1, IF, VLOOKUP, ROUND, … ~400 Excel
+functions) are computed when shown. Values print as the desktop grid displays them. Global flags --workspace,
+--db, --vault work as for note commands. In the desktop app: File → New Spreadsheet.
+`;
 }
 
 /** @deprecated Use formatCliHelpOverview() or formatCliHelpTopic(). */

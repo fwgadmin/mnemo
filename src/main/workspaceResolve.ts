@@ -11,6 +11,7 @@ export type WorkspaceResolveResult =
 export function resolveWorkspaceSelector(
   profiles: WorkspaceProfilesState,
   selector: string | null | undefined,
+  options?: { includeArchived?: boolean },
 ): WorkspaceResolveResult {
   const s = selector?.trim();
   if (!s) return { kind: 'active' };
@@ -22,11 +23,18 @@ export function resolveWorkspaceSelector(
         message: `Workspace index out of range: ${s} (use 1–${profiles.workspaces.length})`,
       };
     }
-    return { kind: 'id', id: profiles.workspaces[idx - 1]!.id };
+    const workspace = profiles.workspaces[idx - 1]!;
+    if (workspace.archivedAt && !options?.includeArchived) {
+      return { kind: 'error', message: `Workspace is archived: ${workspace.id} (restore it first)` };
+    }
+    return { kind: 'id', id: workspace.id };
   }
-  const found = profiles.workspaces.some(w => w.id === s);
+  const found = profiles.workspaces.find(w => w.id === s);
   if (!found) {
     return { kind: 'error', message: `Unknown workspace: ${s}` };
+  }
+  if (found.archivedAt && !options?.includeArchived) {
+    return { kind: 'error', message: `Workspace is archived: ${s} (restore it first)` };
   }
   return { kind: 'id', id: s };
 }

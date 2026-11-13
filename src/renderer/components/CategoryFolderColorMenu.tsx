@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { clampFixedContextMenu } from '../fixedMenuPosition';
+import type { CategorySortMode } from '../../shared/types';
 
 export type FolderColorMenuState = { path: string; x: number; y: number } | null;
 
@@ -16,6 +17,9 @@ interface CategoryFolderColorMenuProps {
   onPromote: () => void;
   canDemote: boolean;
   onRequestDemote: () => void;
+  sortMode: CategorySortMode;
+  hasSortOverride: boolean;
+  onSetSortMode: (mode: CategorySortMode | null) => void;
   canClear: boolean;
   onClearColor: () => void;
   canArchiveCategory?: boolean;
@@ -52,6 +56,9 @@ export default function CategoryFolderColorMenu({
   onPromote,
   canDemote,
   onRequestDemote,
+  sortMode,
+  hasSortOverride,
+  onSetSortMode,
   canClear,
   onClearColor,
   canArchiveCategory = false,
@@ -107,7 +114,7 @@ export default function CategoryFolderColorMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-[100] min-w-[240px] max-w-[min(100vw-16px,320px)] bg-mnemo-panel-elevated border border-mnemo-border rounded-md shadow-lg py-1"
+      className="fixed z-[100] min-w-[240px] max-w-[min(100vw-16px,320px)] max-h-[calc(100vh-16px)] overflow-y-auto bg-mnemo-panel-elevated border border-mnemo-border rounded-md shadow-lg py-1"
       style={{ left: screenPos.left, top: screenPos.top }}
       onContextMenu={e => e.preventDefault()}
     >
@@ -156,6 +163,41 @@ export default function CategoryFolderColorMenu({
       >
         Demote category…
       </button>
+      <div className="border-t border-mnemo-border/80 py-1">
+        <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-mnemo-dim">Sort notes</div>
+        {([
+          ['alphabetical', 'Alphabetical'],
+          ['created-desc', 'Newest created first'],
+          ['created-asc', 'Oldest created first'],
+        ] as const).map(([mode, label]) => (
+          <button
+            key={mode}
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-mnemo-muted hover:bg-mnemo-hover"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => {
+              e.stopPropagation();
+              onSetSortMode(mode);
+            }}
+          >
+            <span className="w-3 text-mnemo-accent">{sortMode === mode ? '✓' : ''}</span>
+            {label}
+          </button>
+        ))}
+        {hasSortOverride && (
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-[11px] text-mnemo-dim hover:bg-mnemo-hover"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => {
+              e.stopPropagation();
+              onSetSortMode(null);
+            }}
+          >
+            Use parent/default sorting
+          </button>
+        )}
+      </div>
       {suggestedColors.length > 0 && (
         <div className="px-2.5 py-2 border-t border-mnemo-border/80">
           <div className="text-[10px] uppercase tracking-wide text-mnemo-dim mb-1.5">Suggested colors</div>
