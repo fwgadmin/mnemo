@@ -35,6 +35,22 @@ import type { AttachmentMeta, PutAttachmentInput, StoredAttachment, SyncAttachme
 import { extensionForAttachmentMime, isAttachmentHash } from '../../shared/attachments';
 import { assembleAttachmentChunks, sha256Hex, splitAttachmentChunks } from './attachmentData';
 
+/**
+ * `ref` for a note arriving from another store. Refs are per-store display numbers, so two devices can mint the
+ * same ref offline: keep the incoming ref when it is free in that tenant, otherwise take the next free one.
+ * Updates keep the receiving store's existing ref (see ON CONFLICT clauses) so numbers never shuffle.
+ * Args (in order): ref, tenant_id, ref, id, tenant_id, ref — see {@link syncRefArgs}.
+ */
+export const SYNC_REF_SQL = `(CASE
+  WHEN ? IS NULL OR EXISTS (SELECT 1 FROM notes AS o WHERE o.tenant_id = ? AND o.ref = ? AND o.id <> ?)
+  THEN (SELECT COALESCE(MAX(m.ref), 0) + 1 FROM notes AS m WHERE m.tenant_id = ?)
+  ELSE ?
+END)`;
+
+export function syncRefArgs(n: Pick<SyncNoteRow, 'id' | 'tenant_id' | 'ref'>): Array<string | number | null> {
+  return [n.ref, n.tenant_id, n.ref, n.id, n.tenant_id, n.ref];
+}
+
 /** Local SQLite-backed store (offline, default). */
 export class LocalNoteStore implements INoteStore {
   private db: Database.Database;
@@ -513,13 +529,13 @@ export class LocalNoteStore implements INoteStore {
 
     const upsert = this.db.prepare(`
       INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ${SYNC_REF_SQL}, ?)
       ON CONFLICT(id) DO UPDATE SET
         title       = excluded.title,
         body        = excluded.body,
         tags        = excluded.tags,
         updated_at  = excluded.updated_at,
-        ref         = COALESCE(excluded.ref, notes.ref),
+        ref         = COALESCE(notes.ref, excluded.ref),
         hide_header = excluded.hide_header
       WHERE excluded.updated_at > notes.updated_at
     `);
@@ -578,7 +594,7 @@ export class LocalNoteStore implements INoteStore {
           n.tenant_id,
           n.created_at,
           n.updated_at,
-          n.ref,
+          ...syncRefArgs(n),
           n.hide_header ?? 0,
         );
         if (info.changes > 0) applied += 1;

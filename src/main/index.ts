@@ -59,6 +59,7 @@ import {
 } from './workspaceProfiles';
 import { readWorkspaceProfilesMerged } from './workspaceProfilesSync';
 import { runLegacyWorkspaceMigration } from './workspaceMigration';
+import { recoverMisplacedDefaultWorkspace } from './workspaceLayoutRecovery';
 import {
   closeDedicatedStores,
   ensureActiveContext,
@@ -1139,6 +1140,12 @@ function registerIpcHandlers(): void {
 registerAttachmentScheme();
 
 app.whenReady().then(async () => {
+  try {
+    const recovery = await recoverMisplacedDefaultWorkspace(app.getPath('userData'));
+    if (recovery.action !== 'none') console.info('[mnemo] restored vault data moved by an older CLI/MCP build:', recovery);
+  } catch (error) {
+    console.error('[mnemo] could not restore vault data moved by an older CLI/MCP build:', error);
+  }
   runLegacyWorkspaceMigration(app.getPath('userData'));
   setWorkspaceSecretCodec({
     protect: protectSecret,

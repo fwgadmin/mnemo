@@ -1,6 +1,7 @@
 /**
  * Shared bootstrap for the MCP stdio server (used by mnemo-mcp.js and mnemo CLI).
  */
+import { recoverMisplacedDefaultWorkspace } from '../workspaceLayoutRecovery';
 import * as path from 'path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { LocalNoteStore } from '../store/NoteStore';
@@ -10,7 +11,6 @@ import { resolveTursoCredentials } from '../userConfig';
 import {
   getLocalWorkspaceDbPathsForCli,
   listWorkspaceProfiles,
-  migrateLegacyFlatWorkspace,
 } from '../workspaceProfiles';
 import { pickWorkspaceId, resolveWorkspaceSelector } from '../workspaceResolve';
 import { readWorkspaceProfilesMerged } from '../workspaceProfilesSync';
@@ -63,7 +63,7 @@ export async function runMcpStdioServer(argv: string[]): Promise<void> {
   const { tursoUrl, tursoToken } = resolveTursoCredentials(parsed);
   const usedExplicitDb = argv.includes('--db');
   const root = resolveWorkspaceBootstrapRoot();
-  migrateLegacyFlatWorkspace(root);
+  await recoverMisplacedDefaultWorkspace(root);
   setStoreResolverBootstrapRoot(root);
 
   let store: INoteStore;

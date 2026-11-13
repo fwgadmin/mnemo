@@ -3,6 +3,7 @@
  * Node CLI bundle: MCP stdio, MCP HTTP (spawn), and note subcommands.
  * The `mnemo` shell wrapper (bin/mnemo.js) also launches the Electron GUI when not using these subcommands.
  */
+import { recoverMisplacedDefaultWorkspace } from './workspaceLayoutRecovery';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync, spawn } from 'child_process';
@@ -26,7 +27,6 @@ import {
   getLocalWorkspaceDbPathsForCli,
   importFolderIntoWorkspaceProfile,
   listWorkspaceProfiles,
-  migrateLegacyFlatWorkspace,
   parseWorkspaceStorageRoot,
   renameWorkspaceProfile,
   restoreWorkspaceProfile,
@@ -837,7 +837,7 @@ async function cmdSync(argv: string[]): Promise<void> {
   const parsed = parseMcpStdioArgs(tail);
   const { workspaceId: wsFlag, argv: rest } = stripWorkspaceFlag(tail);
   const root = resolveWorkspaceBootstrapRoot();
-  migrateLegacyFlatWorkspace(root);
+  await recoverMisplacedDefaultWorkspace(root);
 
   const creds = resolveTursoCredentials(parsed);
   const hasGlobalTurso = !!(creds.tursoUrl?.trim() && creds.tursoToken?.trim());
@@ -925,7 +925,7 @@ async function openStoreForNote(argv: string[]): Promise<{ store: INoteStore; te
   const hasDb = av.includes('--db');
   const hasVault = av.includes('--vault');
   const root = resolveWorkspaceBootstrapRoot();
-  migrateLegacyFlatWorkspace(root);
+  await recoverMisplacedDefaultWorkspace(root);
   const profilesDisk = listWorkspaceProfiles(root);
   const ws = wsFlag?.trim();
   const wsResDisk = resolveWorkspaceSelector(profilesDisk, ws);
@@ -1077,7 +1077,7 @@ async function cmdWorkspace(argv: string[]): Promise<void> {
   const sub = av[0]?.toLowerCase();
   const tail = av.slice(1);
   const root = resolveWorkspaceBootstrapRoot();
-  migrateLegacyFlatWorkspace(root);
+  await recoverMisplacedDefaultWorkspace(root);
 
   if (!sub || sub === 'list' || sub === 'ls') {
     const st = await loadWorkspaceProfilesForCli(tail, root);

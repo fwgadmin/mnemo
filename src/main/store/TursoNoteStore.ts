@@ -33,7 +33,7 @@ import { serializeNoteMarkdown } from './noteMarkdown';
 import type { AttachmentMeta, PutAttachmentInput, StoredAttachment, SyncAttachmentRow } from '../../shared/types';
 import { isAttachmentHash } from '../../shared/attachments';
 import { assembleAttachmentChunks, sha256Hex, splitAttachmentChunks } from './attachmentData';
-import { attachmentRowToMeta, writeAttachmentMirror } from './NoteStore';
+import { SYNC_REF_SQL, attachmentRowToMeta, syncRefArgs, writeAttachmentMirror } from './NoteStore';
 
 function isTenantRefUniqueConstraint(err: unknown): boolean {
   const parts: string[] = [];
@@ -862,15 +862,15 @@ export class TursoNoteStore implements INoteStore {
       await append([
         {
           sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                SELECT ?, ?, ?, ?, ?, ?, ?, ${SYNC_REF_SQL}, ?
                 WHERE NOT EXISTS (SELECT 1 FROM note_tombstones WHERE id = ? AND deleted_at >= ?)
                 ON CONFLICT(id) DO UPDATE SET
                   title = excluded.title, body = excluded.body, tags = excluded.tags,
-                  updated_at = excluded.updated_at, ref = COALESCE(excluded.ref, notes.ref),
+                  updated_at = excluded.updated_at, ref = COALESCE(notes.ref, excluded.ref),
                   hide_header = excluded.hide_header
                 WHERE excluded.updated_at > notes.updated_at`,
           args: [note.id, note.title, note.body, note.tags, note.tenant_id, note.created_at,
-            note.updated_at, note.ref, note.hide_header ?? 0, note.id, note.updated_at],
+            note.updated_at, ...syncRefArgs(note), note.hide_header ?? 0, note.id, note.updated_at],
         },
         { sql: 'DELETE FROM note_tombstones WHERE id = ? AND deleted_at < ?', args: [note.id, note.updated_at] },
       ]);
