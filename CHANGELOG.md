@@ -3,6 +3,7 @@
 ## 2.2.0 — 2026-11-13
 
 - **Release:** `mnemo-note@2.2.0` on npm; tag **`v2.2.0`** on GitHub (Windows zip; Linux zip containing the `.deb` and the app folder). Includes everything listed below, plus the unreleased 2.1.19 npm change. The mobile app is not part of this release.
+- **Windows builds:** the repository variable `WINDOWS_SIGNING_DISABLED=true` builds Windows installers unsigned while Azure Trusted Signing is unavailable (it currently returns 403); delete the variable to sign again. **2.2.0 Windows installers are unsigned**, so SmartScreen will warn on first run.
 - **Fixes from release review:**
   - **Cut on media:** Preview's Cut no longer deletes media when the clipboard write failed.
   - **Preview width/alignment controls:** they save through the normal debounced, per-note save queue instead of forcing one save per slider event.
