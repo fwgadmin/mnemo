@@ -10,6 +10,8 @@ import {
   deleteWorkspaceProfile,
   mergeWorkspacesWhenCloudNewer,
   parseWorkspaceProfilesKvPayload,
+  readWorkspaceProfilesFileResult,
+  restoreWorkspaceNames,
   restoreWorkspaceProfile,
   setActiveWorkspace,
   workspaceProfilesRemotePayload,
@@ -155,5 +157,44 @@ describe('workspace secret isolation', () => {
     });
     expect(first).not.toBe(second);
     expect(first).not.toContain('token-a');
+  });
+});
+
+describe('workspace names survive sync and bad reads', () => {
+  const named = (id: string, name: string) => ({ id, name, storage: { mode: 'inherit' as const } });
+
+  it('never lets a placeholder (id) name replace a real one, and keeps device-only profiles', () => {
+    const disk = [named('default', 'Default'), named('ws-a', 'Research'), named('ws-b', 'Ops')];
+    const cloud = [named('default', 'Default'), named('ws-a', 'ws-a'), named('ws-c', 'New on laptop')];
+    const merged = mergeWorkspacesWhenCloudNewer(disk, cloud);
+    expect(merged.map((w) => [w.id, w.name])).toEqual([
+      ['default', 'Default'],
+      ['ws-a', 'Research'],
+      ['ws-c', 'New on laptop'],
+      ['ws-b', 'Ops'],
+    ]);
+    // A real rename from the cloud still wins.
+    expect(mergeWorkspacesWhenCloudNewer(disk, [named('ws-a', 'Renamed')]).find((w) => w.id === 'ws-a')?.name).toBe(
+      'Renamed',
+    );
+    expect(restoreWorkspaceNames([named('ws-a', 'ws-a')], [named('ws-a', 'Research')])[0]?.name).toBe('Research');
+  });
+
+  it('reports a corrupt profiles file as unreadable and refuses to overwrite it', () => {
+    const { root } = fixture();
+    const p = path.join(root, 'workspace-profiles.json');
+    fs.writeFileSync(p, '{"workspaces": [');
+    expect(readWorkspaceProfilesFileResult(root).status).toBe('unreadable');
+    expect(() => setActiveWorkspace(root, 'default')).toThrow(/not overwriting/);
+    expect(fs.readFileSync(p, 'utf-8')).toBe('{"workspaces": [');
+    fs.rmSync(p);
+    expect(readWorkspaceProfilesFileResult(root).status).toBe('missing');
+  });
+
+  it('writes atomically without leaving temp files behind', () => {
+    const { root, state } = fixture();
+    writeWorkspaceProfilesFileDiskOnly(root, { ...state, workspaces: [...state.workspaces, named('ws-z', 'Zed')] });
+    expect(fs.readdirSync(root).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+    expect(readWorkspaceProfilesFileResult(root).state.workspaces.find((w) => w.id === 'ws-z')?.name).toBe('Zed');
   });
 });
