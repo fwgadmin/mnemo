@@ -24,12 +24,15 @@ import {
   serializeSheetDoc,
   sheetExtent,
   toDelimited,
+  type CellFormat,
+  type NumberFormatKind,
   type SheetData,
   type SheetDoc,
 } from '../../shared/sheet';
 import {
   SheetError,
   createEvaluator,
+  cellDisplay,
   formatValue,
   offsetFormula,
   shiftFormula,
@@ -79,22 +82,37 @@ function clamp(p: Pos): Pos {
 }
 
 /** Apply a structural edit to one sheet's cells/widths and rewrite formulas in every sheet. */
+/** New key for a cell after a structural edit on its own sheet; null when the cell is deleted. */
+function movedKey(key: string, edit: StructuralEdit): string | null {
+  const a = parseCellKey(key);
+  if (!a) return null;
+  let { row, col } = a;
+  const idx = edit.axis === 'row' ? row : col;
+  if (edit.count < 0 && idx >= edit.at && idx < edit.at - edit.count) return null;
+  const shifted = idx >= edit.at ? idx + edit.count : idx;
+  if (edit.axis === 'row') row = shifted;
+  else col = shifted;
+  if (row < 0 || col < 0 || row >= MAX_SHEET_ROWS || col >= MAX_SHEET_COLS) return null;
+  return cellKey(row, col);
+}
+
 function applyStructural(doc: SheetDoc, edit: StructuralEdit): SheetDoc {
   const sheets = doc.sheets.map(s => {
+    const own = s.name === edit.sheet;
     const cells: Record<string, string> = {};
     for (const [key, raw] of Object.entries(s.cells)) {
-      const a = parseCellKey(key);
-      if (!a) continue;
-      let { row, col } = a;
-      if (s.name === edit.sheet) {
-        const idx = edit.axis === 'row' ? row : col;
-        if (edit.count < 0 && idx >= edit.at && idx < edit.at - edit.count) continue;
-        const shifted = idx >= edit.at ? idx + edit.count : idx;
-        if (edit.axis === 'row') row = shifted;
-        else col = shifted;
+      const next = own ? movedKey(key, edit) : key;
+      if (!next) continue;
+      cells[next] = raw.startsWith('=') ? shiftFormula(raw, s.name, edit) : raw;
+    }
+    let formats = s.formats;
+    if (own && formats) {
+      const moved: Record<string, CellFormat> = {};
+      for (const [key, f] of Object.entries(formats)) {
+        const next = movedKey(key, edit);
+        if (next) moved[next] = f;
       }
-      if (row < 0 || col < 0 || row >= MAX_SHEET_ROWS || col >= MAX_SHEET_COLS) continue;
-      cells[cellKey(row, col)] = raw.startsWith('=') ? shiftFormula(raw, s.name, edit) : raw;
+      formats = moved;
     }
     let colWidths = s.colWidths;
     if (s.name === edit.sheet && edit.axis === 'col' && colWidths) {
@@ -106,10 +124,31 @@ function applyStructural(doc: SheetDoc, edit: StructuralEdit): SheetDoc {
       }
       colWidths = next;
     }
-    return { ...s, cells, ...(colWidths ? { colWidths } : {}) };
+    return { ...s, cells, ...(colWidths ? { colWidths } : {}), ...(formats ? { formats } : {}) };
   });
   return { ...doc, sheets };
 }
+
+function cellStyle(f: CellFormat | undefined): React.CSSProperties {
+  if (!f) return {};
+  return {
+    ...(f.bold ? { fontWeight: 700 } : {}),
+    ...(f.italic ? { fontStyle: 'italic' } : {}),
+    ...(f.align ? { textAlign: f.align } : {}),
+    ...(f.color ? { color: f.color } : {}),
+    ...(f.fill ? { backgroundColor: f.fill } : {}),
+  };
+}
+
+const NUMBER_FORMATS: Array<[NumberFormatKind, string]> = [
+  ['general', 'General'],
+  ['number', '1,234.56'],
+  ['integer', '1,235'],
+  ['percent', 'Percent'],
+  ['currency', 'Currency ($)'],
+  ['date', 'Date'],
+  ['text', 'Plain text'],
+];
 
 function valueClass(v: CellValue): string {
   if (v instanceof SheetError) return 'text-red-400 text-right';
@@ -135,6 +174,8 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
   const [title, setTitle] = useState(note.title);
   const [sheetIdx, setSheetIdx] = useState(0);
   const [sel, setSel] = useState<Selection>({ anchor: { row: 0, col: 0 }, focus: { row: 0, col: 0 } });
+  const selRef = useRef(sel);
+  selRef.current = sel;
   const [edit, setEdit] = useState<EditState | null>(null);
   const [scroll, setScroll] = useState({ top: 0, height: 600 });
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -231,6 +272,27 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
           else cells[k] = v;
         }
         return { ...s, cells };
+      });
+    },
+    [updateSheet],
+  );
+
+  /** Apply a format change to every cell in the selection (undefined fields are removed). */
+  const formatSelection = useCallback(
+    (fn: (f: CellFormat) => CellFormat) => {
+      const r0 = rect(selRef.current);
+      updateSheet(s => {
+        const formats = { ...(s.formats ?? {}) };
+        for (let row = r0.r1; row <= r0.r2; row++) {
+          for (let col = r0.c1; col <= r0.c2; col++) {
+            const key = cellKey(row, col);
+            const next = fn({ ...(formats[key] ?? {}) });
+            for (const k of Object.keys(next) as Array<keyof CellFormat>) if (next[k] === undefined) delete next[k];
+            if (Object.keys(next).length) formats[key] = next;
+            else delete formats[key];
+          }
+        }
+        return { ...s, formats };
       });
     },
     [updateSheet],
@@ -351,6 +413,13 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
       setSel({ anchor: { row: 0, col: 0 }, focus: { row: Math.max(0, extent.rows - 1), col: Math.max(0, extent.cols - 1) } });
       return;
     }
+    if (mod && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'i')) {
+      e.preventDefault();
+      const key = e.key.toLowerCase() === 'b' ? 'bold' : 'italic';
+      const on = !sheet.formats?.[cellKey(active.row, active.col)]?.[key];
+      formatSelection(f => ({ ...f, [key]: on || undefined }));
+      return;
+    }
     if (mod) return; // copy/cut/paste handled by clipboard events; leave app shortcuts alone
     switch (e.key) {
       case 'ArrowUp':
@@ -426,7 +495,16 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
     e.preventDefault();
     const r = rect(sel);
     e.clipboardData.setData('text/plain', toDelimited(selectionRows(false), '\t'));
-    e.clipboardData.setData(CLIP_MIME, JSON.stringify({ origin: { row: r.r1, col: r.c1 }, rows: selectionRows(true) }));
+    const fmts: Array<Array<CellFormat | null>> = [];
+    for (let row = r.r1; row <= r.r2 && row < r.r1 + 10_000; row++) {
+      const line: Array<CellFormat | null> = [];
+      for (let col = r.c1; col <= r.c2; col++) line.push(sheet.formats?.[cellKey(row, col)] ?? null);
+      fmts.push(line);
+    }
+    e.clipboardData.setData(
+      CLIP_MIME,
+      JSON.stringify({ origin: { row: r.r1, col: r.c1 }, rows: selectionRows(true), formats: fmts }),
+    );
     if (cut) clearSelection();
   };
 
@@ -438,10 +516,12 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
     const internal = e.clipboardData.getData(CLIP_MIME);
     let rowsIn: string[][];
     let shift: { dRow: number; dCol: number } | null = null;
+    let fmtsIn: Array<Array<CellFormat | null>> | null = null;
     if (internal) {
       try {
-        const parsed = JSON.parse(internal) as { origin: Pos; rows: string[][] };
+        const parsed = JSON.parse(internal) as { origin: Pos; rows: string[][]; formats?: Array<Array<CellFormat | null>> };
         rowsIn = parsed.rows;
+        fmtsIn = parsed.formats ?? null;
         shift = { dRow: origin.r1 - parsed.origin.row, dCol: origin.c1 - parsed.origin.col };
       } catch {
         rowsIn = parseDelimited(e.clipboardData.getData('text/plain'), '\t');
@@ -459,7 +539,27 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
         updates[cellKey(row, col)] = shift && v.startsWith('=') ? offsetFormula(v, shift.dRow, shift.dCol) : v;
       }),
     );
-    setCells(updates);
+    if (fmtsIn) {
+      const incoming = fmtsIn;
+      updateSheet(s => {
+        const cells = { ...s.cells };
+        for (const [k, v] of Object.entries(updates)) {
+          if (v === '') delete cells[k];
+          else cells[k] = v;
+        }
+        const formats = { ...(s.formats ?? {}) };
+        incoming.forEach((line, ri) =>
+          line.forEach((f, ci) => {
+            const key = cellKey(origin.r1 + ri, origin.c1 + ci);
+            if (f) formats[key] = f;
+            else delete formats[key];
+          }),
+        );
+        return { ...s, cells, formats };
+      });
+    } else {
+      setCells(updates);
+    }
     const h = rowsIn.length;
     const w = Math.max(1, ...rowsIn.map(r => r.length));
     setSel({ anchor: { row: origin.r1, col: origin.c1 }, focus: clamp({ row: origin.r1 + h - 1, col: origin.c1 + w - 1 }) });
@@ -484,6 +584,10 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
       () => structural('col', r.c1, -(r.c2 - r.c1 + 1)),
     ],
     null,
+    ['Clear formatting', () => {
+      formatSelection(() => ({}));
+      setMenu(null);
+    }],
     ['Clear', () => {
       clearSelection();
       setMenu(null);
@@ -551,12 +655,17 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
     const ev = createEvaluator(d);
     const sheets = (format === 'csv' ? [sheet] : d.sheets).map(s => {
       const ext = sheetExtent(s);
-      const cells: Array<Array<{ raw: string; value: string | number | boolean | null }>> = [];
+      const cells: Array<Array<{ raw: string; value: string | number | boolean | null; format?: CellFormat }>> = [];
       for (let row = 0; row < ext.rows; row++) {
-        const line: Array<{ raw: string; value: string | number | boolean | null }> = [];
+        const line: Array<{ raw: string; value: string | number | boolean | null; format?: CellFormat }> = [];
         for (let col = 0; col < ext.cols; col++) {
           const v = ev.value(s.name, row, col);
-          line.push({ raw: s.cells[cellKey(row, col)] ?? '', value: v instanceof SheetError ? v.code : v });
+          const fmt = s.formats?.[cellKey(row, col)];
+          line.push({
+            raw: s.cells[cellKey(row, col)] ?? '',
+            value: v instanceof SheetError ? v.code : v,
+            ...(fmt ? { format: fmt } : {}),
+          });
         }
         cells.push(line);
       }
@@ -680,6 +789,8 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
     const cellsEls = [];
     for (let col = 0; col < cols; col++) {
       const v = evaluator.value(sheet.name, row, col);
+      const key = cellKey(row, col);
+      const fmt = sheet.formats?.[key];
       const inSel = row >= r.r1 && row <= r.r2 && col >= r.c1 && col <= r.c2;
       const isActive = row === active.row && col === active.col;
       cellsEls.push(
@@ -688,10 +799,10 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
           className={`absolute top-0 h-full px-1.5 truncate border-r border-b border-mnemo-border leading-[23px] ${valueClass(v)} ${
             inSel && !isActive ? 'bg-[color-mix(in_srgb,var(--mnemo-accent)_14%,transparent)]' : ''
           } ${isActive ? 'outline outline-2 -outline-offset-1 outline-[var(--mnemo-accent)] z-[1]' : ''}`}
-          style={{ left: colLeft[col], width: colW(col) }}
+          style={{ left: colLeft[col], width: colW(col), ...cellStyle(fmt), ...(inSel && !isActive && fmt?.fill ? { boxShadow: 'inset 0 0 0 999px color-mix(in srgb, var(--mnemo-accent) 18%, transparent)' } : {}) }}
           title={v instanceof SheetError ? raw({ row, col }) : undefined}
         >
-          {formatValue(v)}
+          {cellDisplay(doc, sheet, row, col, v)}
         </div>,
       );
     }
@@ -738,6 +849,88 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
           />
         </div>
       )}
+      <div
+        className="flex flex-wrap items-center gap-1 px-3 py-1 border-t border-mnemo-border bg-mnemo-panel text-[12px]"
+        role="toolbar"
+        aria-label="Cell formatting"
+        onMouseDown={e => {
+          // Keep keyboard focus in the grid when using the toolbar (except native inputs).
+          if (!(e.target as HTMLElement).closest('select, input')) e.preventDefault();
+        }}
+      >
+        {(() => {
+          const af = sheet.formats?.[cellKey(active.row, active.col)] ?? {};
+          const btn = (label: string, title: string, on: boolean, onClick: () => void, cls = '') => (
+            <button
+              type="button"
+              title={title}
+              aria-label={title}
+              aria-pressed={on}
+              className={`min-w-[26px] h-6 px-1.5 rounded ${on ? 'bg-mnemo-hover text-mnemo-text' : 'text-mnemo-muted hover:bg-mnemo-hover'} ${cls}`}
+              onClick={onClick}
+            >
+              {label}
+            </button>
+          );
+          const sep = <span className="w-px h-4 bg-mnemo-border mx-1" />;
+          return (
+            <>
+              {btn('B', 'Bold (Ctrl+B)', !!af.bold, () => formatSelection(f => ({ ...f, bold: f.bold ? undefined : true })), 'font-bold')}
+              {btn('I', 'Italic (Ctrl+I)', !!af.italic, () => formatSelection(f => ({ ...f, italic: f.italic ? undefined : true })), 'italic')}
+              {sep}
+              {(['left', 'center', 'right'] as const).map(a =>
+                <span key={a}>{btn(a === 'left' ? '⇤' : a === 'center' ? '↔' : '⇥', `Align ${a}`, af.align === a, () => formatSelection(f => ({ ...f, align: f.align === a ? undefined : a })))}</span>,
+              )}
+              {sep}
+              <label className="flex items-center gap-1 text-mnemo-muted" title="Text color">
+                A
+                <input
+                  type="color"
+                  value={af.color ?? '#e5e5e5'}
+                  onChange={e => formatSelection(f => ({ ...f, color: e.target.value }))}
+                  className="w-5 h-5 bg-transparent border-0 p-0 cursor-pointer"
+                  aria-label="Text color"
+                />
+              </label>
+              <label className="flex items-center gap-1 text-mnemo-muted" title="Fill color">
+                ▧
+                <input
+                  type="color"
+                  value={af.fill ?? '#1f2937'}
+                  onChange={e => formatSelection(f => ({ ...f, fill: e.target.value }))}
+                  className="w-5 h-5 bg-transparent border-0 p-0 cursor-pointer"
+                  aria-label="Fill color"
+                />
+              </label>
+              {btn('⌫', 'Remove colors', false, () => formatSelection(f => ({ ...f, color: undefined, fill: undefined })))}
+              {sep}
+              <select
+                value={af.num ?? 'general'}
+                onChange={e => {
+                  const num = e.target.value as NumberFormatKind;
+                  formatSelection(f => ({ ...f, num: num === 'general' ? undefined : num }));
+                  gridRef.current?.focus();
+                }}
+                className="h-6 bg-mnemo-app border border-mnemo-border rounded px-1 text-mnemo-text"
+                aria-label="Number format"
+                title="Number format"
+              >
+                {NUMBER_FORMATS.map(([k, label]) => (
+                  <option key={k} value={k}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              {btn('.0−', 'Fewer decimals', false, () =>
+                formatSelection(f => ({ ...f, dp: Math.max(0, (f.dp ?? (f.num === 'percent' || f.num === 'integer' ? 0 : 2)) - 1) })),
+              )}
+              {btn('.0+', 'More decimals', false, () =>
+                formatSelection(f => ({ ...f, num: f.num ?? 'number', dp: Math.min(10, (f.dp ?? (f.num === 'percent' || f.num === 'integer' ? 0 : 2)) + 1) })),
+              )}
+            </>
+          );
+        })()}
+      </div>
       <div className="flex items-center gap-2 px-3 py-1.5 border-y border-mnemo-border bg-mnemo-panel">
         <span className="w-14 shrink-0 text-center font-mono text-[12px] text-mnemo-muted">{cellKey(active.row, active.col)}</span>
         <span className="text-mnemo-dim italic">fx</span>
@@ -783,6 +976,7 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
           setMenu({ x: e.clientX, y: e.clientY });
         }}
         role="grid"
+        data-sheet-grid=""
         aria-label={`${sheet.name} cells`}
       >
         <div className="relative" style={{ width: ROWHEAD_W + totalW, height: HEADER_H + rows * ROW_H }}>

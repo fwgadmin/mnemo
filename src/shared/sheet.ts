@@ -12,8 +12,26 @@ export const DEFAULT_SHEET_COLS = 26;
 export const MAX_SHEET_ROWS = 100_000;
 export const MAX_SHEET_COLS = 702; // A..ZZ
 
+export type NumberFormatKind = 'general' | 'number' | 'integer' | 'percent' | 'currency' | 'date' | 'text';
+
+/** Per-cell presentation. Absent keys mean defaults; only non-default formats are stored. */
+export interface CellFormat {
+  bold?: boolean;
+  italic?: boolean;
+  align?: 'left' | 'center' | 'right';
+  /** #rrggbb */
+  color?: string;
+  /** #rrggbb */
+  fill?: string;
+  num?: NumberFormatKind;
+  /** Decimal places for number / percent / currency (0–10). */
+  dp?: number;
+}
+
 export interface SheetData {
   name: string;
+  /** A1 address → presentation (bold, colors, number format…). */
+  formats?: Record<string, CellFormat>;
   /** A1 address → raw input. Empty strings are not stored. */
   cells: Record<string, string>;
   /** Column index (as string) → width in px. */
@@ -103,6 +121,15 @@ function cleanSheet(raw: unknown, index: number): SheetData {
     }
   }
   const sheet: SheetData = { name, cells };
+  if (o['formats'] && typeof o['formats'] === 'object') {
+    const formats: Record<string, CellFormat> = {};
+    for (const [k, v] of Object.entries(o['formats'] as Record<string, unknown>)) {
+      const addr = parseCellKey(k);
+      const f = cleanFormat(v);
+      if (addr && f) formats[cellKey(addr.row, addr.col)] = f;
+    }
+    if (Object.keys(formats).length) sheet.formats = formats;
+  }
   if (o['colWidths'] && typeof o['colWidths'] === 'object') {
     const widths: Record<string, number> = {};
     for (const [k, v] of Object.entries(o['colWidths'] as Record<string, unknown>)) {
@@ -132,6 +159,26 @@ export function parseSheetDoc(body: string): SheetDoc {
     /* fall through to CSV */
   }
   return { mnemoSheet: SHEET_FORMAT_VERSION, sheets: [{ name: 'Sheet1', cells: cellsFromRows(parseDelimited(text)) }] };
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+const NUM_KINDS: readonly NumberFormatKind[] = ['general', 'number', 'integer', 'percent', 'currency', 'date', 'text'];
+
+/** Validate a stored/imported format; null when it carries nothing. */
+export function cleanFormat(raw: unknown): CellFormat | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const f: CellFormat = {};
+  if (o['bold'] === true) f.bold = true;
+  if (o['italic'] === true) f.italic = true;
+  if (o['align'] === 'left' || o['align'] === 'center' || o['align'] === 'right') f.align = o['align'];
+  if (typeof o['color'] === 'string' && HEX.test(o['color'])) f.color = o['color'].toLowerCase();
+  if (typeof o['fill'] === 'string' && HEX.test(o['fill'])) f.fill = o['fill'].toLowerCase();
+  if (typeof o['num'] === 'string' && NUM_KINDS.includes(o['num'] as NumberFormatKind) && o['num'] !== 'general') {
+    f.num = o['num'] as NumberFormatKind;
+  }
+  if (typeof o['dp'] === 'number' && Number.isInteger(o['dp']) && o['dp'] >= 0 && o['dp'] <= 10) f.dp = o['dp'];
+  return Object.keys(f).length ? f : null;
 }
 
 function uniquifySheetNames(sheets: SheetData[]): void {
@@ -230,6 +277,7 @@ export function toDelimited(rows: readonly (readonly string[])[], delimiter = ',
 export interface SheetExportCell {
   raw: string;
   value: string | number | boolean | null;
+  format?: CellFormat;
 }
 
 export interface SheetExportPayload {

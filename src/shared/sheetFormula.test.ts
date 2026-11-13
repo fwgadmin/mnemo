@@ -112,3 +112,46 @@ describe('reference rewriting', () => {
     expect(offsetFormula("='My Sheet'!B2", 1, 1)).toBe("='My Sheet'!C3");
   });
 });
+
+describe('number formats and dates', () => {
+  it('formats numbers, percents, currency, integers, and dates', async () => {
+    const { displayValue, dateStringToSerial, serialToDateString } = await import('./sheetFormula');
+    expect(displayValue(1234.5, { num: 'number' })).toBe('1,234.50');
+    expect(displayValue(1234.567, { num: 'number', dp: 1 })).toBe('1,234.6');
+    expect(displayValue(0.256, { num: 'percent', dp: 1 })).toBe('25.6%');
+    expect(displayValue(-1234.5, { num: 'currency' })).toBe('-$1,234.50');
+    expect(displayValue(2.5, { num: 'integer' })).toBe('3');
+    expect(displayValue('x', { num: 'currency' })).toBe('x');
+    const serial = dateStringToSerial('2026-11-13')!;
+    expect(serialToDateString(serial)).toBe('2026-11-13');
+    expect(displayValue(serial, { num: 'date' })).toBe('2026-11-13');
+    expect(serialToDateString(dateStringToSerial('2026-11-13 09:30')!)).toBe('2026-11-13 09:30');
+  });
+
+  it('treats typed ISO dates as dates in arithmetic and display', async () => {
+    const d = doc({ S: { A1: '2026-11-13', A2: '=A1+30', A3: '=A2-A1' } });
+    const ev = createEvaluator(d);
+    const { displayValue } = await import('./sheetFormula');
+    expect(displayValue(ev.value('S', 0, 0), undefined, '2026-11-13')).toBe('2026-11-13');
+    expect(displayValue(ev.value('S', 1, 0), { num: 'date' })).toBe('2026-12-13');
+    expect(formatValue(ev.value('S', 2, 0))).toBe('30');
+  });
+
+  it('keeps only valid formats when parsing documents', () => {
+    const d = parseSheetDoc(JSON.stringify({ mnemoSheet: 1, sheets: [{ name: 'S', cells: {}, formats: { a1: { bold: true, color: '#FF0000', num: 'percent', dp: 2 }, B2: { color: 'red', num: 'nope' } } }] }));
+    expect(d.sheets[0]!.formats).toEqual({ A1: { bold: true, color: '#ff0000', num: 'percent', dp: 2 } });
+  });
+});
+
+describe('inherited number formats', () => {
+  it('formula cells inherit the first referenced cell format (dates, currency) unless they have their own', async () => {
+    const { cellDisplay } = await import('./sheetFormula');
+    const d = doc({ S: { A1: '2026-11-13', A2: '=A1+30', B1: '5', B2: '=B1*2', B3: '=B1*2' } });
+    d.sheets[0]!.formats = { B1: { num: 'currency' }, B3: { num: 'number', dp: 1 } };
+    const ev = createEvaluator(d);
+    const show = (row: number, col: number) => cellDisplay(d, d.sheets[0]!, row, col, ev.value('S', row, col));
+    expect(show(1, 0)).toBe('2026-12-13');
+    expect(show(1, 1)).toBe('$10.00');
+    expect(show(2, 1)).toBe('10.0');
+  });
+});
