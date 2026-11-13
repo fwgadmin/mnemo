@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+case "$1" in
+  remove|purge)
+    if [ -f /etc/apparmor.d/mnemo ]; then
+      command -v apparmor_parser >/dev/null 2>&1 && apparmor_parser -R /etc/apparmor.d/mnemo 2>/dev/null || true
+      rm -f /etc/apparmor.d/mnemo
+    fi
+    ;;
+esac
+exit 0
