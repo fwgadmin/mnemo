@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { defaultSchema } from 'rehype-sanitize';
 import mermaid from 'mermaid';
+import { parseAttachmentUrl } from '../../shared/attachments';
+import { copyImageToClipboard } from '../editor/richClipboard';
 import { mediaTitle, parseMediaDataType, parseMediaDisplayOptions, type MediaAlign } from '../editor/mediaMarkdown';
 
 let mermaidConfigured = false;
@@ -73,8 +75,8 @@ const sanitizeSchema = {
   },
   protocols: {
     ...defaultSchema.protocols,
-    src: [...(defaultSchema.protocols?.src ?? []), 'data'],
-    href: [...(defaultSchema.protocols?.href ?? []), 'data'],
+    src: [...(defaultSchema.protocols?.src ?? []), 'data', 'mnemo-asset'],
+    href: [...(defaultSchema.protocols?.href ?? []), 'data', 'mnemo-asset'],
   },
 };
 
@@ -83,6 +85,7 @@ const SAFE_DATA_URL =
 
 function markdownUrlTransform(url: string): string {
   if (/^data:/i.test(url)) return SAFE_DATA_URL.test(url) ? url : '';
+  if (/^mnemo-asset:/i.test(url)) return parseAttachmentUrl(url) ? url : '';
   return defaultUrlTransform(url);
 }
 
@@ -119,9 +122,8 @@ function MediaBlock({
 
   const copy = async () => {
     try {
-      if (mime?.startsWith('image/') && navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
-        const blob = await (await fetch(src)).blob();
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+      if (mime?.startsWith('image/')) {
+        await copyImageToClipboard(src, source);
       } else if (source) {
         await navigator.clipboard.writeText(source);
       }
@@ -311,6 +313,23 @@ export default function MarkdownNoteBody({ body, className = '', onBodyChange }:
             );
           },
           a: ({ href, title, children }) => {
+            if (parseAttachmentUrl(href)) {
+              const label = String(Children.toArray(children).join('')).replace(/^📎\s*/, '');
+              return (
+                <a
+                  href={href}
+                  title={title === 'mnemo:attachment' ? `Save ${label}` : title}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void window.mnemo.attachments.saveAs(href!, label).catch((err: unknown) => {
+                      window.alert(err instanceof Error ? err.message : String(err));
+                    });
+                  }}
+                >
+                  {children}
+                </a>
+              );
+            }
             const attachment = title === 'mnemo:attachment' && href?.startsWith('data:');
             return (
               <a href={href} title={title} download={attachment ? 'attachment' : undefined}>

@@ -23,7 +23,8 @@ try {
 }
 import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
-import { pullTursoIntoLocalStore, readLocalNotesAndLinksForSync } from './storePullRemote';
+import { pullTursoIntoLocalStore, pushLocalToTursoStore } from './storePullRemote';
+import { handleAttachmentProtocol, registerAttachmentIpc, registerAttachmentScheme } from './attachmentProtocol';
 import type { INoteStore, AppConfig, MnemoUiPreferences, SyncResult, WorkspaceStorage } from '../shared/types';
 import { IPC, STORED_SECRET_PLACEHOLDER } from '../shared/types';
 import { resolveActiveProfile } from '../shared/llmProfile';
@@ -590,6 +591,7 @@ function applyApplicationMenu(mainWindow: BrowserWindow): void {
 }
 
 function registerIpcHandlers(): void {
+  registerAttachmentIpc(ensureActiveContext);
   ipcMain.handle(IPC.NOTE_CREATE, async (_event, input: CreateNoteInput) => {
     const ctx = await ensureActiveContext();
     return ctx.store.create({
@@ -794,9 +796,8 @@ function registerIpcHandlers(): void {
       throw new Error('Not connected to a remote libSQL database — configure one in Settings first.');
     }
     const dbPath = path.join(app.getPath('userData'), 'mnemo.db');
-    const { notes, links } = readLocalNotesAndLinksForSync(dbPath);
-    if (notes.length === 0) return { synced: 0, skipped: 0 };
-    return gs.importNotes(notes, links);
+    // Same path as `mnemo sync push`: notes, links, deletion tombstones, and attachments.
+    return pushLocalToTursoStore(gs, dbPath);
   });
 
   ipcMain.handle(IPC.CONFIG_SYNC_PULL_LOCAL, async (): Promise<SyncResult> => {
@@ -1133,6 +1134,10 @@ function registerIpcHandlers(): void {
   });
 }
 
+// Privileged custom schemes must be registered before the app is ready. Keep this after every import:
+// top-level statements earlier in this file run before later imports are initialized.
+registerAttachmentScheme();
+
 app.whenReady().then(async () => {
   runLegacyWorkspaceMigration(app.getPath('userData'));
   setWorkspaceSecretCodec({
@@ -1149,6 +1154,7 @@ app.whenReady().then(async () => {
   if (fs.existsSync(llmPath)) writeLlmConfig(app.getPath('userData'), readLlmConfig(app.getPath('userData')));
   await initStore();
   registerIpcHandlers();
+  handleAttachmentProtocol(ensureActiveContext);
 
   mcpServer = createMcpServer(ensureActiveContext);
 
