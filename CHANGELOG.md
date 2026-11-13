@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Live preview embeds:**
+  - **Mermaid:** ```` ```mermaid ```` blocks render as diagrams when the cursor is outside them.
+  - **Audio/video:** attachment links render as players. Their controls keep their own clicks, so playing doesn't drop you into the source.
+  - **Note embeds:** a line that is only `![[Note]]` shows that note read-only, one level deep (nested embeds show as links).
+  - **Sheet embeds:** an embed of a spreadsheet note shows a table of computed values: `![[Budget]]`, `![[Budget#A1:D10]]`, `![[Budget#Sheet2!A1:D10]]`, or `![[Budget#Q1!]]` for a whole sheet whose name looks like a cell.
+  - **Editing:** clicking a diagram or embed opens its source.
+  - **Preview:** renders the same embeds.
+  - **Mermaid label fix:** node labels were blank in both Preview and the editor. Mermaid drew them in `<foreignObject>`, which the sanitizer strips; it now draws SVG text labels.
 - **Attachment maintenance:**
   - **Where:** Settings → Database → Attachments, `mnemo attachments stats|convert|gc` and the MCP tools below. Everything applies to the current workspace.
   - **Statistics:** stored and unused files and sizes, and how many notes still embed base64 `data:` media.

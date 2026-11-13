@@ -258,3 +258,40 @@ html {
 .mnemo-scrollbar-hover::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--mnemo-text-muted) 78%, transparent);
 }
+
+/* ── Note / sheet embeds (![[…]]) — shared by live preview and Preview ── */
+.mnemo-embed {
+  margin: 0.4em 0;
+  border: 1px solid var(--mnemo-border);
+  border-left: 3px solid var(--mnemo-accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--mnemo-editor-foreground, #ddd) 3%, transparent);
+  font-family: var(--mnemo-editor-font-family, inherit);
+  line-height: 1.5;
+  white-space: normal;
+  cursor: default;
+}
+.mnemo-embed-title {
+  padding: 0.3em 0.75em;
+  font-size: 0.8em;
+  color: var(--mnemo-editor-meta, #888);
+  border-bottom: 1px solid var(--mnemo-border);
+}
+.mnemo-embed-body {
+  padding: 0.4em 0.75em;
+  max-height: 28em;
+  overflow: auto;
+}
+.mnemo-embed-body > :first-child { margin-top: 0; }
+.mnemo-embed-body h1, .mnemo-embed-body h2, .mnemo-embed-body h3 { font-weight: 600; margin: 0.5em 0 0.25em; }
+.mnemo-embed-body ul { list-style: disc; padding-left: 1.4em; }
+.mnemo-embed-body ol { list-style: decimal; padding-left: 1.4em; }
+.mnemo-embed-body a { color: var(--mnemo-editor-link, var(--mnemo-accent)); text-decoration: underline; }
+.mnemo-embed-body code { font-family: var(--mnemo-editor-mono-font-family, monospace); font-size: 0.9em; }
+.mnemo-embed-body mark { background: color-mix(in srgb, var(--mnemo-accent) 28%, transparent); color: inherit; }
+.mnemo-embed-body table { border-collapse: collapse; font-size: 0.9em; }
+.mnemo-embed-body td, .mnemo-embed-body th { border: 1px solid var(--mnemo-border); padding: 0.15em 0.5em; }
+.mnemo-embed-sheet td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mnemo-embed-missing { color: var(--mnemo-editor-meta, #888); font-style: italic; }
+.cm-lp-mermaid { padding: 0.4em 0; overflow-x: auto; cursor: pointer; }
+.mnemo-mermaid-error { color: var(--mnemo-editor-meta, #888); font-size: 0.85em; }
