@@ -380,35 +380,6 @@ export function ensureWorkspaceProfilesOnDisk(root: string): WorkspaceProfilesSt
   return readWorkspaceProfilesFile(root);
 }
 
-function moveIfExists(src: string, destDir: string): void {
-  if (!fs.existsSync(src)) return;
-  const base = path.basename(src);
-  const dest = path.join(destDir, base);
-  if (fs.existsSync(dest)) return;
-  fs.renameSync(src, dest);
-}
-
-/**
- * If the legacy flat layout has data, move it into `workspaces/default/`.
- */
-export function migrateLegacyFlatWorkspace(root: string): void {
-  const legacyDb = path.join(root, 'mnemo.db');
-  const defaultDir = path.join(root, 'workspaces', DEFAULT_WORKSPACE_ID);
-  const nestedDb = path.join(defaultDir, 'mnemo.db');
-  if (!fs.existsSync(legacyDb) || fs.existsSync(nestedDb)) return;
-  fs.mkdirSync(defaultDir, { recursive: true });
-  for (const name of ['mnemo.db', 'ui-preferences.json', 'config.json']) {
-    moveIfExists(path.join(root, name), defaultDir);
-  }
-  const legacyVault = path.join(root, 'vault');
-  if (fs.existsSync(legacyVault)) {
-    const destVault = path.join(defaultDir, 'vault');
-    if (!fs.existsSync(destVault)) {
-      fs.renameSync(legacyVault, destVault);
-    }
-  }
-}
-
 /**
  * Sets bootstrap root to Electron userData (no per-workspace userData redirect).
  * Copies remote config from legacy nested default path when needed.

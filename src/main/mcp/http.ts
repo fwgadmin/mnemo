@@ -13,7 +13,7 @@ import {
   setGlobalStore,
   setStoreResolverBootstrapRoot,
 } from '../storeResolver';
-import { migrateLegacyFlatWorkspace } from '../workspaceProfiles';
+import { recoverMisplacedDefaultWorkspace } from '../workspaceLayoutRecovery';
 import { readWorkspaceProfilesMerged } from '../workspaceProfilesSync';
 import { resolveWorkspaceBootstrapRoot } from '../userConfig';
 import { createMcpServer } from './server';
@@ -202,7 +202,7 @@ async function bootstrap(): Promise<void> {
   if (!apiKey) throw new Error('MCP_API_KEY environment variable is required.');
 
   const root = resolveWorkspaceBootstrapRoot();
-  migrateLegacyFlatWorkspace(root);
+  await recoverMisplacedDefaultWorkspace(root);
   setStoreResolverBootstrapRoot(root);
   const store = new TursoNoteStore(url, token);
   await store.initSchema();
