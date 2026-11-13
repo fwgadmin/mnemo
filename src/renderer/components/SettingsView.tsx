@@ -1,3 +1,4 @@
+import AttachmentSettings from './AttachmentSettings';
 import { useEffect, useState } from 'react';
 import type { AppConfig, SyncResult, WorkspaceProfilesState, WorkspaceStorage } from '../../shared/types';
 import { THEMES, type LayoutPreset } from '../theme/themes';
@@ -858,6 +859,8 @@ export default function SettingsView({
           {storeType === 'turso' ? 'Remote libSQL' : 'Local SQLite'}
         </div>
       )}
+
+      <AttachmentSettings />
 
       <section className="mb-8 max-w-lg">
         <h2 className="text-sm font-semibold text-mnemo-muted uppercase tracking-widest mb-4">Remote database</h2>

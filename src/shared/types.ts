@@ -340,6 +340,8 @@ export interface INoteStore {
   putAttachment(input: PutAttachmentInput): Promise<AttachmentMeta>;
   /** Load and integrity-check an attachment; null when missing, incomplete, or corrupt. */
   getAttachment(hash: string, tenantId?: string): Promise<StoredAttachment | null>;
+  /** Remove one attachment (metadata, chunks, and vault mirror copy); false if it did not exist. */
+  deleteAttachment(hash: string, tenantId?: string): Promise<boolean>;
   /** Metadata for every complete attachment in this store (all tenants), for synchronization. */
   listAttachmentRows(): Promise<SyncAttachmentRow[]>;
   /** Insert an attachment from another store, keeping its metadata; false when bytes do not match the hash. */
@@ -357,6 +359,9 @@ export const IPC = {
   NOTE_CREATE: 'note:create',
   ATTACHMENT_PUT: 'attachment:put',
   ATTACHMENT_SAVE_AS: 'attachment:saveAs',
+  ATTACHMENT_STATS: 'attachment:stats',
+  ATTACHMENT_CONVERT_INLINE: 'attachment:convertInline',
+  ATTACHMENT_REMOVE_UNUSED: 'attachment:removeUnused',
   SHEET_IMPORT_FILE: 'sheet:importFile',
   SHEET_EXPORT_FILE: 'sheet:exportFile',
   NOTE_READ: 'note:read',

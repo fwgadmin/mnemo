@@ -34,7 +34,7 @@ import { serializeNoteMarkdown } from './noteMarkdown';
 import type { AttachmentMeta, PutAttachmentInput, StoredAttachment, SyncAttachmentRow } from '../../shared/types';
 import { isAttachmentHash } from '../../shared/attachments';
 import { assembleAttachmentChunks, sha256Hex, splitAttachmentChunks } from './attachmentData';
-import { SYNC_REF_SQL, attachmentRowToMeta, syncRefArgs, writeAttachmentMirror } from './NoteStore';
+import { SYNC_REF_SQL, attachmentRowToMeta, removeAttachmentMirror, syncRefArgs, writeAttachmentMirror } from './NoteStore';
 
 function isTenantRefUniqueConstraint(err: unknown): boolean {
   const parts: string[] = [];
@@ -674,6 +674,21 @@ export class TursoNoteStore implements INoteStore {
       { hash, size: row.size, chunkCount: Number(r['chunk_count']) },
     );
     return bytes ? { meta: attachmentRowToMeta(row), bytes } : null;
+  }
+
+  async deleteAttachment(hash: string, tenantId = 'default'): Promise<boolean> {
+    const row = await this.readAttachmentRow(hash, tenantId);
+    if (!row) return false;
+    // Metadata first so a partial delete leaves an invisible (re-uploadable) attachment, never a broken one.
+    await this.client.batch(
+      [
+        { sql: 'DELETE FROM attachments WHERE tenant_id = ? AND hash = ?', args: [tenantId, hash] },
+        { sql: 'DELETE FROM attachment_chunks WHERE tenant_id = ? AND hash = ?', args: [tenantId, hash] },
+      ],
+      'write',
+    );
+    removeAttachmentMirror(this.vaultPath, row);
+    return true;
   }
 
   async listAttachmentRows(): Promise<SyncAttachmentRow[]> {

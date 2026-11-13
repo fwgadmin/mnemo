@@ -4,6 +4,7 @@
  * The `mnemo` shell wrapper (bin/mnemo.js) also launches the Electron GUI when not using these subcommands.
  */
 import { cmdSheet } from './cliSheet';
+import { cmdAttachments } from './cliAttachments';
 import { recoverMisplacedDefaultWorkspace } from './workspaceLayoutRecovery';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1956,6 +1957,11 @@ async function main(): Promise<void> {
 
   if (cmd === 'sheet') {
     await cmdSheet(rest, openStoreForNote);
+    return;
+  }
+
+  if (cmd === 'attachments') {
+    await cmdAttachments(rest, openStoreForNote);
     return;
   }
 

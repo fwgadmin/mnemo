@@ -38,7 +38,7 @@ should_run_vault_cli() {
   }
   const cmd = argv[0];
   const vault = new Set([
-    "help","mcp","note","completion","workspace","sheet","add","a","find","f","search","import","graph",
+    "help","mcp","note","completion","workspace","sheet","attachments","add","a","find","f","search","import","graph",
     "categories","autolink","list","set-category","category","compose","write","edit","delete","rm","sync",
   ]);
   if (vault.has(cmd)) process.exit(0);

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Attachment maintenance:**
+  - **Where:** Settings → Database → Attachments, `mnemo attachments stats|convert|gc` and the MCP tools below. Everything applies to the current workspace.
+  - **Statistics:** stored and unused files and sizes, and how many notes still embed base64 `data:` media.
+  - **Convert inline media:** moves base64 `data:` media from older notes into stored attachments, keeping alt text, titles and width/alignment hints. Unsupported types or files over 10 MB stay inline.
+  - **Remove unused:** deletes attachments no note references, with a 24-hour grace period so a just-pasted file whose note hasn't saved yet is never removed. It affects only the store it runs against.
+  - **New store method:** `deleteAttachment` on both stores (removes metadata, chunks and the mirror copy).
+  - **MCP:** `get_attachment` returns images as MCP image content and text/PDF/media as base64 with their MIME type; `attachment_stats` reports the statistics.
 - **Linux packaging fixes:**
   - **AppArmor:** on systems that restrict unprivileged user namespaces (Ubuntu 23.10+), the desktop app aborted at startup with a Chromium SUID-sandbox error unless run with `--no-sandbox`. The `.deb` now installs an AppArmor profile granting `userns` to `/usr/lib/mnemo/Mnemo` (the same approach as Chrome, VS Code and Obsidian; the sandbox stays on) and removes it on uninstall. Zip builds ship `resources/apparmor-profile.sh`, and the launcher prints the one-line fix instead of the crash.
   - **Permissions:** packaged Linux files were group/world-writable (mode 0777 inherited from Electron's extracted binaries). This included `/usr/lib/mnemo/Mnemo` in the `.deb`. The package step now strips `go-w`.

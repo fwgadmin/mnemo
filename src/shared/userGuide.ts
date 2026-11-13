@@ -111,7 +111,7 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
   ],
   [
     'Embedded media',
-    'Paste, drop, or Ctrl+Shift+I to add images, audio, video, PDF, or text attachments (10 MB each). Files are stored once per vault as attachments (mnemo-asset:// links), sync with remote libSQL, and are copied to vault/_attachments/. In Preview, use media controls to resize, align, move, copy/cut, rename, or delete; click a 📎 link to save the file.',
+    'Paste, drop, or Ctrl+Shift+I to add images, audio, video, PDF, or text attachments (10 MB each). Files are stored once per vault as attachments (mnemo-asset:// links), sync with remote libSQL, and are copied to vault/_attachments/ (Settings → Database → Attachments shows usage, converts old inline media, and removes unused files). In Preview, use media controls to resize, align, move, copy/cut, rename, or delete; click a 📎 link to save the file.',
   ],
   [
     'Live preview',
@@ -167,6 +167,7 @@ export const CLI_HELP_TOPICS = [
   'sync',
   'note',
   'sheet',
+  'attachments',
   'mcp',
   'mcp-http',
   'config',
@@ -568,6 +569,7 @@ export function formatCliHelpTopicsIndex(): string {
   sync         mnemo sync push / pull, Settings buttons, merge rules
   note         Legacy mnemo note … only
   sheet        Spreadsheet notes: mnemo sheet new / show / set / list
+  attachments  Stored files: stats, convert inline data: media, remove unused
   mcp          MCP stdio: --workspace, resources, tools, prompts
   mcp-http     MCP over Streamable HTTP
   config       cli.json and JSON output defaults
@@ -595,6 +597,8 @@ export function formatCliHelpTopic(topic: string): string | null {
       return sectionNoteLegacy();
     case 'sheet':
       return sectionSheet();
+    case 'attachments':
+      return sectionAttachments();
     case 'mcp':
       return sectionMcpStdio();
     case 'mcp-http':
@@ -610,6 +614,20 @@ export function formatCliHelpTopic(topic: string): string | null {
     default:
       return null;
   }
+}
+
+function sectionAttachments(): string {
+  return `Attachments (images and files pasted or dropped into notes)
+
+  mnemo attachments [stats] [--json]      counts and sizes for the workspace
+  mnemo attachments convert               move base64 data: media inside notes into stored attachments
+  mnemo attachments gc [--dry-run]        delete attachments no note references (older than 24 h)
+
+Notes link files as mnemo-asset://asset/<sha256>.<ext>; files are stored once per workspace (10 MB each), sync
+with remote libSQL, and are mirrored to vault/_attachments/. gc only affects the store it runs against: another
+device that still has a file and a note using it uploads it again on its next push. MCP: get_attachment,
+attachment_stats. Desktop: Settings → Database → Attachments.
+`;
 }
 
 function sectionSheet(): string {
