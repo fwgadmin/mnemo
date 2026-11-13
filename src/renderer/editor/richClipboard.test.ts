@@ -78,3 +78,27 @@ describe('Markdown copy → HTML', () => {
     expect(overBudget).toContain(`src="mnemo-asset://asset/${HASH}.png"`);
   });
 });
+
+describe('review fixes', () => {
+  it('drops HTML comments (including unbalanced ones) without leaking them into Markdown', () => {
+    expect(htmlToMarkdown('<p>a<!-- hidden --> b</p>')).toBe('a b');
+    expect(htmlToMarkdown('<p>x<!--<!-- y --> z</p>')).not.toContain('<!--');
+  });
+
+  it('reports copy failure so callers (Cut) never delete media that was not copied', async () => {
+    const { copyImageToClipboard } = await import('./richClipboard');
+    const original = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { write: undefined, writeText: () => Promise.reject(new Error('denied')) },
+    });
+    try {
+      expect(await copyImageToClipboard('data:image/png;base64,AA==', '![x](y)')).toBe(false);
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.resolve() } });
+      expect(await copyImageToClipboard('data:image/png;base64,AA==', '![x](y)')).toBe(true);
+      expect(await copyImageToClipboard('data:image/png;base64,AA==')).toBe(false);
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: original });
+    }
+  });
+});

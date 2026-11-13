@@ -73,17 +73,18 @@ function MediaBlock({
   const editable = !!range && !!onAction;
   const justify = options.align === 'left' ? 'flex-start' : options.align === 'right' ? 'flex-end' : 'center';
 
-  const copy = async () => {
+  /** True only when the clipboard actually received the media (or its Markdown). */
+  const copy = async (): Promise<boolean> => {
+    if (mime?.startsWith('image/')) return copyImageToClipboard(src, source);
+    if (!source) return false;
     try {
-      if (mime?.startsWith('image/')) {
-        await copyImageToClipboard(src, source);
-      } else if (source) {
-        await navigator.clipboard.writeText(source);
-      }
+      await navigator.clipboard.writeText(source);
+      return true;
     } catch {
-      if (source) await navigator.clipboard.writeText(source).catch(() => {});
+      return false;
     }
   };
+
 
   return (
     <span
@@ -162,7 +163,10 @@ function MediaBlock({
           <button
             type="button"
             onClick={() => {
-              void copy().then(() => onAction(range, { type: 'delete' }));
+              void copy().then(ok => {
+                if (ok) onAction(range, { type: 'delete' });
+                else window.alert('Could not copy this media to the clipboard, so it was not removed.');
+              });
             }}
           >
             Cut

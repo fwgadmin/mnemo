@@ -997,9 +997,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
               onBodyChange={(body) => {
                 const v = viewRef.current;
                 if (!v) return;
+                // The doc change runs the normal debounced autosave (per-note save queue), so rapid
+                // slider moves coalesce into one ordered save instead of one save per event.
                 v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: body } });
                 setPreviewLiveBody(body);
-                saveNow();
               }}
             />
           </div>

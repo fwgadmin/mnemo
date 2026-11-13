@@ -92,8 +92,8 @@ function turndownService(): TurndownService {
 
 /** Convert clipboard HTML (web pages, Google Docs, Word, email) to Markdown. */
 export function htmlToMarkdown(html: string): string {
+  // HTML comments need no stripping here: turndown parses the HTML and skips comment nodes.
   const cleaned = html
-    .replace(/<!--[\s\S]*?-->/g, '')
     // Google Docs wraps everything in <b style="font-weight:normal" id="docs-internal-guid-…">.
     .replace(/<b\b[^>]*id="docs-internal-guid-[^"]*"[^>]*>([\s\S]*)<\/b>/i, '$1');
   return turndownService()
@@ -207,14 +207,24 @@ async function toPngBlob(blob: Blob): Promise<Blob> {
   );
 }
 
-/** Copy an image (data: or mnemo-asset: URL) as PNG; falls back to the Markdown source text. */
-export async function copyImageToClipboard(src: string, fallbackText?: string): Promise<void> {
+/**
+ * Copy an image (data: or mnemo-asset: URL) as PNG, falling back to the Markdown source text.
+ * Resolves true only when something actually reached the clipboard (callers like Cut must check).
+ */
+export async function copyImageToClipboard(src: string, fallbackText?: string): Promise<boolean> {
   try {
     if (!navigator.clipboard.write || typeof ClipboardItem === 'undefined') throw new Error('unsupported');
     const png = await toPngBlob(await (await fetch(src)).blob());
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+    return true;
   } catch {
-    if (fallbackText) await navigator.clipboard.writeText(fallbackText).catch(() => {});
+    if (!fallbackText) return false;
+    try {
+      await navigator.clipboard.writeText(fallbackText);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

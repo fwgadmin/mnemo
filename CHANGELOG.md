@@ -3,6 +3,11 @@
 ## 2.2.0 — 2026-11-13
 
 - **Release:** `mnemo-note@2.2.0` on npm; tag **`v2.2.0`** on GitHub (Windows zip; Linux zip containing the `.deb` and the app folder). Includes everything listed below, plus the unreleased 2.1.19 npm change. The mobile app is not part of this release.
+- **Fixes from release review:**
+  - **Cut on media:** Preview's Cut no longer deletes media when the clipboard write failed.
+  - **Preview width/alignment controls:** they save through the normal debounced, per-note save queue instead of forcing one save per slider event.
+  - **Pinned MCP servers:** a server started with `mnemo mcp --db` now refuses `switch_workspace` instead of rewriting the machine-wide active workspace.
+  - **CodeQL:** removed the regex-based HTML comment stripping in rich paste (turndown skips comments), which CodeQL flagged as incomplete sanitization.
 - **Security (HTTP MCP):** hono 4.13.16 and @hono/node-server 2.1.6 (the MCP SDK accepts the 2.x line) clear the remaining moderate advisories: path traversal and middleware bypass, double path decoding, and a WebSocket-upgrade crash. `npm audit` is now 4 low, 0 moderate/high/critical. These two releases are 11–12 days old, an explicit owner-approved exception to the two-week dependency-age rule.
 - **Spreadsheet charts:**
   - **Inserting:** use 📊 in the toolbar or right-click → Insert chart from selection.
