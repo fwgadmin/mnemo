@@ -1,5 +1,12 @@
 /** Shared types for Mnemo */
 
+/** What a note's body holds: Markdown text, or a Mnemo spreadsheet document (JSON, see shared/sheet.ts). */
+export type NoteKind = 'markdown' | 'sheet';
+
+export function normalizeNoteKind(value: unknown): NoteKind {
+  return value === 'sheet' ? 'sheet' : 'markdown';
+}
+
 import type { AttachmentMeta, PutAttachmentInput, SyncAttachmentRow } from './attachments';
 export type { AttachmentMeta, PutAttachmentInput, SyncAttachmentRow } from './attachments';
 
@@ -29,6 +36,8 @@ export interface Note {
   links: string[];
   /** When true, editor omits the title row and metadata (per-note; global "Show note header" still applies when false). */
   hideHeader: boolean;
+  /** Body format; fixed at creation. */
+  kind: NoteKind;
   /**
    * When set, this tab edits this path on disk (IDE file tabs). Not stored in the vault until synced/imported.
    * Tab id uses `encodeFileTabId(filePath)`.
@@ -45,6 +54,7 @@ export interface NoteListItem {
   modified: string;
   snippet: string; // First ~100 chars of body
   hideHeader?: boolean;
+  kind?: NoteKind;
 }
 
 export interface SearchResult extends NoteListItem {
@@ -57,6 +67,7 @@ export interface CreateNoteInput {
   tags?: string[];
   tenantId?: string;
   hideHeader?: boolean;
+  kind?: NoteKind;
 }
 
 export interface UpdateNoteInput {
@@ -65,6 +76,7 @@ export interface UpdateNoteInput {
   body?: string;
   tags?: string[];
   hideHeader?: boolean;
+  kind?: NoteKind;
 }
 
 export interface SaveNoteInput {
@@ -127,6 +139,8 @@ export interface SyncNoteRow {
   updated_at: string;
   ref: number | null;
   hide_header: number;
+  /** Absent from rows exported by builds before schema v7 (treated as markdown). */
+  kind?: string;
 }
 
 /** Durable deletion event. Kept until the supported-client protocol floor permits bounded cleanup. */
@@ -343,6 +357,8 @@ export const IPC = {
   NOTE_CREATE: 'note:create',
   ATTACHMENT_PUT: 'attachment:put',
   ATTACHMENT_SAVE_AS: 'attachment:saveAs',
+  SHEET_IMPORT_FILE: 'sheet:importFile',
+  SHEET_EXPORT_FILE: 'sheet:exportFile',
   NOTE_READ: 'note:read',
   NOTE_UPDATE: 'note:update',
   NOTE_SAVE: 'note:save',

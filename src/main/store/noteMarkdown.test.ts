@@ -14,7 +14,7 @@ describe('serializeNoteMarkdown', () => {
       modified: '2026-02-03T04:05:06.000Z',
       tenantId: 'team-a',
       links: [],
-      hideHeader: true,
+      hideHeader: true, kind: 'markdown',
     };
 
     expect(serializeNoteMarkdown(note)).toBe([

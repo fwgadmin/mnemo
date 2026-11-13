@@ -22,6 +22,7 @@ import type {
   CategoryMoveInput,
   BulkMutationResult,
 } from '../../shared/types';
+import { normalizeNoteKind } from '../../shared/types';
 import {
   categoryPathForMutation,
   normalizeCategoryMutationPath,
@@ -77,8 +78,8 @@ export class TursoNoteStore implements INoteStore {
      * is not atomic and two concurrent creates can race on the same next ref.
      * Compute ref inside the INSERT so allocation + insert are one statement.
      */
-    const sql = `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-      VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ref), 0) + 1 FROM notes AS n WHERE n.tenant_id = ?), ?)`;
+    const sql = `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header, kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ref), 0) + 1 FROM notes AS n WHERE n.tenant_id = ?), ?, ?)`;
     const args = [
       id,
       input.title,
@@ -89,6 +90,7 @@ export class TursoNoteStore implements INoteStore {
       now,
       tenantId,
       hideHeader,
+      normalizeNoteKind(input.kind),
     ] as import('@libsql/client').InValue[];
 
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -216,6 +218,7 @@ export class TursoNoteStore implements INoteStore {
         modified: note.modified,
         snippet: note.body.slice(0, 120),
         hideHeader: note.hideHeader,
+        kind: note.kind,
       },
     };
   }
@@ -363,7 +366,7 @@ export class TursoNoteStore implements INoteStore {
 
   async list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const result = await this.client.execute({
-      sql: `SELECT ref, id, title, substr(body, 1, 120) AS snippet, tags, created_at, updated_at, hide_header
+      sql: `SELECT ref, id, title, substr(body, 1, 120) AS snippet, tags, created_at, updated_at, hide_header, kind
             FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC`,
       args: [tenantId],
     });
@@ -376,6 +379,7 @@ export class TursoNoteStore implements INoteStore {
       modified: row['updated_at'] as string,
       snippet: row['snippet'] as string,
       hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
+      kind: normalizeNoteKind(row['kind']),
     }));
   }
 
@@ -425,12 +429,13 @@ export class TursoNoteStore implements INoteStore {
       ),
       rank,
       hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
+      kind: normalizeNoteKind(row['kind']),
     });
 
     try {
       const result = await this.client.execute({
         sql: `SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at,
-                     n.hide_header, notes_fts.rank
+                     n.hide_header, n.kind, notes_fts.rank
               FROM notes_fts
               JOIN notes n ON n.rowid = notes_fts.rowid
               WHERE notes_fts MATCH ?
@@ -451,7 +456,7 @@ export class TursoNoteStore implements INoteStore {
         args.push(w, w);
       }
       const result = await this.client.execute({
-        sql: `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header FROM notes
+        sql: `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header, kind FROM notes
               WHERE tenant_id = ? AND ${conds}
               LIMIT 50`,
         args,
@@ -736,7 +741,7 @@ export class TursoNoteStore implements INoteStore {
   }> {
     const [notesR, linksR, tombstonesR] = await Promise.all([
       this.client.execute({
-        sql: 'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',
+        sql: 'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header, kind FROM notes',
         args: [],
       }),
       this.client.execute({ sql: 'SELECT source_id, target_id FROM note_links', args: [] }),
@@ -752,6 +757,7 @@ export class TursoNoteStore implements INoteStore {
       updated_at: row['updated_at'] as string,
       ref: (row['ref'] as number | null | undefined) ?? null,
       hide_header: Number(row['hide_header'] ?? 0) ? 1 : 0,
+      kind: normalizeNoteKind(row['kind']),
     }));
     const links = linksR.rows.map(row => ({
       source_id: row['source_id'] as string,
@@ -861,8 +867,8 @@ export class TursoNoteStore implements INoteStore {
     for (const note of acceptedNotes) {
       await append([
         {
-          sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-                SELECT ?, ?, ?, ?, ?, ?, ?, ${SYNC_REF_SQL}, ?
+          sql: `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header, kind)
+                SELECT ?, ?, ?, ?, ?, ?, ?, ${SYNC_REF_SQL}, ?, ?
                 WHERE NOT EXISTS (SELECT 1 FROM note_tombstones WHERE id = ? AND deleted_at >= ?)
                 ON CONFLICT(id) DO UPDATE SET
                   title = excluded.title, body = excluded.body, tags = excluded.tags,
@@ -870,7 +876,7 @@ export class TursoNoteStore implements INoteStore {
                   hide_header = excluded.hide_header
                 WHERE excluded.updated_at > notes.updated_at`,
           args: [note.id, note.title, note.body, note.tags, note.tenant_id, note.created_at,
-            note.updated_at, ...syncRefArgs(note), note.hide_header ?? 0, note.id, note.updated_at],
+            note.updated_at, ...syncRefArgs(note), note.hide_header ?? 0, normalizeNoteKind(note.kind), note.id, note.updated_at],
         },
         { sql: 'DELETE FROM note_tombstones WHERE id = ? AND deleted_at < ?', args: [note.id, note.updated_at] },
       ]);
@@ -932,6 +938,7 @@ export class TursoNoteStore implements INoteStore {
       tenantId: row['tenant_id'] as string,
       links,
       hideHeader: ((row['hide_header'] as number) ?? 0) === 1,
+      kind: normalizeNoteKind(row['kind']),
     };
   }
 

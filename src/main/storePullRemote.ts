@@ -44,7 +44,7 @@ export function readLocalNotesAndLinksForSync(dbPath: string): {
     migrateLocalNoteDatabase(db, dbPath);
     const notes = db
       .prepare(
-        'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header FROM notes',
+        'SELECT id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header, kind FROM notes',
       )
       .all() as BulkNoteRow[];
     const links = db

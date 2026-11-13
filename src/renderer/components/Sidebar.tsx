@@ -364,11 +364,14 @@ export default function Sidebar({
             className="truncate"
             style={useAccentOnTitle && rowAccent ? { color: rowAccent } : undefined}
           >
+            {note.kind === 'sheet' && <span className="mr-1 text-mnemo-dim" aria-label="Spreadsheet">▦</span>}
             {note.title || 'Untitled'}
           </span>
         </div>
-        {note.snippet && (
-          <div className="text-[10px] text-mnemo-dim truncate mt-0.5">{note.snippet}</div>
+        {note.kind === 'sheet' ? (
+          <div className="text-[10px] text-mnemo-dim truncate mt-0.5">Spreadsheet</div>
+        ) : (
+          note.snippet && <div className="text-[10px] text-mnemo-dim truncate mt-0.5">{note.snippet}</div>
         )}
         {!hideCategory && note.tags.length > 0 && (
           <div className="flex gap-1 mt-1 flex-wrap">

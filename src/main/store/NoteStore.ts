@@ -18,6 +18,7 @@ import type {
   CategoryMoveInput,
   BulkMutationResult,
 } from '../../shared/types';
+import { normalizeNoteKind } from '../../shared/types';
 import {
   categoryPathForMutation,
   normalizeCategoryMutationPath,
@@ -82,10 +83,10 @@ export class LocalNoteStore implements INoteStore {
     /** Single statement so MAX(ref)+1 and INSERT are atomic (same as Turso). */
     this.db
       .prepare(
-        `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-         VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ref), 0) + 1 FROM notes AS n WHERE n.tenant_id = ?), ?)`,
+        `INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header, kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ref), 0) + 1 FROM notes AS n WHERE n.tenant_id = ?), ?, ?)`,
       )
-      .run(id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, tenantId, hideHeader);
+      .run(id, input.title, input.body, JSON.stringify(tags), tenantId, now, now, tenantId, hideHeader, normalizeNoteKind(input.kind));
 
     const row = this.db.prepare('SELECT * FROM notes WHERE id = ?').get(id) as any;
     if (!row) return Promise.reject(new Error('NoteStore.create: inserted row not found'));
@@ -192,6 +193,7 @@ export class LocalNoteStore implements INoteStore {
         modified: note.modified,
         snippet: note.body.slice(0, 120),
         hideHeader: note.hideHeader,
+        kind: note.kind,
       },
     };
   }
@@ -331,7 +333,7 @@ export class LocalNoteStore implements INoteStore {
 
   list(tenantId: string = 'default'): Promise<NoteListItem[]> {
     const rows = this.db.prepare(
-      'SELECT ref, id, title, substr(body, 1, 120) AS snippet, tags, created_at, updated_at, hide_header FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
+      'SELECT ref, id, title, substr(body, 1, 120) AS snippet, tags, created_at, updated_at, hide_header, kind FROM notes WHERE tenant_id = ? ORDER BY updated_at DESC'
     ).all(tenantId) as any[];
 
     return Promise.resolve(rows.map(row => ({
@@ -343,6 +345,7 @@ export class LocalNoteStore implements INoteStore {
       modified: row.updated_at,
       snippet: row.snippet,
       hideHeader: (row.hide_header ?? 0) === 1,
+      kind: normalizeNoteKind(row.kind),
     })));
   }
 
@@ -382,12 +385,13 @@ export class LocalNoteStore implements INoteStore {
       snippet: snippetForSearchResult(row.title, row.body, query),
       rank,
       hideHeader: (row.hide_header ?? 0) === 1,
+      kind: normalizeNoteKind(row.kind),
     });
 
     try {
       const rows = this.db.prepare(`
         SELECT n.ref, n.id, n.title, n.body, n.tags, n.created_at, n.updated_at,
-               n.hide_header, notes_fts.rank
+               n.hide_header, n.kind, notes_fts.rank
         FROM notes_fts
         JOIN notes n ON n.rowid = notes_fts.rowid
         WHERE notes_fts MATCH ?
@@ -408,7 +412,7 @@ export class LocalNoteStore implements INoteStore {
       }
       const rows = this.db
         .prepare(
-          `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header FROM notes
+          `SELECT ref, id, title, body, tags, created_at, updated_at, hide_header, kind FROM notes
            WHERE tenant_id = ? AND ${conds}
            LIMIT 50`,
         )
@@ -528,8 +532,8 @@ export class LocalNoteStore implements INoteStore {
     }
 
     const upsert = this.db.prepare(`
-      INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ${SYNC_REF_SQL}, ?)
+      INSERT INTO notes (id, title, body, tags, tenant_id, created_at, updated_at, ref, hide_header, kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ${SYNC_REF_SQL}, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title       = excluded.title,
         body        = excluded.body,
@@ -596,6 +600,7 @@ export class LocalNoteStore implements INoteStore {
           n.updated_at,
           ...syncRefArgs(n),
           n.hide_header ?? 0,
+          normalizeNoteKind(n.kind),
         );
         if (info.changes > 0) applied += 1;
         else skipped += 1;
@@ -735,6 +740,7 @@ export class LocalNoteStore implements INoteStore {
       tenantId: row.tenant_id,
       links: links ?? this.getLinksForNote(row.id),
       hideHeader: (row.hide_header ?? 0) === 1,
+      kind: normalizeNoteKind(row.kind),
     };
   }
 

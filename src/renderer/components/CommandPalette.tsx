@@ -16,6 +16,7 @@ interface CommandDef {
 
 const PALETTE_COMMANDS: CommandDef[] = [
   { id: 'cmd:new-note', command: 'new-note', label: 'New Note', shortcut: 'Ctrl+N' },
+  { id: 'cmd:new-sheet', command: 'new-sheet', label: 'New Spreadsheet' },
   { id: 'cmd:save', command: 'save', label: 'Save', shortcut: 'Ctrl+S' },
   { id: 'cmd:save-as', command: 'save-as', label: 'Save As…', shortcut: 'Ctrl+Shift+S' },
   { id: 'cmd:open', command: 'open', label: 'Import File into Vault…', shortcut: 'Ctrl+O' },

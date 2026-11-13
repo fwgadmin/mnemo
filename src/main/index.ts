@@ -25,6 +25,7 @@ import { LocalNoteStore } from './store/NoteStore';
 import { TursoNoteStore } from './store/TursoNoteStore';
 import { pullTursoIntoLocalStore, pushLocalToTursoStore } from './storePullRemote';
 import { handleAttachmentProtocol, registerAttachmentIpc, registerAttachmentScheme } from './attachmentProtocol';
+import { registerSheetFileIpc } from './sheetFiles';
 import type { INoteStore, AppConfig, MnemoUiPreferences, SyncResult, WorkspaceStorage } from '../shared/types';
 import { IPC, STORED_SECRET_PLACEHOLDER } from '../shared/types';
 import { resolveActiveProfile } from '../shared/llmProfile';
@@ -477,6 +478,7 @@ function buildMenu(mainWindow: BrowserWindow): void {
           accelerator: 'CmdOrCtrl+N',
           click: send('new-note'),
         },
+        { label: 'New Spreadsheet', click: send('new-sheet') },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: send('save') },
         {
@@ -593,6 +595,7 @@ function applyApplicationMenu(mainWindow: BrowserWindow): void {
 
 function registerIpcHandlers(): void {
   registerAttachmentIpc(ensureActiveContext);
+  registerSheetFileIpc();
   ipcMain.handle(IPC.NOTE_CREATE, async (_event, input: CreateNoteInput) => {
     const ctx = await ensureActiveContext();
     return ctx.store.create({
