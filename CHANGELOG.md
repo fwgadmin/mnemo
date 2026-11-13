@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Linux packaging fixes:**
+  - **AppArmor:** on systems that restrict unprivileged user namespaces (Ubuntu 23.10+), the desktop app aborted at startup with a Chromium SUID-sandbox error unless run with `--no-sandbox`. The `.deb` now installs an AppArmor profile granting `userns` to `/usr/lib/mnemo/Mnemo` (the same approach as Chrome, VS Code and Obsidian; the sandbox stays on) and removes it on uninstall. Zip builds ship `resources/apparmor-profile.sh`, and the launcher prints the one-line fix instead of the crash.
+  - **Permissions:** packaged Linux files were group/world-writable (mode 0777 inherited from Electron's extracted binaries). This included `/usr/lib/mnemo/Mnemo` in the `.deb`. The package step now strips `go-w`.
+  - **`/usr/bin/mnemo` symlink:** it failed with "expected Electron binary at /usr/Mnemo" because the launcher didn't resolve its own symlink.
+  - **CLI routing:** the launcher no longer needs a system `node` to route commands, and it now sends `sync`, `delete`, `rm` and `sheet` to the CLI instead of opening the GUI.
 - **Spreadsheet notes:** New note kind (`File → New Spreadsheet`, command palette, `mnemo sheet new`). Schema v7 adds `notes.kind` (`markdown` | `sheet`), set at creation and synced; older builds leave it untouched. A sheet's body is versioned JSON of raw cell input, so search matches cell text and sync stays whole-note. The `.md` mirror stores it in a ```` ```mnemo-sheet ```` fence with `kind: "sheet"` frontmatter.
   - **Grid:** formula bar, virtualized rows, multiple sheets (add / rename / delete), Excel-style keyboard navigation, undo/redo, row and column insert/delete with formula reference rewriting across sheets, resizable columns.
   - **Clipboard:** copy/paste with relative formula shifting, and TSV for other apps.

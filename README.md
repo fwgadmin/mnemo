@@ -60,6 +60,8 @@ npm start
 
 Installers: [GitHub Releases](https://github.com/fwgadmin/mnemo/releases) — **Windows** and **Linux** zips for tagged `**v***` builds. **macOS desktop installers are not published**; on macOS use **`npm install -g mnemo-note`** (CLI) or run **`npm start`** from a source checkout.
 
+On **Ubuntu 23.10+** (and other distros that restrict unprivileged user namespaces) the `.deb` sets up an AppArmor profile so the app's sandbox can start. If you run the Linux **zip** build instead, do this once: `sudo ./resources/apparmor-profile.sh install "$PWD/Mnemo"` from the unzipped folder.
+
 ## Mobile app (Expo) - In Development
 
 To Be Shipped: Native iOS / Android lives under **`apps/mnemo-mobile`**. From the **repo root**, `npm run mobile:start:dev`, `npm run eas:dev:ios`, `npm run eas:build:ios`, etc. forward into that package. Use **`eas-cli`** (via those scripts), not the unrelated npm package **`eas`**. See **[apps/mnemo-mobile/README.md](apps/mnemo-mobile/README.md)**.
