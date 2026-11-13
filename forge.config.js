@@ -285,6 +285,13 @@ module.exports = {
         // Default 3000 often conflicts (e.g. Next, Vite, other apps). Override with:
         //   MNEMO_DEV_SERVER_PORT=3000 npm start
         port: Number(process.env.MNEMO_DEV_SERVER_PORT || 13000),
+        // `npm start` only: the dev server sends this as a CSP header on top of index.html's meta CSP. Forge's
+        // default (`default-src 'self' 'unsafe-inline' data:`) blocks mnemo-asset:// attachments in dev builds.
+        // Keep in step with the meta CSP in src/renderer/index.html; 'unsafe-eval' is for webpack dev source maps.
+        devContentSecurityPolicy:
+          "default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' data:; " +
+          "img-src 'self' data: blob: mnemo-asset:; media-src 'self' data: blob: mnemo-asset:; " +
+          "connect-src 'self' data: blob: mnemo-asset: ws: wss:",
         mainConfig: './webpack.main.config.js',
         renderer: {
           config: './webpack.renderer.config.js',
