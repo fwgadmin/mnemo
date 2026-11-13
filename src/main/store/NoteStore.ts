@@ -31,6 +31,9 @@ import {
 import { parseStoredTags } from '../../shared/noteTags';
 import { migrateLocalNoteDatabase } from './migrations';
 import { serializeNoteMarkdown } from './noteMarkdown';
+import type { AttachmentMeta, PutAttachmentInput, StoredAttachment, SyncAttachmentRow } from '../../shared/types';
+import { extensionForAttachmentMime, isAttachmentHash } from '../../shared/attachments';
+import { assembleAttachmentChunks, sha256Hex, splitAttachmentChunks } from './attachmentData';
 
 /** Local SQLite-backed store (offline, default). */
 export class LocalNoteStore implements INoteStore {
@@ -40,7 +43,7 @@ export class LocalNoteStore implements INoteStore {
   constructor(dbPath: string, vaultPath: string) {
     this.vaultPath = vaultPath;
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    fs.mkdirSync(vaultPath, { recursive: true });
+    if (vaultPath) fs.mkdirSync(vaultPath, { recursive: true });
 
     this.db = new Database(dbPath);
     try {
@@ -622,6 +625,80 @@ export class LocalNoteStore implements INoteStore {
     }
     this.db.prepare('DELETE FROM notes WHERE tenant_id = ?').run(tenantId);
     this.db.prepare('DELETE FROM note_tombstones WHERE tenant_id = ?').run(tenantId);
+    this.db.prepare('DELETE FROM attachment_chunks WHERE tenant_id = ?').run(tenantId);
+    this.db.prepare('DELETE FROM attachments WHERE tenant_id = ?').run(tenantId);
+  }
+
+  // --- Attachments ---
+
+  async putAttachment(input: PutAttachmentInput): Promise<AttachmentMeta> {
+    const row: SyncAttachmentRow = {
+      hash: sha256Hex(input.bytes),
+      tenant_id: input.tenantId ?? 'default',
+      mime: input.mime,
+      size: input.bytes.byteLength,
+      name: input.name,
+      created_at: new Date().toISOString(),
+    };
+    const existing = this.readAttachmentRow(row.hash, row.tenant_id);
+    if (existing) return attachmentRowToMeta(existing);
+    this.writeAttachment(row, input.bytes);
+    return attachmentRowToMeta(row);
+  }
+
+  async getAttachment(hash: string, tenantId = 'default'): Promise<StoredAttachment | null> {
+    if (!isAttachmentHash(hash)) return null;
+    const row = this.db
+      .prepare('SELECT hash, tenant_id, mime, size, name, chunk_count, created_at FROM attachments WHERE tenant_id = ? AND hash = ?')
+      .get(tenantId, hash) as (SyncAttachmentRow & { chunk_count: number }) | undefined;
+    if (!row) return null;
+    const chunks = this.db
+      .prepare('SELECT seq, data FROM attachment_chunks WHERE tenant_id = ? AND hash = ? ORDER BY seq')
+      .all(tenantId, hash) as Array<{ seq: number; data: Buffer }>;
+    const bytes = assembleAttachmentChunks(chunks, { hash, size: row.size, chunkCount: row.chunk_count });
+    return bytes ? { meta: attachmentRowToMeta(row), bytes } : null;
+  }
+
+  async listAttachmentRows(): Promise<SyncAttachmentRow[]> {
+    return this.db
+      .prepare('SELECT hash, tenant_id, mime, size, name, created_at FROM attachments')
+      .all() as SyncAttachmentRow[];
+  }
+
+  async importAttachment(row: SyncAttachmentRow, bytes: Uint8Array): Promise<boolean> {
+    if (!isAttachmentHash(row.hash) || sha256Hex(bytes) !== row.hash || bytes.byteLength !== row.size) return false;
+    if (this.readAttachmentRow(row.hash, row.tenant_id)) return true;
+    this.writeAttachment(row, bytes);
+    return true;
+  }
+
+  private readAttachmentRow(hash: string, tenantId: string): SyncAttachmentRow | null {
+    return (
+      (this.db
+        .prepare('SELECT hash, tenant_id, mime, size, name, created_at FROM attachments WHERE tenant_id = ? AND hash = ?')
+        .get(tenantId, hash) as SyncAttachmentRow | undefined) ?? null
+    );
+  }
+
+  /** Chunks first, metadata row last, in one transaction (metadata = "complete" marker). */
+  private writeAttachment(row: SyncAttachmentRow, bytes: Uint8Array): void {
+    const chunks = splitAttachmentChunks(bytes);
+    this.db.transaction(() => {
+      const insertChunk = this.db.prepare(
+        'INSERT OR REPLACE INTO attachment_chunks (tenant_id, hash, seq, data) VALUES (?, ?, ?, ?)',
+      );
+      chunks.forEach((chunk, seq) => insertChunk.run(row.tenant_id, row.hash, seq, Buffer.from(chunk)));
+      this.db
+        .prepare('DELETE FROM attachment_chunks WHERE tenant_id = ? AND hash = ? AND seq >= ?')
+        .run(row.tenant_id, row.hash, chunks.length);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO attachments (tenant_id, hash, mime, size, name, chunk_count, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(row.tenant_id, row.hash, row.mime, row.size, row.name, chunks.length, row.created_at);
+    })();
+    writeAttachmentMirror(this.vaultPath, row, bytes);
   }
 
   close(): void {
@@ -655,5 +732,29 @@ export class LocalNoteStore implements INoteStore {
   private writeMdFile(note: Note): void {
     const filePath = path.join(this.vaultPath, `${note.id}.md`);
     fs.writeFileSync(filePath, serializeNoteMarkdown(note), 'utf-8');
+  }
+}
+
+export function attachmentRowToMeta(row: SyncAttachmentRow): AttachmentMeta {
+  return {
+    hash: row.hash,
+    tenantId: row.tenant_id,
+    mime: row.mime,
+    size: Number(row.size),
+    name: row.name,
+    created: row.created_at,
+  };
+}
+
+/** Best-effort copy into `<vault>/_attachments/` so the Markdown mirror stays self-contained. */
+export function writeAttachmentMirror(vaultPath: string | undefined, row: SyncAttachmentRow, bytes: Uint8Array): void {
+  if (!vaultPath) return;
+  try {
+    const dir = path.join(vaultPath, '_attachments');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${row.hash}.${extensionForAttachmentMime(row.mime)}`);
+    if (!fs.existsSync(file)) fs.writeFileSync(file, bytes);
+  } catch {
+    /* mirror is advisory; the database is the source of truth */
   }
 }

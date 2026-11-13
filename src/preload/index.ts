@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../shared/types';
+import type { AttachmentMeta } from '../shared/attachments';
 import type {
   Note,
   NoteListItem,
@@ -21,6 +22,12 @@ import type {
 } from '../shared/types';
 
 export interface MnemoAPI {
+  attachments: {
+    /** Store bytes in the active workspace; returns metadata and the `mnemo-asset://` URL to embed. */
+    put(input: { bytes: ArrayBuffer; mime: string; name: string }): Promise<{ meta: AttachmentMeta; url: string }>;
+    /** Show a Save dialog for an attachment URL; false when cancelled. */
+    saveAs(url: string, suggestedName?: string): Promise<boolean>;
+  };
   notes: {
     create(input: CreateNoteInput): Promise<Note>;
     read(id: string): Promise<Note | null>;
@@ -118,6 +125,10 @@ export interface MnemoAPI {
 }
 
 const api: MnemoAPI = {
+  attachments: {
+    put: (input) => ipcRenderer.invoke(IPC.ATTACHMENT_PUT, input),
+    saveAs: (url, suggestedName) => ipcRenderer.invoke(IPC.ATTACHMENT_SAVE_AS, url, suggestedName),
+  },
   notes: {
     create: (input) => ipcRenderer.invoke(IPC.NOTE_CREATE, input),
     read: (id) => ipcRenderer.invoke(IPC.NOTE_READ, id),

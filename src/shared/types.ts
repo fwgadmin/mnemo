@@ -1,5 +1,8 @@
 /** Shared types for Mnemo */
 
+import type { AttachmentMeta, PutAttachmentInput, SyncAttachmentRow } from './attachments';
+export type { AttachmentMeta, PutAttachmentInput, SyncAttachmentRow } from './attachments';
+
 /** Renderer-safe stand-in for an at-rest secret that is already configured. */
 export const STORED_SECRET_PLACEHOLDER = '••••••••';
 
@@ -312,12 +315,27 @@ export interface INoteStore {
   listDistinctTenantIds(): Promise<string[]>;
   /** Note counts per tenant_id in this store (inherit / global DB). */
   getNoteCountsByTenant(): Promise<Record<string, number>>;
+  /** Store a content-addressed attachment (idempotent: same bytes → same hash, no duplicate rows). */
+  putAttachment(input: PutAttachmentInput): Promise<AttachmentMeta>;
+  /** Load and integrity-check an attachment; null when missing, incomplete, or corrupt. */
+  getAttachment(hash: string, tenantId?: string): Promise<StoredAttachment | null>;
+  /** Metadata for every complete attachment in this store (all tenants), for synchronization. */
+  listAttachmentRows(): Promise<SyncAttachmentRow[]>;
+  /** Insert an attachment from another store, keeping its metadata; false when bytes do not match the hash. */
+  importAttachment(row: SyncAttachmentRow, bytes: Uint8Array): Promise<boolean>;
   close(): void;
+}
+
+export interface StoredAttachment {
+  meta: AttachmentMeta;
+  bytes: Uint8Array;
 }
 
 /** IPC channel names */
 export const IPC = {
   NOTE_CREATE: 'note:create',
+  ATTACHMENT_PUT: 'attachment:put',
+  ATTACHMENT_SAVE_AS: 'attachment:saveAs',
   NOTE_READ: 'note:read',
   NOTE_UPDATE: 'note:update',
   NOTE_SAVE: 'note:save',

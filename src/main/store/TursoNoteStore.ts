@@ -30,6 +30,10 @@ import {
 import { parseStoredTags } from '../../shared/noteTags';
 import { migrateRemoteNoteDatabase } from './migrations';
 import { serializeNoteMarkdown } from './noteMarkdown';
+import type { AttachmentMeta, PutAttachmentInput, StoredAttachment, SyncAttachmentRow } from '../../shared/types';
+import { isAttachmentHash } from '../../shared/attachments';
+import { assembleAttachmentChunks, sha256Hex, splitAttachmentChunks } from './attachmentData';
+import { attachmentRowToMeta, writeAttachmentMirror } from './NoteStore';
 
 function isTenantRefUniqueConstraint(err: unknown): boolean {
   const parts: string[] = [];
@@ -626,6 +630,97 @@ export class TursoNoteStore implements INoteStore {
       sql: 'DELETE FROM note_tombstones WHERE tenant_id = ?',
       args: [tenantId],
     });
+      await this.client.execute({ sql: 'DELETE FROM attachment_chunks WHERE tenant_id = ?', args: [tenantId] });
+    await this.client.execute({ sql: 'DELETE FROM attachments WHERE tenant_id = ?', args: [tenantId] });
+  }
+
+  // --- Attachments ---
+
+  async putAttachment(input: PutAttachmentInput): Promise<AttachmentMeta> {
+    const row: SyncAttachmentRow = {
+      hash: sha256Hex(input.bytes),
+      tenant_id: input.tenantId ?? 'default',
+      mime: input.mime,
+      size: input.bytes.byteLength,
+      name: input.name,
+      created_at: new Date().toISOString(),
+    };
+    const existing = await this.readAttachmentRow(row.hash, row.tenant_id);
+    if (existing) return attachmentRowToMeta(existing);
+    await this.writeAttachment(row, input.bytes);
+    return attachmentRowToMeta(row);
+  }
+
+  async getAttachment(hash: string, tenantId = 'default'): Promise<StoredAttachment | null> {
+    if (!isAttachmentHash(hash)) return null;
+    const meta = await this.client.execute({
+      sql: 'SELECT hash, tenant_id, mime, size, name, chunk_count, created_at FROM attachments WHERE tenant_id = ? AND hash = ?',
+      args: [tenantId, hash],
+    });
+    const r = meta.rows[0];
+    if (!r) return null;
+    const row = rowToAttachment(r);
+    const chunks = await this.client.execute({
+      sql: 'SELECT seq, data FROM attachment_chunks WHERE tenant_id = ? AND hash = ? ORDER BY seq',
+      args: [tenantId, hash],
+    });
+    const bytes = assembleAttachmentChunks(
+      chunks.rows.map(c => ({ seq: c['seq'], data: c['data'] })),
+      { hash, size: row.size, chunkCount: Number(r['chunk_count']) },
+    );
+    return bytes ? { meta: attachmentRowToMeta(row), bytes } : null;
+  }
+
+  async listAttachmentRows(): Promise<SyncAttachmentRow[]> {
+    const r = await this.client.execute({
+      sql: 'SELECT hash, tenant_id, mime, size, name, created_at FROM attachments',
+      args: [],
+    });
+    return r.rows.map(rowToAttachment);
+  }
+
+  async importAttachment(row: SyncAttachmentRow, bytes: Uint8Array): Promise<boolean> {
+    if (!isAttachmentHash(row.hash) || sha256Hex(bytes) !== row.hash || bytes.byteLength !== row.size) return false;
+    if (await this.readAttachmentRow(row.hash, row.tenant_id)) return true;
+    await this.writeAttachment(row, bytes);
+    return true;
+  }
+
+  private async readAttachmentRow(hash: string, tenantId: string): Promise<SyncAttachmentRow | null> {
+    const r = await this.client.execute({
+      sql: 'SELECT hash, tenant_id, mime, size, name, created_at FROM attachments WHERE tenant_id = ? AND hash = ?',
+      args: [tenantId, hash],
+    });
+    return r.rows[0] ? rowToAttachment(r.rows[0]) : null;
+  }
+
+  /**
+   * One statement per chunk keeps every request small; the metadata row is written last and acts as the
+   * completion marker, so an interrupted upload is invisible and is simply rewritten on retry.
+   */
+  private async writeAttachment(row: SyncAttachmentRow, bytes: Uint8Array): Promise<void> {
+    const chunks = splitAttachmentChunks(bytes);
+    for (let seq = 0; seq < chunks.length; seq++) {
+      await this.client.execute({
+        sql: 'INSERT OR REPLACE INTO attachment_chunks (tenant_id, hash, seq, data) VALUES (?, ?, ?, ?)',
+        args: [row.tenant_id, row.hash, seq, chunks[seq]!.slice()],
+      });
+    }
+    await this.client.batch(
+      [
+        {
+          sql: 'DELETE FROM attachment_chunks WHERE tenant_id = ? AND hash = ? AND seq >= ?',
+          args: [row.tenant_id, row.hash, chunks.length],
+        },
+        {
+          sql: `INSERT OR IGNORE INTO attachments (tenant_id, hash, mime, size, name, chunk_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          args: [row.tenant_id, row.hash, row.mime, row.size, row.name, chunks.length, row.created_at],
+        },
+      ],
+      'write',
+    );
+    writeAttachmentMirror(this.vaultPath, row, bytes);
   }
 
   /** No-op: HTTP client has no persistent connection to tear down. */
@@ -846,4 +941,15 @@ export class TursoNoteStore implements INoteStore {
     const filePath = path.join(this.vaultPath, `${note.id}.md`);
     fs.writeFileSync(filePath, serializeNoteMarkdown(note), 'utf-8');
   }
+}
+
+function rowToAttachment(row: Record<string, unknown>): SyncAttachmentRow {
+  return {
+    hash: row['hash'] as string,
+    tenant_id: row['tenant_id'] as string,
+    mime: row['mime'] as string,
+    size: Number(row['size']),
+    name: (row['name'] as string) ?? '',
+    created_at: row['created_at'] as string,
+  };
 }

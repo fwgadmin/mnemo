@@ -3,7 +3,7 @@ import type { Client, InValue } from '@libsql/client';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const CURRENT_NOTE_SCHEMA_VERSION = 5;
+export const CURRENT_NOTE_SCHEMA_VERSION = 6;
 
 /** Cleanup remains disabled until the minimum supported released client understands tombstones. */
 export const NOTE_TOMBSTONE_RETENTION_POLICY = Object.freeze({
@@ -24,7 +24,29 @@ export const NOTE_STORE_MIGRATIONS: readonly NoteStoreMigration[] = [
   { version: 3, name: 'hidden-note-headers' },
   { version: 4, name: 'note-deletion-tombstones' },
   { version: 5, name: 'tenant-list-indexes' },
+  { version: 6, name: 'attachments' },
 ];
+
+/** Content-addressed attachment metadata + fixed-size chunks (metadata row is written last = commit marker). */
+export const ATTACHMENT_SCHEMA_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS attachments (
+    tenant_id   TEXT NOT NULL,
+    hash        TEXT NOT NULL,
+    mime        TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    name        TEXT NOT NULL DEFAULT '',
+    chunk_count INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, hash)
+  )`,
+  `CREATE TABLE IF NOT EXISTS attachment_chunks (
+    tenant_id TEXT NOT NULL,
+    hash      TEXT NOT NULL,
+    seq       INTEGER NOT NULL,
+    data      BLOB NOT NULL,
+    PRIMARY KEY (tenant_id, hash, seq)
+  )`,
+] as const;
 
 export const CORE_SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS notes (
@@ -189,6 +211,8 @@ function applyLocalMigration(db: Database.Database, migration: NoteStoreMigratio
       db.exec('CREATE INDEX IF NOT EXISTS idx_notes_tenant_updated ON notes(tenant_id, updated_at DESC)');
       db.exec('CREATE INDEX IF NOT EXISTS idx_notes_tenant_created ON notes(tenant_id, created_at DESC)');
       db.exec('CREATE INDEX IF NOT EXISTS idx_notes_tenant_title ON notes(tenant_id, title COLLATE NOCASE)');
+    } else if (migration.version === 6) {
+      for (const sql of ATTACHMENT_SCHEMA_STATEMENTS) db.exec(sql);
     }
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)')
       .run(migration.version, appliedAt);
@@ -248,6 +272,8 @@ async function applyRemoteMigration(client: Client, migration: NoteStoreMigratio
       { sql: 'CREATE INDEX IF NOT EXISTS idx_notes_tenant_created ON notes(tenant_id, created_at DESC)' },
       { sql: 'CREATE INDEX IF NOT EXISTS idx_notes_tenant_title ON notes(tenant_id, title COLLATE NOCASE)' },
     );
+  } else if (migration.version === 6) {
+    statements.push(...ATTACHMENT_SCHEMA_STATEMENTS.map(sql => ({ sql })));
   }
   statements.push({
     sql: 'INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)',

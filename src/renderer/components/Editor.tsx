@@ -23,6 +23,7 @@ import {
   bracketMatching,
   foldGutter,
   foldKeymap,
+  syntaxTree,
 } from '@codemirror/language';
 import {
   acceptCompletion,
@@ -44,6 +45,7 @@ import { clampFixedContextMenu } from '../fixedMenuPosition';
 import type { Note } from '../../shared/types';
 import MarkdownNoteBody from './MarkdownNoteBody';
 import { isEmbeddableFileType, markdownForMediaFiles } from '../editor/mediaMarkdown';
+import { htmlToMarkdown, isBlockMarkdown, shouldConvertHtmlPaste, writeRichMarkdownToClipboard } from '../editor/richClipboard';
 
 function readNoteBodyMode(): 'edit' | 'preview' {
   try {
@@ -206,26 +208,96 @@ async function clipboardReadMedia(): Promise<File[]> {
 function editorCopy(view: EditorView): void {
   const sel = view.state.selection.main;
   const text = view.state.sliceDoc(sel.from, sel.to);
-  void clipboardWriteText(text);
+  void writeRichMarkdownToClipboard(text);
 }
 
 function editorCut(view: EditorView): void {
   const sel = view.state.selection.main;
   const text = view.state.sliceDoc(sel.from, sel.to);
-  void clipboardWriteText(text);
+  void writeRichMarkdownToClipboard(text);
   view.dispatch({ changes: { from: sel.from, to: sel.to, insert: '' } });
 }
 
-async function editorPaste(view: EditorView): Promise<void> {
-  const media = await clipboardReadMedia();
-  if (media.length > 0) {
-    await insertMediaFiles(view, media);
-    return;
+/** True when the selection starts inside a fenced/indented code block (paste stays literal there). */
+function selectionInCode(view: EditorView): boolean {
+  const pos = view.state.selection.main.from;
+  for (let node: { name: string; parent: unknown } | null = syntaxTree(view.state).resolveInner(pos, -1); node; ) {
+    if (/^(FencedCode|CodeBlock|CodeText|InlineCode)$/.test(node.name)) return true;
+    node = node.parent as typeof node;
   }
-  const text = normalizeLineSeparators(await clipboardReadText());
+  return false;
+}
+
+function insertPlainText(view: EditorView, raw: string): void {
+  const text = normalizeLineSeparators(raw);
   if (!text) return;
   const sel = view.state.selection.main;
-  view.dispatch({ changes: { from: sel.from, to: sel.to, insert: text } });
+  view.dispatch({
+    changes: { from: sel.from, to: sel.to, insert: text },
+    selection: { anchor: sel.from + text.length },
+    userEvent: 'input.paste',
+  });
+}
+
+/** Block-level conversions get blank-line separation like media blocks; inline snippets insert in place. */
+function insertConvertedMarkdown(view: EditorView, md: string): void {
+  if (isBlockMarkdown(md)) insertTextAtSelection(view, md);
+  else insertPlainText(view, md);
+}
+
+/** Markdown to insert for clipboard HTML, or null when the plain-text flavour should be used. */
+function markdownFromClipboardHtml(view: EditorView, types: readonly string[], html: string): string | null {
+  if (selectionInCode(view) || !shouldConvertHtmlPaste(types, html)) return null;
+  const md = htmlToMarkdown(html);
+  return md || null;
+}
+
+async function clipboardReadHtml(): Promise<{ types: string[]; html: string } | null> {
+  if (!navigator.clipboard.read) return null;
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      if (!item.types.includes('text/html')) continue;
+      return { types: [...item.types], html: await (await item.getType('text/html')).text() };
+    }
+  } catch {
+    /* permission or format unavailable */
+  }
+  return null;
+}
+
+async function editorPaste(view: EditorView, plainOnly = false): Promise<void> {
+  if (!plainOnly) {
+    const media = await clipboardReadMedia();
+    if (media.length > 0) {
+      await insertMediaFiles(view, media);
+      return;
+    }
+    const rich = await clipboardReadHtml();
+    const md = rich ? markdownFromClipboardHtml(view, rich.types, rich.html) : null;
+    if (md) {
+      insertConvertedMarkdown(view, md);
+      return;
+    }
+  }
+  insertPlainText(view, await clipboardReadText());
+}
+
+/**
+ * Single non-empty selection: put exact Markdown on the clipboard synchronously, then upgrade it to
+ * Markdown + rendered HTML asynchronously. Anything else (empty / multiple selections) uses CodeMirror's default.
+ */
+function richCopyEvent(e: ClipboardEvent, view: EditorView, cut: boolean): boolean {
+  const ranges = view.state.selection.ranges;
+  const sel = view.state.selection.main;
+  if (ranges.length !== 1 || sel.empty || !e.clipboardData) return false;
+  const text = view.state.sliceDoc(sel.from, sel.to);
+  e.preventDefault();
+  e.clipboardData.setData('text/plain', text);
+  void writeRichMarkdownToClipboard(text);
+  if (cut) {
+    view.dispatch({ changes: { from: sel.from, to: sel.to, insert: '' }, userEvent: 'delete.cut' });
+  }
+  return true;
 }
 
 export interface EditorHandle {
@@ -502,11 +574,21 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       },
       paste: (e, view) => {
         const files = mediaFilesFromTransfer(e.clipboardData);
-        if (files.length === 0) return false;
+        if (files.length > 0) {
+          e.preventDefault();
+          void insertMediaFiles(view, files);
+          return true;
+        }
+        const data = e.clipboardData;
+        const html = data?.getData('text/html') ?? '';
+        const md = data && html ? markdownFromClipboardHtml(view, [...data.types], html) : null;
+        if (!md) return false;
         e.preventDefault();
-        void insertMediaFiles(view, files);
+        insertConvertedMarkdown(view, md);
         return true;
       },
+      copy: (e, view) => richCopyEvent(e, view, false),
+      cut: (e, view) => richCopyEvent(e, view, true),
       drop: (e, view) => {
         const files = mediaFilesFromTransfer(e.dataTransfer);
         if (files.length === 0) return false;
@@ -933,6 +1015,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
               }}
             >
               Paste
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
+              onClick={() => {
+                const v = viewRef.current;
+                if (!v) return;
+                v.focus();
+                void editorPaste(v, true).then(() => {
+                  saveNow();
+                  closeCtx();
+                });
+              }}
+            >
+              Paste as plain text
             </button>
             {showSummaryMenuItems && (
               <>

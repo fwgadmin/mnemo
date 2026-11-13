@@ -108,7 +108,11 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
   ],
   [
     'Embedded media',
-    'Paste, drop, or Ctrl+Shift+I to add images, audio, video, PDF, or text attachments (12 MB each). In Preview, use media controls to resize, align, move, copy/cut, rename, or delete.',
+    'Paste, drop, or Ctrl+Shift+I to add images, audio, video, PDF, or text attachments (10 MB each). Files are stored once per vault as attachments (mnemo-asset:// links), sync with remote libSQL, and are copied to vault/_attachments/. In Preview, use media controls to resize, align, move, copy/cut, rename, or delete; click a 📎 link to save the file.',
+  ],
+  [
+    'Rich copy & paste',
+    'Pasting formatted text from a browser, Google Docs, Word, or email converts it to Markdown (headings, lists, links, tables, ==highlights==). Code blocks and code-editor copies stay literal; use right-click → Paste as plain text to skip conversion. Copying a selection puts both Markdown and formatted HTML (with images) on the clipboard.',
   ],
   [
     'Summary & LLM',
