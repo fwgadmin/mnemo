@@ -31,9 +31,11 @@ interface Props {
   editorSpellcheck: boolean;
   editorAutocomplete: boolean;
   editorLivePreview: boolean;
+  editorFormatToolbar: boolean;
   onEditorSpellcheckChange: (v: boolean) => void;
   onEditorAutocompleteChange: (v: boolean) => void;
   onEditorLivePreviewChange: (v: boolean) => void;
+  onEditorFormatToolbarChange: (v: boolean) => void;
   markdownGlobal: Record<string, string>;
   markdownByTheme: Record<string, Record<string, string>>;
   onMarkdownGlobalChange: (v: Record<string, string>) => void;
@@ -55,9 +57,11 @@ export default function SettingsView({
   editorSpellcheck,
   editorAutocomplete,
   editorLivePreview,
+  editorFormatToolbar,
   onEditorSpellcheckChange,
   onEditorAutocompleteChange,
   onEditorLivePreviewChange,
+  onEditorFormatToolbarChange,
   markdownGlobal,
   markdownByTheme,
   onMarkdownGlobalChange,
@@ -308,6 +312,15 @@ export default function SettingsView({
                 className="rounded border-mnemo-border"
               />
               Live preview (hide Markdown syntax away from the cursor, show images and task boxes inline)
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editorFormatToolbar}
+                onChange={e => onEditorFormatToolbarChange(e.target.checked)}
+                className="rounded border-mnemo-border"
+              />
+              Formatting toolbar above selected text
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input

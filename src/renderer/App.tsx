@@ -127,6 +127,7 @@ export default function App() {
   const [editorSpellcheck, setEditorSpellcheck] = useState(true);
   const [editorAutocomplete, setEditorAutocomplete] = useState(true);
   const [editorLivePreview, setEditorLivePreview] = useState(true);
+  const [editorFormatToolbar, setEditorFormatToolbar] = useState(true);
   const [llmSettings, setLlmSettings] = useState<LlmSettingsFile>({
     profiles: [],
   });
@@ -369,6 +370,7 @@ export default function App() {
     if (file.editorSpellcheck !== undefined) setEditorSpellcheck(file.editorSpellcheck);
     if (file.editorAutocomplete !== undefined) setEditorAutocomplete(file.editorAutocomplete);
     if (file.editorLivePreview !== undefined) setEditorLivePreview(file.editorLivePreview);
+    if (file.editorFormatToolbar !== undefined) setEditorFormatToolbar(file.editorFormatToolbar);
     if (file.ideTabIds !== undefined) {
       setOpenTabIds(file.ideTabIds.length > 0 ? file.ideTabIds : []);
     }
@@ -416,6 +418,11 @@ export default function App() {
   const handleEditorLivePreviewChange = useCallback((v: boolean) => {
     setEditorLivePreview(v);
     void window.mnemo.preferences.save({ editorLivePreview: v });
+  }, []);
+
+  const handleEditorFormatToolbarChange = useCallback((v: boolean) => {
+    setEditorFormatToolbar(v);
+    void window.mnemo.preferences.save({ editorFormatToolbar: v });
   }, []);
 
   const LAST_STORE_TYPE_KEY = 'mnemo.lastStoreType';
@@ -487,6 +494,7 @@ export default function App() {
         editorSpellcheck,
         editorAutocomplete,
         editorLivePreview,
+        editorFormatToolbar,
         grouped: sidebarGrouped,
         categoryScopeSubtree: sidebarIncludeSubfolders,
         autoColorCategories,
@@ -510,6 +518,7 @@ export default function App() {
     editorSpellcheck,
     editorAutocomplete,
     editorLivePreview,
+    editorFormatToolbar,
     sidebarGrouped,
     sidebarIncludeSubfolders,
     autoColorCategories,
@@ -1130,8 +1139,14 @@ export default function App() {
         handleCreateNote();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-        e.preventDefault();
-        setShowSidebar((s) => !s);
+        // With text selected in the note editor, Ctrl/⌘+B is Bold (handled by CodeMirror); otherwise toggle the sidebar.
+        const target = e.target as HTMLElement | null;
+        const inEditorSelection =
+          !!target?.closest('.cm-editor') && (window.getSelection()?.toString().length ?? 0) > 0;
+        if (!inEditorSelection) {
+          e.preventDefault();
+          setShowSidebar((s) => !s);
+        }
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'H') {
         e.preventDefault();
@@ -1735,6 +1750,7 @@ export default function App() {
               editorSpellcheck={editorSpellcheck}
               editorAutocomplete={editorAutocomplete}
               editorLivePreview={editorLivePreview}
+              editorFormatToolbar={editorFormatToolbar}
               showSummaryMenuItems={showSummaryMenuItems}
               tenantId={activeNote.tenantId}
             />
@@ -1821,9 +1837,11 @@ export default function App() {
         editorSpellcheck={editorSpellcheck}
         editorAutocomplete={editorAutocomplete}
         editorLivePreview={editorLivePreview}
+        editorFormatToolbar={editorFormatToolbar}
         onEditorSpellcheckChange={handleEditorSpellcheckChange}
         onEditorAutocompleteChange={handleEditorAutocompleteChange}
         onEditorLivePreviewChange={handleEditorLivePreviewChange}
+        onEditorFormatToolbarChange={handleEditorFormatToolbarChange}
         markdownGlobal={markdownGlobal}
         markdownByTheme={markdownByTheme}
         onMarkdownGlobalChange={setMarkdownGlobal}

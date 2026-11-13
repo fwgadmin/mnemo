@@ -79,7 +79,10 @@ export const KEYBOARD_SHORTCUTS_ROWS: string[][] = [
   ['Ctrl+Shift+O', 'Open file as editor tab (filesystem)'],
   ['Ctrl+P', 'Command palette'],
   ['Ctrl+G', 'Toggle graph view'],
-  ['Ctrl+B', 'Toggle sidebar'],
+  ['Ctrl+B', 'Bold when text is selected in the note editor; otherwise toggle sidebar'],
+  ['Ctrl+I / Ctrl+Shift+X / Ctrl+Alt+H / Ctrl+E', 'Italic / strikethrough / ==highlight== / inline code (toggle)'],
+  ['Ctrl+1 / 2 / 3, Ctrl+0', 'Heading 1–3 / plain paragraph (toggle)'],
+  ['Ctrl+Shift+8 / 7 / 9, Ctrl+Shift+.', 'Bulleted / numbered / task list, quote (toggle)'],
   ['F11', 'Toggle fullscreen (Linux / Windows; macOS: View menu or F11)'],
   ['Ctrl+M', 'Toggle Markdown helper panel'],
   ['Ctrl+Shift+H', 'Toggle note header'],
@@ -113,6 +116,10 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
   [
     'Live preview',
     'Settings → Markdown → Live preview (on by default): Obsidian-style editing. Markdown syntax (#, **, `, [](), >, ==) is hidden except on the element under the cursor; images and attachments render inline; bullets, task boxes (click to toggle), quotes, rules, and code blocks are drawn as formatted blocks; tables render as tables (click a cell to edit the table source). ==text== highlights. Ctrl/⌘-click a link to open it (https links open in the browser, 📎 attachments open a Save dialog). Turn it off to edit plain Markdown source.',
+  ],
+  [
+    'Formatting toolbar',
+    'Settings → Markdown → Formatting toolbar (on by default): selecting text shows a toolbar for bold, italic, strikethrough, highlight, inline code, link, headings 1–3, quote, and bulleted / numbered / task lists. Every button and shortcut toggles, so applying it again removes the formatting.',
   ],
   [
     'Rich copy & paste',
