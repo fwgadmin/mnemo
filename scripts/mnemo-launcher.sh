@@ -84,7 +84,9 @@ run_gui() {
 }
 
 if [[ $# -eq 0 ]]; then
-  if [[ "$(read_bare_command)" == "gui" ]]; then
+  # No terminal on either end means a desktop launcher (the .deb menu entry runs bare `mnemo %U`):
+  # open the app instead of printing the CLI's recent-notes list to nowhere.
+  if [[ ! -t 0 && ! -t 1 ]] || [[ "$(read_bare_command)" == "gui" ]]; then
     run_gui "$@"
   else
     run_cli "$@"
