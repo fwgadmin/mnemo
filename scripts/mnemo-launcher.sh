@@ -50,6 +50,7 @@ should_run_vault_cli() {
   ' -- "$@" 2>/dev/null
 }
 
+# Prints the explicitly configured bare command (gui|recent), or nothing when none is set.
 read_bare_command() {
   if [[ -n "${MNEMO_CLI_BARE:-}" ]]; then
     case "${MNEMO_CLI_BARE}" in
@@ -60,8 +61,7 @@ read_bare_command() {
   const fs=require('fs');const p=require('path');const os=require('os');
   function cp(){const x=process.env.XDG_CONFIG_HOME||p.join(os.homedir(),'.config');return p.join(x,'mnemo','cli.json');}
   try{const j=JSON.parse(fs.readFileSync(cp(),'utf8'));if(j.bareCommand==='gui'||j.bareCommand==='recent'){process.stdout.write(j.bareCommand);process.exit(0)}}catch(e){}
-  process.stdout.write('recent');
-  " 2>/dev/null || echo recent
+  " 2>/dev/null || true
 }
 
 # Chromium aborts with a cryptic SUID-sandbox error when unprivileged user namespaces are restricted
@@ -84,7 +84,11 @@ run_gui() {
 }
 
 if [[ $# -eq 0 ]]; then
-  if [[ "$(read_bare_command)" == "gui" ]]; then
+  _bare="$(read_bare_command)"
+  # An explicit MNEMO_CLI_BARE / cli.json bareCommand always wins. Otherwise, no terminal on either
+  # end means a desktop launcher (the .deb menu entry runs bare `mnemo %U`): open the app instead of
+  # printing the CLI's recent-notes list to nowhere.
+  if [[ "$_bare" == "gui" ]] || [[ -z "$_bare" && ! -t 0 && ! -t 1 ]]; then
     run_gui "$@"
   else
     run_cli "$@"
