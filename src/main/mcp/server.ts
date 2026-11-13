@@ -343,6 +343,19 @@ export function createMcpServer(
       if (!res.ok) {
         return { content: [{ type: 'text', text: res.message }], isError: true };
       }
+      if (typeof storeOrResolver !== 'function') {
+        // Started with an explicit store (e.g. `mnemo mcp --db …`): the connection is pinned to that database,
+        // and switching must not rewrite the machine-wide active workspace.
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'This MCP server is pinned to the database it was started with (--db/--vault). Restart it with --workspace instead of switching.',
+            },
+          ],
+          isError: true,
+        };
+      }
       if (options.workspaceSession) {
         options.workspaceSession.setWorkspaceId(res.id);
         const next = { ...profiles, activeWorkspaceId: res.id };
