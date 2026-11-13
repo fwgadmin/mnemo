@@ -26,6 +26,8 @@ import {
   toDelimited,
   type CellFormat,
   type NumberFormatKind,
+  type SheetChart,
+  type SheetChartType,
   type SheetData,
   type SheetDoc,
 } from '../../shared/sheet';
@@ -41,6 +43,8 @@ import {
 } from '../../shared/sheetFormula';
 import type { EditorHandle } from './Editor';
 import { fillRange, sortRows } from '../../shared/sheetOps';
+import { chartData } from '../../shared/sheetChart';
+import SheetChartView from './SheetChartView';
 
 const ROW_H = 24;
 const HEADER_H = 24;
@@ -125,7 +129,16 @@ function applyStructural(doc: SheetDoc, edit: StructuralEdit): SheetDoc {
       }
       colWidths = next;
     }
-    return { ...s, cells, ...(colWidths ? { colWidths } : {}), ...(formats ? { formats } : {}) };
+    const charts = own && s.charts
+      ? s.charts.map(c => ({ ...c, range: shiftFormula(`=${c.range}`, s.name, edit).slice(1) }))
+      : s.charts;
+    return {
+      ...s,
+      cells,
+      ...(colWidths ? { colWidths } : {}),
+      ...(formats ? { formats } : {}),
+      ...(charts ? { charts } : {}),
+    };
   });
   return { ...doc, sheets };
 }
@@ -603,6 +616,27 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
     setMenu(null);
   };
 
+  // ─── Charts ─────────────────────────────────────────────────────────────────
+  const insertChart = () => {
+    const sr = rect(selRef.current);
+    // A single cell charts the used block to its right/below; otherwise the selection.
+    const range =
+      sr.r1 === sr.r2 && sr.c1 === sr.c2
+        ? `${cellKey(0, 0)}:${cellKey(Math.max(1, extent.rows - 1), Math.max(1, extent.cols - 1))}`
+        : `${cellKey(sr.r1, sr.c1)}:${cellKey(sr.r2, sr.c2)}`;
+    const chart: SheetChart = { id: `c${Date.now().toString(36)}`, type: 'column', range };
+    updateSheet(s2 => ({ ...s2, charts: [...(s2.charts ?? []), chart] }));
+    setMenu(null);
+  };
+  const updateChart = (id: string, patch: Partial<SheetChart>) =>
+    updateSheet(s2 => ({ ...s2, charts: (s2.charts ?? []).map(c => (c.id === id ? { ...c, ...patch } : c)) }));
+  const removeChart = (id: string) =>
+    updateSheet(s2 => {
+      const charts = (s2.charts ?? []).filter(c => c.id !== id);
+      const { charts: _drop, ...rest } = s2;
+      return charts.length ? { ...rest, charts } : rest;
+    });
+
   const r = rect(sel);
   /** Rows to sort: the selected rows, or (single row selected) everything below the header row. */
   const sortSpan = r.r2 > r.r1 ? { r1: r.r1, r2: r.r2 } : { r1: 1, r2: Math.max(1, extent.rows - 1) };
@@ -618,6 +652,7 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
       setFilter(filter ? null : { col: active.col, q: '' });
       setMenu(null);
     }],
+    ['Insert chart from selection', insertChart],
     null,
     ['Insert row above', () => structural('row', r.r1, r.r2 - r.r1 + 1)],
     ['Insert row below', () => structural('row', r.r2 + 1, r.r2 - r.r1 + 1)],
@@ -1067,6 +1102,8 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
               ) : (
                 btn('⏷', `Filter by column ${colName(active.col)}`, false, () => setFilter({ col: active.col, q: '' }))
               )}
+              {sep}
+              {btn('📊', 'Insert chart from selection', false, insertChart)}
             </>
           );
         })()}
@@ -1195,6 +1232,56 @@ const SheetEditor = forwardRef<EditorHandle, SheetEditorProps>(function SheetEdi
           )}
         </div>
       </div>
+      {sheet.charts?.length ? (
+        <div className="max-h-[45%] overflow-y-auto border-t border-mnemo-border bg-mnemo-app px-3 py-2 space-y-3" aria-label="Charts">
+          {sheet.charts.map(c => (
+            <div key={c.id} className="rounded-md border border-mnemo-border bg-mnemo-panel p-2">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px]">
+                <input
+                  defaultValue={c.title ?? ''}
+                  placeholder="Chart title"
+                  onBlur={e => e.target.value !== (c.title ?? '') && updateChart(c.id, { title: e.target.value || undefined })}
+                  className="min-w-0 flex-1 bg-transparent font-medium outline-none placeholder:text-mnemo-dim"
+                  aria-label="Chart title"
+                />
+                <select
+                  value={c.type}
+                  onChange={e => updateChart(c.id, { type: e.target.value as SheetChartType })}
+                  className="h-6 bg-mnemo-app border border-mnemo-border rounded px-1"
+                  aria-label="Chart type"
+                >
+                  <option value="column">Column</option>
+                  <option value="bar">Bar</option>
+                  <option value="line">Line</option>
+                  <option value="stacked">Stacked (share)</option>
+                </select>
+                <input
+                  key={c.range}
+                  defaultValue={c.range}
+                  onBlur={e => {
+                    const v = e.target.value.trim().toUpperCase();
+                    if (v !== c.range && /^[A-Z]{1,3}\d{1,6}:[A-Z]{1,3}\d{1,6}$/.test(v)) updateChart(c.id, { range: v });
+                    else e.target.value = c.range;
+                  }}
+                  className="h-6 w-28 bg-mnemo-app border border-mnemo-border rounded px-1.5 font-mono"
+                  aria-label="Chart range"
+                  title="Cell range: first column = labels, other columns = series"
+                />
+                <button
+                  type="button"
+                  className="h-6 px-1.5 rounded text-mnemo-muted hover:bg-mnemo-hover"
+                  onClick={() => removeChart(c.id)}
+                  aria-label="Delete chart"
+                  title="Delete chart"
+                >
+                  ✕
+                </button>
+              </div>
+              <SheetChartView data={chartData(doc, sheet, c, evaluator)} type={c.type} />
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="flex items-center gap-1 px-2 py-1 border-t border-mnemo-border bg-mnemo-panel overflow-x-auto">
         {doc.sheets.map((s, i) =>
           renaming === i ? (

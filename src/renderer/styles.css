@@ -295,3 +295,26 @@ html {
 .mnemo-embed-missing { color: var(--mnemo-editor-meta, #888); font-style: italic; }
 .cm-lp-mermaid { padding: 0.4em 0; overflow-x: auto; cursor: pointer; }
 .mnemo-mermaid-error { color: var(--mnemo-editor-meta, #888); font-size: 0.85em; }
+
+/* ── Chart palette (validated categorical order; dark steps default, light steps for light themes) ── */
+:root {
+  --mnemo-chart-1: #3987e5;
+  --mnemo-chart-2: #d95926;
+  --mnemo-chart-3: #199e70;
+  --mnemo-chart-4: #c98500;
+  --mnemo-chart-5: #d55181;
+  --mnemo-chart-6: #008300;
+  --mnemo-chart-7: #9085e9;
+  --mnemo-chart-8: #e66767;
+}
+:root[data-theme^='light'],
+:root[data-theme='ide-light'] {
+  --mnemo-chart-1: #2a78d6;
+  --mnemo-chart-2: #eb6834;
+  --mnemo-chart-3: #1baf7a;
+  --mnemo-chart-4: #eda100;
+  --mnemo-chart-5: #e87ba4;
+  --mnemo-chart-6: #008300;
+  --mnemo-chart-7: #6250d6;
+  --mnemo-chart-8: #e34948;
+}
