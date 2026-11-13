@@ -23,6 +23,8 @@ import { parseAttachmentUrl } from '../../shared/attachments';
 import { parseMediaDisplayOptions } from './mediaMarkdown';
 import { parseMarkdownTable, type ParsedTable } from './markdownTable';
 import { markdownInlineToHtml } from './richClipboard';
+import { renderMermaidInto } from './mermaidRender';
+import { EMBED_LINE, parseEmbedTarget, renderEmbedInto, type EmbedTarget } from './embedRender';
 
 // ─── ==highlight== syntax (Obsidian) ─────────────────────────────────────────────
 
@@ -120,8 +122,20 @@ export function livePreviewImageSrc(url: string): string | null {
   return /^data:image\/(?:png|jpe?g|gif|webp|bmp);base64,/i.test(url) ? url : null;
 }
 
-class ImageWidget extends WidgetType {
+export type LivePreviewMediaKind = 'image' | 'audio' | 'video';
+
+/** Media kind for a destination the renderer may load (attachments of any media type, inline data images). */
+export function livePreviewMediaKind(url: string): LivePreviewMediaKind | null {
+  if (livePreviewImageSrc(url)) return 'image';
+  const mime = parseAttachmentUrl(url)?.mime;
+  if (mime?.startsWith('audio/')) return 'audio';
+  if (mime?.startsWith('video/')) return 'video';
+  return null;
+}
+
+class MediaWidget extends WidgetType {
   constructor(
+    private readonly kind: LivePreviewMediaKind,
     private readonly src: string,
     private readonly alt: string,
     private readonly width: number,
@@ -129,23 +143,79 @@ class ImageWidget extends WidgetType {
   ) {
     super();
   }
-  eq(o: ImageWidget): boolean {
-    return o.src === this.src && o.alt === this.alt && o.width === this.width && o.align === this.align;
+  eq(o: MediaWidget): boolean {
+    return o.kind === this.kind && o.src === this.src && o.alt === this.alt && o.width === this.width && o.align === this.align;
   }
   toDOM(): HTMLElement {
     const wrap = document.createElement('span');
     wrap.className = `cm-lp-image cm-lp-image-${this.align}`;
-    const img = document.createElement('img');
-    img.src = this.src;
-    img.alt = this.alt;
-    img.title = this.alt;
-    img.style.width = `${this.width}%`;
-    img.draggable = false;
-    wrap.appendChild(img);
+    const el =
+      this.kind === 'image' ? document.createElement('img') : document.createElement(this.kind === 'audio' ? 'audio' : 'video');
+    el.setAttribute('src', this.src);
+    el.title = this.alt;
+    if (el instanceof HTMLImageElement) {
+      el.alt = this.alt;
+      el.draggable = false;
+    } else {
+      (el as HTMLMediaElement).controls = true;
+      (el as HTMLMediaElement).preload = 'metadata';
+    }
+    el.style.width = `${this.width}%`;
+    wrap.appendChild(el);
     return wrap;
   }
+  /** Images: a click moves the cursor in (reveals Markdown). Players keep their own clicks (play, seek). */
   ignoreEvent(): boolean {
-    return false;
+    return this.kind !== 'image';
+  }
+}
+
+/** Click handler shared by block widgets: put the cursor at the block's source to edit it. */
+function revealOnMouseDown(el: HTMLElement, view: EditorView, pos: number): void {
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('a, audio, video')) return;
+    e.preventDefault();
+    view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+    view.focus();
+  });
+}
+
+class MermaidWidget extends WidgetType {
+  constructor(private readonly code: string, private readonly pos: number) {
+    super();
+  }
+  eq(o: MermaidWidget): boolean {
+    return o.code === this.code && o.pos === this.pos;
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'cm-lp-mermaid mermaid-svg';
+    el.title = 'Click to edit the diagram source';
+    void renderMermaidInto(el, this.code).then(() => view.requestMeasure());
+    revealOnMouseDown(el, view, this.pos);
+    return el;
+  }
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+class EmbedWidget extends WidgetType {
+  constructor(private readonly target: EmbedTarget, private readonly key: string, private readonly pos: number) {
+    super();
+  }
+  eq(o: EmbedWidget): boolean {
+    return o.key === this.key && o.pos === this.pos;
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const el = document.createElement('div');
+    el.title = 'Click to edit the embed';
+    void renderEmbedInto(el, this.target).then(() => view.requestMeasure());
+    revealOnMouseDown(el, view, this.pos);
+    return el;
+  }
+  ignoreEvent(): boolean {
+    return true;
   }
 }
 
@@ -197,10 +267,40 @@ class TableWidget extends WidgetType {
 }
 
 /** Block-level table widgets (multi-line replacements must come from a state field, not a view plugin). */
+function inCode(state: EditorState, pos: number): boolean {
+  for (let n: { name: string; parent: unknown } | null = syntaxTree(state).resolveInner(pos, 1); n; n = n.parent as typeof n) {
+    if (n.name === 'FencedCode' || n.name === 'CodeBlock') return true;
+  }
+  return false;
+}
+
+/** Block widgets: tables, Mermaid fences, and standalone `![[…]]` embed lines (all only off the cursor). */
 export function buildTableDecorations(state: EditorState): DecorationSet {
   const out: Range<Decoration>[] = [];
+  const doc = state.doc;
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    const m = EMBED_LINE.exec(line.text);
+    if (!m || touches(state, line.from, line.to) || inCode(state, line.from)) continue;
+    const target = parseEmbedTarget(m[1]!);
+    if (target) {
+      out.push(Decoration.replace({ widget: new EmbedWidget(target, m[1]!, line.from), block: true }).range(line.from, line.to));
+    }
+  }
   syntaxTree(state).iterate({
     enter: node => {
+      if (node.name === 'FencedCode') {
+        const info = node.node.getChild('CodeInfo');
+        const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
+        const from = doc.lineAt(node.from).from;
+        const to = doc.lineAt(node.to).to;
+        if (lang === 'mermaid' && !touches(state, from, to)) {
+          const text = node.node.getChild('CodeText');
+          const code = text ? doc.sliceString(text.from, text.to) : '';
+          if (code.trim()) out.push(Decoration.replace({ widget: new MermaidWidget(code, from), block: true }).range(from, to));
+        }
+        return false;
+      }
       if (node.name !== 'Table') return;
       const from = state.doc.lineAt(node.from).from;
       const to = state.doc.lineAt(node.to).to;
@@ -320,11 +420,11 @@ export function buildLivePreviewDecorations(
           if (touches(state, node.from, node.to)) return false;
           const text = doc.sliceString(node.from, node.to);
           const m = /^!\[([^\]]*)\]\((\S+)(?:\s+"([^"]*)")?\)$/.exec(text);
-          const src = m ? livePreviewImageSrc(m[2]!) : null;
-          if (m && src) {
+          const kind = m ? livePreviewMediaKind(m[2]!) : null;
+          if (m && kind) {
             const opts = parseMediaDisplayOptions(m[3]);
             out.push(
-              Decoration.replace({ widget: new ImageWidget(src, m[1] ?? '', opts.width, opts.align) }).range(
+              Decoration.replace({ widget: new MediaWidget(kind, m[2]!, m[1] ?? '', opts.width, opts.align) }).range(
                 node.from,
                 node.to,
               ),

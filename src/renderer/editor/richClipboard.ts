@@ -119,6 +119,20 @@ export interface MarkdownToHtmlOptions {
   inlineBudgetBytes?: number;
 }
 
+/** Render block Markdown to sanitized HTML, synchronously (note embeds). */
+export function markdownBlockToHtml(markdown: string): string {
+  return String(
+    unified()
+      .use(remarkParse)
+      .use(remarkGfm)
+      .use(remarkHighlight)
+      .use(remarkRehype, { allowDangerousHtml: false })
+      .use(rehypeSanitize, htmlSchema)
+      .use(rehypeStringify)
+      .processSync(markdown),
+  );
+}
+
 /** Render inline Markdown (one table cell, one line) to sanitized HTML, synchronously, without a wrapping <p>. */
 export function markdownInlineToHtml(markdown: string): string {
   const html = String(

@@ -1,68 +1,20 @@
-import { Children, isValidElement, useEffect, useId, useRef, type ReactNode } from 'react';
+import { Children, isValidElement, useEffect, useRef, type ReactNode } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkHighlight from '../editor/remarkHighlight';
 import rehypeSanitize from 'rehype-sanitize';
 import { defaultSchema } from 'rehype-sanitize';
-import mermaid from 'mermaid';
+import { renderMermaidInto } from '../editor/mermaidRender';
+import { EMBED_LINE, parseEmbedTarget, renderEmbedInto } from '../editor/embedRender';
 import { parseAttachmentUrl } from '../../shared/attachments';
 import { copyImageToClipboard } from '../editor/richClipboard';
 import { mediaTitle, parseMediaDataType, parseMediaDisplayOptions, type MediaAlign } from '../editor/mediaMarkdown';
 
-let mermaidConfigured = false;
-function ensureMermaidTheme() {
-  if (mermaidConfigured) return;
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: 'dark',
-    securityLevel: 'strict',
-  });
-  mermaidConfigured = true;
-}
-
 function MermaidBlock({ code }: { code: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const uid = useId().replace(/:/g, '');
-
   useEffect(() => {
-    let cancelled = false;
-    ensureMermaidTheme();
-    const id = `mermaid-${uid}-${Math.random().toString(36).slice(2, 9)}`;
-    void (async () => {
-      try {
-        const { svg } = await mermaid.render(id, code);
-        if (!cancelled && ref.current) {
-          const template = document.createElement('template');
-          template.innerHTML = svg;
-          template.content
-            .querySelectorAll('script, iframe, object, embed, foreignObject')
-            .forEach((node) => node.remove());
-          template.content.querySelectorAll('*').forEach((node) => {
-            for (const attribute of [...node.attributes]) {
-              const name = attribute.name.toLowerCase();
-              const value = attribute.value.trim();
-              if (
-                name.startsWith('on') ||
-                ((name === 'href' || name === 'xlink:href') && /^javascript:/i.test(value))
-              ) {
-                node.removeAttribute(attribute.name);
-              }
-            }
-          });
-          ref.current.replaceChildren(template.content.cloneNode(true));
-        }
-      } catch {
-        if (!cancelled && ref.current) {
-          ref.current.textContent = 'Invalid Mermaid diagram';
-          ref.current.className = 'text-mnemo-dim text-[11px] my-2';
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [code, uid]);
-
+    if (ref.current) void renderMermaidInto(ref.current, code);
+  }, [code]);
   return <div ref={ref} className="mermaid-svg my-3 overflow-x-auto" />;
 }
 
@@ -233,6 +185,15 @@ function MediaBlock({
   );
 }
 
+function EmbedBlock({ inner }: { inner: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const target = parseEmbedTarget(inner);
+    if (ref.current && target) void renderEmbedInto(ref.current, target);
+  }, [inner]);
+  return <div ref={ref} />;
+}
+
 export interface MarkdownNoteBodyProps {
   body: string;
   /** Extra classes on the scrollable markdown container. */
@@ -338,6 +299,12 @@ export default function MarkdownNoteBody({ body, className = '', onBodyChange }:
                 {children}
               </a>
             );
+          },
+          p: ({ children }) => {
+            const only = Children.toArray(children);
+            const m = only.length === 1 && typeof only[0] === 'string' ? EMBED_LINE.exec(only[0]) : null;
+            if (m) return <EmbedBlock inner={m[1]!} />;
+            return <p>{children}</p>;
           },
           pre: ({ children }) => {
             const child = Children.only(children) as ReactNode;

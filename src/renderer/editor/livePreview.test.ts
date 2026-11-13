@@ -148,3 +148,41 @@ describe('table source mode', () => {
     expect(hidden(md, md.indexOf('A'))).toEqual([]);
   });
 });
+
+describe('embeds, Mermaid, and media', () => {
+  it('parses embed targets with optional sheet and range', async () => {
+    const { parseEmbedTarget, EMBED_LINE } = await import('./embedRender');
+    expect(parseEmbedTarget('Budget')).toEqual({ title: 'Budget' });
+    expect(parseEmbedTarget('Budget#a1:d10')).toEqual({ title: 'Budget', sheet: undefined, range: 'A1:D10' });
+    expect(parseEmbedTarget('Budget#Q1!B2')).toEqual({ title: 'Budget', sheet: 'Q1', range: 'B2' });
+    expect(parseEmbedTarget("Budget#'Q1 Totals'!A1:B2")).toEqual({ title: 'Budget', sheet: 'Q1 Totals', range: 'A1:B2' });
+    expect(parseEmbedTarget('Budget#Summary')).toEqual({ title: 'Budget', sheet: 'Summary' });
+    expect(parseEmbedTarget('Budget#Q1')).toEqual({ title: 'Budget', sheet: undefined, range: 'Q1' });
+    expect(parseEmbedTarget('Budget#Q1!')).toEqual({ title: 'Budget', sheet: 'Q1' });
+    expect(parseEmbedTarget('Note|alias')).toEqual({ title: 'Note' });
+    expect(EMBED_LINE.test('  ![[Note]] ')).toBe(true);
+    expect(EMBED_LINE.test('see ![[Note]] inline')).toBe(false);
+  });
+
+  it('detects media kinds for attachments and data images only', async () => {
+    const { livePreviewMediaKind } = await import('./livePreview');
+    expect(livePreviewMediaKind(`mnemo-asset://asset/${HASH}.mp4`)).toBe('video');
+    expect(livePreviewMediaKind(`mnemo-asset://asset/${HASH}.mp3`)).toBe('audio');
+    expect(livePreviewMediaKind(`mnemo-asset://asset/${HASH}.png`)).toBe('image');
+    expect(livePreviewMediaKind(`mnemo-asset://asset/${HASH}.pdf`)).toBeNull();
+    expect(livePreviewMediaKind('https://x.test/v.mp4')).toBeNull();
+  });
+
+  it('turns embed lines and Mermaid fences into block widgets off the cursor, never inside code', async () => {
+    const { buildTableDecorations } = await import('./livePreview');
+    const md = 'top\n\n![[Other note]]\n\n```mermaid\ngraph TD; A-->B\n```\n\n```md\n![[Not an embed]]\n```\n\nend';
+    const count = (cursor: number) => {
+      let n = 0;
+      buildTableDecorations(stateFor(md, cursor)).between(0, md.length, () => void n++);
+      return n;
+    };
+    expect(count(0)).toBe(2);
+    expect(count(md.indexOf('Other'))).toBe(1);
+    expect(count(md.indexOf('A-->B'))).toBe(1);
+  });
+});
