@@ -1159,10 +1159,11 @@ export default function App() {
         handleCreateNote();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-        // With text selected in the note editor, Ctrl/⌘+B is Bold (handled by CodeMirror); otherwise toggle the sidebar.
+        // With text selected in the note editor, or in a spreadsheet grid, Ctrl/⌘+B is Bold; otherwise toggle the sidebar.
         const target = e.target as HTMLElement | null;
         const inEditorSelection =
-          !!target?.closest('.cm-editor') && (window.getSelection()?.toString().length ?? 0) > 0;
+          (!!target?.closest('.cm-editor') && (window.getSelection()?.toString().length ?? 0) > 0) ||
+          !!target?.closest('[data-sheet-grid]');
         if (!inEditorSelection) {
           e.preventDefault();
           setShowSidebar((s) => !s);

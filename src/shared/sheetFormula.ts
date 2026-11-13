@@ -3,7 +3,7 @@
  * reference rewriting for row/column insertion and relative copy/paste. Excel functions come from formulajs (MIT).
  */
 import * as formulajs from '@formulajs/formulajs';
-import { cellKey, colIndex, colName, parseRange, sheetExtent, type SheetDoc, type SheetData } from './sheet';
+import { cellKey, colIndex, colName, parseRange, sheetExtent, type CellFormat, type SheetDoc, type SheetData } from './sheet';
 
 // ─── Values ─────────────────────────────────────────────────────────────────────
 
@@ -33,6 +33,8 @@ export function literalValue(raw: string): CellValue {
   if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(t)) return Number(t);
   const pct = /^([-+]?(\d+\.?\d*|\.\d+))%$/.exec(t);
   if (pct) return Number(pct[1]) / 100;
+  const serial = dateStringToSerial(t);
+  if (serial !== null) return serial;
   if (/^true$/i.test(t)) return true;
   if (/^false$/i.test(t)) return false;
   return raw;
@@ -48,6 +50,50 @@ export function formatValue(v: CellValue): string {
     return String(Number.parseFloat(v.toPrecision(15)));
   }
   return v;
+}
+
+/** Excel serial date (1900 system) → YYYY-MM-DD[ HH:MM]. */
+export function serialToDateString(serial: number): string {
+  const ms = Math.round((serial - 25569) * 86_400_000);
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '#NUM!';
+  const iso = d.toISOString();
+  const hasTime = Math.abs(serial % 1) > 1e-9;
+  return hasTime ? `${iso.slice(0, 10)} ${iso.slice(11, 16)}` : iso.slice(0, 10);
+}
+
+/** YYYY-MM-DD[ HH:MM] → Excel serial date, or null. */
+export function dateStringToSerial(text: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?$/.exec(text.trim());
+  if (!m) return null;
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0));
+  return Number.isNaN(ms) ? null : ms / 86_400_000 + 25569;
+}
+
+/** Value as displayed with a cell's number format (falls back to formatValue). */
+export function displayValue(v: CellValue, f?: CellFormat, raw?: string): string {
+  // A typed ISO date (no explicit format) keeps showing as a date even though it computes as a serial.
+  if (!f?.num && typeof v === 'number' && raw !== undefined && dateStringToSerial(raw) !== null) return serialToDateString(v);
+  if (!f?.num || typeof v !== 'number' || !Number.isFinite(v)) return formatValue(v);
+  const dp = f.dp;
+  const fmt = (n: number, digits: number, grouping = true) =>
+    n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: grouping });
+  switch (f.num) {
+    case 'number':
+      return fmt(v, dp ?? 2);
+    case 'integer':
+      return fmt(Math.round(v), 0);
+    case 'percent':
+      return `${fmt(v * 100, dp ?? 0)}%`;
+    case 'currency':
+      return `${v < 0 ? '-' : ''}$${fmt(Math.abs(v), dp ?? 2)}`;
+    case 'date':
+      return serialToDateString(v);
+    case 'text':
+      return formatValue(v);
+    default:
+      return formatValue(v);
+  }
 }
 
 // ─── Tokens ─────────────────────────────────────────────────────────────────────
@@ -579,6 +625,41 @@ export function offsetFormula(raw: string, dRow: number, dCol: number): string {
   });
 }
 
+// ─── Format inference ────────────────────────────────────────────────────────
+
+/**
+ * Format a formula cell inherits when it has none of its own (Excel behaviour): the number format of the first
+ * cell it references — e.g. `=B5+30` where B5 holds a date shows a date.
+ */
+export function inferredFormat(doc: SheetDoc, sheet: SheetData, raw: string): CellFormat | undefined {
+  if (!raw.startsWith('=')) return undefined;
+  let toks: Token[];
+  try {
+    toks = tokenize(raw.slice(1));
+  } catch {
+    return undefined;
+  }
+  const ref = toks.find((t): t is Extract<Token, { t: 'ref' }> => t.t === 'ref');
+  if (!ref) return undefined;
+  const target = ref.sheet ? doc.sheets.find(x => x.name.toLowerCase() === ref.sheet!.toLowerCase()) : sheet;
+  if (!target) return undefined;
+  const key = cellKey(ref.row, ref.col);
+  const f = target.formats?.[key];
+  if (f?.num) return { num: f.num, ...(f.dp !== undefined ? { dp: f.dp } : {}) };
+  const refRaw = target.cells[key] ?? '';
+  if (dateStringToSerial(refRaw) !== null) return { num: 'date' };
+  return undefined;
+}
+
+/** Display string for a cell, applying its own or inherited number format. */
+export function cellDisplay(doc: SheetDoc, sheet: SheetData, row: number, col: number, v: CellValue): string {
+  const key = cellKey(row, col);
+  const raw = sheet.cells[key] ?? '';
+  const own = sheet.formats?.[key];
+  const f = own?.num ? own : { ...own, ...(inferredFormat(doc, sheet, raw) ?? {}) };
+  return displayValue(v, f, raw);
+}
+
 // ─── Tabular output ─────────────────────────────────────────────────────────────
 
 /** Rows of displayed values (or raw formulas) for a sheet/range. */
@@ -592,7 +673,7 @@ export function sheetRows(doc: SheetDoc, sheet: SheetData, range?: string, formu
     const line: string[] = [];
     for (let col = r.c1; col <= r.c2; col++) {
       const raw = sheet.cells[cellKey(row, col)] ?? '';
-      line.push(formulas ? raw : formatValue(ev.value(sheet.name, row, col)));
+      line.push(formulas ? raw : cellDisplay(doc, sheet, row, col, ev.value(sheet.name, row, col)));
     }
     rows.push(line);
   }

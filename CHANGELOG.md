@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Spreadsheet formatting:**
+  - **Per-cell formats:** bold, italic, alignment, text colour, fill colour, and number formats (number with grouping, integer, percent, currency, date, plain text) with decimal controls.
+  - **Where to apply:** the format toolbar above the grid, Ctrl/⌘+B/I in the grid, and right-click → Clear formatting.
+  - **Formats travel with cells:** they move on row/column insert or delete and are copied with internal copy/paste.
+  - **Dates:** typed ISO dates (`2026-11-13`) are real dates in formulas. Formula cells inherit the number format of the first cell they reference, so `=B5+30` shows a date.
+  - **Everywhere:** formats apply in the grid, `mnemo sheet show`, MCP `read_sheet`, and sheet embeds.
+  - **XLSX:** styles and number formats round-trip, and dates export as real Excel dates.
 - **Live preview embeds:**
   - **Mermaid:** ```` ```mermaid ```` blocks render as diagrams when the cursor is outside them.
   - **Audio/video:** attachment links render as players. Their controls keep their own clicks, so playing doesn't drop you into the source.

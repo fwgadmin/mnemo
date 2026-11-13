@@ -35,3 +35,34 @@ describe('sheet file import/export', () => {
     expect(sheetFromDelimited('a,b\n"x, y",2\n', 'Data').cells).toEqual({ A1: 'a', B1: 'b', A2: 'x, y', B2: '2' });
   });
 });
+
+describe('XLSX formats', () => {
+  it('round-trips bold/italic/colors/fill/alignment and number formats; typed dates stay dates', async () => {
+    const payload: SheetExportPayload = {
+      format: 'xlsx',
+      title: 'Fmt',
+      sheets: [
+        {
+          name: 'S',
+          cells: [
+            [
+              { raw: 'Head', value: 'Head', format: { bold: true, italic: true, color: '#ff0000', fill: '#ffff00', align: 'center' } },
+              { raw: '0.256', value: 0.256, format: { num: 'percent', dp: 1 } },
+              { raw: '1234.5', value: 1234.5, format: { num: 'currency' } },
+              { raw: '2026-11-13', value: 46339 },
+              { raw: '7.125', value: 7.125, format: { num: 'number', dp: 3 } },
+            ],
+          ],
+          colWidths: {},
+        },
+      ],
+    };
+    const [sheet] = await sheetsFromXlsx(await xlsxFromPayload(payload));
+    expect(sheet!.formats?.A1).toEqual({ bold: true, italic: true, color: '#ff0000', fill: '#ffff00', align: 'center' });
+    expect(sheet!.formats?.B1).toEqual({ num: 'percent', dp: 1 });
+    expect(sheet!.formats?.C1).toEqual({ num: 'currency', dp: 2 });
+    expect(sheet!.formats?.E1).toEqual({ num: 'number', dp: 3 });
+    expect(sheet!.cells.D1).toBe('2026-11-13');
+    expect(sheet!.formats?.D1).toBeUndefined();
+  });
+});
