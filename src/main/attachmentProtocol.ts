@@ -10,6 +10,7 @@ import {
 } from '../shared/attachments';
 import { IPC } from '../shared/types';
 import type { WorkspaceStoreContext } from './storeResolver';
+import { attachmentStats, convertInlineMedia, removeUnusedAttachments } from './attachmentMaintenance';
 
 /** Must run before `app.whenReady()`. */
 export function registerAttachmentScheme(): void {
@@ -100,6 +101,21 @@ export function registerAttachmentIpc(getContext: () => Promise<WorkspaceStoreCo
     const ctx = await getContext();
     const meta = await ctx.store.putAttachment({ ...input, tenantId: ctx.tenantId });
     return { meta, url: attachmentUrl(meta.hash, meta.mime) };
+  });
+
+  ipcMain.handle(IPC.ATTACHMENT_STATS, async () => {
+    const ctx = await getContext();
+    return attachmentStats(ctx.store, ctx.tenantId);
+  });
+
+  ipcMain.handle(IPC.ATTACHMENT_CONVERT_INLINE, async () => {
+    const ctx = await getContext();
+    return convertInlineMedia(ctx.store, ctx.tenantId);
+  });
+
+  ipcMain.handle(IPC.ATTACHMENT_REMOVE_UNUSED, async () => {
+    const ctx = await getContext();
+    return removeUnusedAttachments(ctx.store, ctx.tenantId);
   });
 
   ipcMain.handle(IPC.ATTACHMENT_SAVE_AS, async (event, rawUrl: unknown, rawName: unknown): Promise<boolean> => {

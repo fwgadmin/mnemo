@@ -34,6 +34,12 @@ export interface MnemoAPI {
     put(input: { bytes: ArrayBuffer; mime: string; name: string }): Promise<{ meta: AttachmentMeta; url: string }>;
     /** Show a Save dialog for an attachment URL; false when cancelled. */
     saveAs(url: string, suggestedName?: string): Promise<boolean>;
+    /** Counts/sizes for the active workspace (unused = unreferenced and older than 24 h). */
+    stats(): Promise<{ count: number; bytes: number; unused: number; unusedBytes: number; notesWithInlineMedia: number }>;
+    /** Turn base64 data: media in notes into stored attachments. */
+    convertInline(): Promise<{ notes: number; converted: number; skipped: number }>;
+    /** Delete attachments no note references (24 h grace). */
+    removeUnused(): Promise<{ removed: number; bytes: number }>;
   };
   notes: {
     create(input: CreateNoteInput): Promise<Note>;
@@ -139,6 +145,9 @@ const api: MnemoAPI = {
   attachments: {
     put: (input) => ipcRenderer.invoke(IPC.ATTACHMENT_PUT, input),
     saveAs: (url, suggestedName) => ipcRenderer.invoke(IPC.ATTACHMENT_SAVE_AS, url, suggestedName),
+    stats: () => ipcRenderer.invoke(IPC.ATTACHMENT_STATS),
+    convertInline: () => ipcRenderer.invoke(IPC.ATTACHMENT_CONVERT_INLINE),
+    removeUnused: () => ipcRenderer.invoke(IPC.ATTACHMENT_REMOVE_UNUSED),
   },
   notes: {
     create: (input) => ipcRenderer.invoke(IPC.NOTE_CREATE, input),

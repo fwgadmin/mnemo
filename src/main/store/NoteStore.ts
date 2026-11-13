@@ -680,6 +680,17 @@ export class LocalNoteStore implements INoteStore {
     return bytes ? { meta: attachmentRowToMeta(row), bytes } : null;
   }
 
+  async deleteAttachment(hash: string, tenantId = 'default'): Promise<boolean> {
+    const row = this.readAttachmentRow(hash, tenantId);
+    if (!row) return false;
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM attachments WHERE tenant_id = ? AND hash = ?').run(tenantId, hash);
+      this.db.prepare('DELETE FROM attachment_chunks WHERE tenant_id = ? AND hash = ?').run(tenantId, hash);
+    })();
+    removeAttachmentMirror(this.vaultPath, row);
+    return true;
+  }
+
   async listAttachmentRows(): Promise<SyncAttachmentRow[]> {
     return this.db
       .prepare('SELECT hash, tenant_id, mime, size, name, created_at FROM attachments')
@@ -766,6 +777,15 @@ export function attachmentRowToMeta(row: SyncAttachmentRow): AttachmentMeta {
     name: row.name,
     created: row.created_at,
   };
+}
+
+export function removeAttachmentMirror(vaultPath: string | undefined, row: SyncAttachmentRow): void {
+  if (!vaultPath) return;
+  try {
+    fs.unlinkSync(path.join(vaultPath, '_attachments', `${row.hash}.${extensionForAttachmentMime(row.mime)}`));
+  } catch {
+    /* missing */
+  }
 }
 
 /** Best-effort copy into `<vault>/_attachments/` so the Markdown mirror stays self-contained. */

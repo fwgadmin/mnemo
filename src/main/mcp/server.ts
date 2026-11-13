@@ -41,6 +41,7 @@ import { pickWorkspaceId, resolveWorkspaceSelector } from '../workspaceResolve';
 import { resolveWorkspaceBootstrapRoot } from '../userConfig';
 import { idOrRefError, idOrRefShape, resolveToNoteId } from './noteArgs';
 import { registerSheetTools } from './sheetTools';
+import { registerAttachmentTools } from './attachmentTools';
 import {
   closeDedicatedStores,
   getGlobalStore,
@@ -911,6 +912,7 @@ export function createMcpServer(
   );
 
   registerSheetTools(mcp, resolve);
+  registerAttachmentTools(mcp, resolve);
 
   return mcp;
 }
