@@ -126,6 +126,7 @@ export default function App() {
   const [markdownByTheme, setMarkdownByTheme] = useState<Record<string, Record<string, string>>>({});
   const [editorSpellcheck, setEditorSpellcheck] = useState(true);
   const [editorAutocomplete, setEditorAutocomplete] = useState(true);
+  const [editorLivePreview, setEditorLivePreview] = useState(true);
   const [llmSettings, setLlmSettings] = useState<LlmSettingsFile>({
     profiles: [],
   });
@@ -367,6 +368,7 @@ export default function App() {
     if (file.markdownByTheme !== undefined) setMarkdownByTheme(file.markdownByTheme);
     if (file.editorSpellcheck !== undefined) setEditorSpellcheck(file.editorSpellcheck);
     if (file.editorAutocomplete !== undefined) setEditorAutocomplete(file.editorAutocomplete);
+    if (file.editorLivePreview !== undefined) setEditorLivePreview(file.editorLivePreview);
     if (file.ideTabIds !== undefined) {
       setOpenTabIds(file.ideTabIds.length > 0 ? file.ideTabIds : []);
     }
@@ -409,6 +411,11 @@ export default function App() {
   const handleEditorAutocompleteChange = useCallback((v: boolean) => {
     setEditorAutocomplete(v);
     void window.mnemo.preferences.save({ editorAutocomplete: v });
+  }, []);
+
+  const handleEditorLivePreviewChange = useCallback((v: boolean) => {
+    setEditorLivePreview(v);
+    void window.mnemo.preferences.save({ editorLivePreview: v });
   }, []);
 
   const LAST_STORE_TYPE_KEY = 'mnemo.lastStoreType';
@@ -479,6 +486,7 @@ export default function App() {
         showNoteRefs,
         editorSpellcheck,
         editorAutocomplete,
+        editorLivePreview,
         grouped: sidebarGrouped,
         categoryScopeSubtree: sidebarIncludeSubfolders,
         autoColorCategories,
@@ -501,6 +509,7 @@ export default function App() {
     showNoteRefs,
     editorSpellcheck,
     editorAutocomplete,
+    editorLivePreview,
     sidebarGrouped,
     sidebarIncludeSubfolders,
     autoColorCategories,
@@ -1725,6 +1734,7 @@ export default function App() {
               reloadNonce={editorReloadNonce}
               editorSpellcheck={editorSpellcheck}
               editorAutocomplete={editorAutocomplete}
+              editorLivePreview={editorLivePreview}
               showSummaryMenuItems={showSummaryMenuItems}
               tenantId={activeNote.tenantId}
             />
@@ -1810,8 +1820,10 @@ export default function App() {
         onAutoColorCategoriesChange={setAutoColorCategories}
         editorSpellcheck={editorSpellcheck}
         editorAutocomplete={editorAutocomplete}
+        editorLivePreview={editorLivePreview}
         onEditorSpellcheckChange={handleEditorSpellcheckChange}
         onEditorAutocompleteChange={handleEditorAutocompleteChange}
+        onEditorLivePreviewChange={handleEditorLivePreviewChange}
         markdownGlobal={markdownGlobal}
         markdownByTheme={markdownByTheme}
         onMarkdownGlobalChange={setMarkdownGlobal}

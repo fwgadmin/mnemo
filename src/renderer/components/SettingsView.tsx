@@ -30,8 +30,10 @@ interface Props {
   onAutoColorCategoriesChange: (v: boolean) => void;
   editorSpellcheck: boolean;
   editorAutocomplete: boolean;
+  editorLivePreview: boolean;
   onEditorSpellcheckChange: (v: boolean) => void;
   onEditorAutocompleteChange: (v: boolean) => void;
+  onEditorLivePreviewChange: (v: boolean) => void;
   markdownGlobal: Record<string, string>;
   markdownByTheme: Record<string, Record<string, string>>;
   onMarkdownGlobalChange: (v: Record<string, string>) => void;
@@ -52,8 +54,10 @@ export default function SettingsView({
   onAutoColorCategoriesChange,
   editorSpellcheck,
   editorAutocomplete,
+  editorLivePreview,
   onEditorSpellcheckChange,
   onEditorAutocompleteChange,
+  onEditorLivePreviewChange,
   markdownGlobal,
   markdownByTheme,
   onMarkdownGlobalChange,
@@ -295,6 +299,15 @@ export default function SettingsView({
                 className="rounded border-mnemo-border"
               />
               Spell check (note body)
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editorLivePreview}
+                onChange={e => onEditorLivePreviewChange(e.target.checked)}
+                className="rounded border-mnemo-border"
+              />
+              Live preview (hide Markdown syntax away from the cursor, show images and task boxes inline)
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input

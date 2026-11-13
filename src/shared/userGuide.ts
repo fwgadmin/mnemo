@@ -111,6 +111,10 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
     'Paste, drop, or Ctrl+Shift+I to add images, audio, video, PDF, or text attachments (10 MB each). Files are stored once per vault as attachments (mnemo-asset:// links), sync with remote libSQL, and are copied to vault/_attachments/. In Preview, use media controls to resize, align, move, copy/cut, rename, or delete; click a 📎 link to save the file.',
   ],
   [
+    'Live preview',
+    'Settings → Markdown → Live preview (on by default): Obsidian-style editing. Markdown syntax (#, **, `, [](), >, ==) is hidden except on the element under the cursor; images and attachments render inline; bullets, task boxes (click to toggle), quotes, rules, and code blocks are drawn as formatted blocks. ==text== highlights. Ctrl/⌘-click a link to open it (https links open in the browser, 📎 attachments open a Save dialog). Turn it off to edit plain Markdown source.',
+  ],
+  [
     'Rich copy & paste',
     'Pasting formatted text from a browser, Google Docs, Word, or email converts it to Markdown (headings, lists, links, tables, ==highlights==). Code blocks and code-editor copies stay literal; use right-click → Paste as plain text to skip conversion. Copying a selection puts both Markdown and formatted HTML (with images) on the clipboard.',
   ],
