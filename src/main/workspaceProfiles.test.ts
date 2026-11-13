@@ -12,6 +12,7 @@ import {
   parseWorkspaceProfilesKvPayload,
   readWorkspaceProfilesFileResult,
   restoreWorkspaceNames,
+  mergeWorkspacesPreferring,
   restoreWorkspaceProfile,
   setActiveWorkspace,
   workspaceProfilesRemotePayload,
@@ -196,5 +197,35 @@ describe('workspace names survive sync and bad reads', () => {
     writeWorkspaceProfilesFileDiskOnly(root, { ...state, workspaces: [...state.workspaces, named('ws-z', 'Zed')] });
     expect(fs.readdirSync(root).filter((f) => f.endsWith('.tmp'))).toEqual([]);
     expect(readWorkspaceProfilesFileResult(root).state.workspaces.find((w) => w.id === 'ws-z')?.name).toBe('Zed');
+  });
+});
+
+describe('workspace sync review follow-ups', () => {
+  const named = (id: string, name: string) => ({ id, name, storage: { mode: 'inherit' as const } });
+
+  it('merges preferring one side while keeping the other side’s names and extra profiles', () => {
+    const merged = mergeWorkspacesPreferring(
+      [named('default', 'Default'), named('ws-a', 'ws-a'), named('ws-b', 'Local rename')],
+      [named('ws-a', 'Research'), named('ws-b', 'Old'), named('ws-c', 'Cloud only')],
+    );
+    expect(merged.map((w) => w.name)).toEqual(['Default', 'Research', 'Local rename', 'Cloud only']);
+  });
+
+  it('keeps deletion markers when tenant repair rewrites the profiles', async () => {
+    const { root } = fixture();
+    writeWorkspaceProfilesFileDiskOnly(root, {
+      activeWorkspaceId: 'default',
+      workspaces: [named('default', 'Default')],
+      deletedWorkspaceIds: ['ws-gone'],
+    });
+    const store = {
+      listDistinctTenantIds: async () => ['default', 'ws-new', 'ws-gone'],
+      getNoteCountsByTenant: async () => ({ default: 1 }),
+    } as unknown as import('../shared/types').INoteStore;
+    const { readWorkspaceProfilesMerged } = await import('./workspaceProfilesSync');
+    const state = await readWorkspaceProfilesMerged(store, root);
+    expect(state.workspaces.map((w) => w.id)).toEqual(['default', 'ws-new']);
+    expect(state.deletedWorkspaceIds).toEqual(['ws-gone']);
+    expect(readWorkspaceProfilesFileResult(root).state.deletedWorkspaceIds).toEqual(['ws-gone']);
   });
 });

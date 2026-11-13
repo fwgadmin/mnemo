@@ -21,7 +21,7 @@ import {
   mergeWorkspacesWhenCloudNewer,
   parseWorkspaceProfilesKvPayload,
   readWorkspaceProfilesFileResult,
-  restoreWorkspaceNames,
+  mergeWorkspacesPreferring,
   workspaceProfilesFilePath,
   workspaceProfilesRemotePayload,
   WORKSPACE_PROFILES_KV_KEY,
@@ -48,7 +48,10 @@ async function augmentProfilesWithNoteTenants(
   const idsBefore = state.workspaces.map(w => w.id).sort().join('\0');
   const idsAfter = mergedW.map(w => w.id).sort().join('\0');
   if (idsBefore === idsAfter) return state;
-  const next = combineLocalActiveWithWorkspaces(state.activeWorkspaceId, mergedW);
+  const next: WorkspaceProfilesState = {
+    ...combineLocalActiveWithWorkspaces(state.activeWorkspaceId, mergedW),
+    deletedWorkspaceIds: state.deletedWorkspaceIds ?? [],
+  };
   writeWorkspaceProfilesFile(root, next);
   return next;
 }
@@ -96,7 +99,10 @@ async function preferActiveTenantWithNotes(
   if (bestCount === 0) return state;
   if (bestId === state.activeWorkspaceId) return state;
 
-  const next = combineLocalActiveWithWorkspaces(bestId, state.workspaces);
+  const next: WorkspaceProfilesState = {
+    ...combineLocalActiveWithWorkspaces(bestId, state.workspaces),
+    deletedWorkspaceIds: state.deletedWorkspaceIds ?? [],
+  };
   writeWorkspaceProfilesFile(root, next);
   return next;
 }
@@ -188,11 +194,7 @@ export async function readWorkspaceProfilesMerged(
     // Disk wins, but keep real names and profiles that only the cloud copy has (another device may
     // have created or renamed them); tombstones from both sides still apply.
     const mergedDeleted = mergeDeletedWorkspaceIds(diskState.deletedWorkspaceIds, cloudDeleted);
-    const diskIds = new Set(diskState.workspaces.map(w => w.id));
-    const unionW = [
-      ...restoreWorkspaceNames(diskState.workspaces, cloudWorkspaces),
-      ...cloudWorkspaces.filter(w => !diskIds.has(w.id)),
-    ];
+    const unionW = mergeWorkspacesPreferring(diskState.workspaces, cloudWorkspaces);
     const filtered = filterWorkspacesByDeletedIds(unionW, new Set(mergedDeleted));
     const merged = combineLocalActiveWithWorkspaces(diskState.activeWorkspaceId, filtered);
     const next: WorkspaceProfilesState = { ...merged, deletedWorkspaceIds: mergedDeleted };
