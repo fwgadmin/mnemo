@@ -110,3 +110,41 @@ describe('highlight rendering', () => {
     expect(html).toContain('<code>==x==</code>');
   });
 });
+
+describe('tables', () => {
+  it('parses cells with offsets, alignment, escaped pipes, and pipes inside code', async () => {
+    const { parseMarkdownTable } = await import('./markdownTable');
+    const src = '| A | B |\n|:--|--:|\n| `a|b` | x \\| y |\n';
+    const t = parseMarkdownTable(src, 100)!;
+    expect(t.aligns).toEqual(['left', 'right']);
+    expect(t.header.map(c => c.text)).toEqual(['A', 'B']);
+    expect(t.rows[0]!.map(c => c.text)).toEqual(['`a|b`', 'x \\| y']);
+    expect(t.header[1]!.from).toBe(100 + src.indexOf('B'));
+    expect(parseMarkdownTable('| A |\n| nope |', 0)).toBeNull();
+  });
+
+  it('replaces a table with a widget only when the cursor is outside it', async () => {
+    const { buildTableDecorations } = await import('./livePreview');
+    const md = 'intro\n\n| A | B |\n| --- | --- |\n| 1 | **2** |\n\nend';
+    const count = (cursor: number) => {
+      let n = 0;
+      buildTableDecorations(stateFor(md, cursor)).between(0, md.length, () => void n++);
+      return n;
+    };
+    expect(count(0)).toBe(1);
+    expect(count(md.indexOf('**2**'))).toBe(0);
+  });
+
+  it('renders inline Markdown in cells, sanitized', async () => {
+    const { markdownInlineToHtml } = await import('./richClipboard');
+    expect(markdownInlineToHtml('**b** ==h== `c`')).toBe('<strong>b</strong> <mark>h</mark> <code>c</code>');
+    expect(markdownInlineToHtml('<img src=x onerror=alert(1)>')).not.toContain('onerror');
+  });
+});
+
+describe('table source mode', () => {
+  it('leaves inline Markdown inside a table unhidden', () => {
+    const md = '| A |\n| --- |\n| **b** [l](https://x.test) |\n\nend';
+    expect(hidden(md, md.indexOf('A'))).toEqual([]);
+  });
+});

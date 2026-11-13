@@ -112,7 +112,7 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
   ],
   [
     'Live preview',
-    'Settings → Markdown → Live preview (on by default): Obsidian-style editing. Markdown syntax (#, **, `, [](), >, ==) is hidden except on the element under the cursor; images and attachments render inline; bullets, task boxes (click to toggle), quotes, rules, and code blocks are drawn as formatted blocks. ==text== highlights. Ctrl/⌘-click a link to open it (https links open in the browser, 📎 attachments open a Save dialog). Turn it off to edit plain Markdown source.',
+    'Settings → Markdown → Live preview (on by default): Obsidian-style editing. Markdown syntax (#, **, `, [](), >, ==) is hidden except on the element under the cursor; images and attachments render inline; bullets, task boxes (click to toggle), quotes, rules, and code blocks are drawn as formatted blocks; tables render as tables (click a cell to edit the table source). ==text== highlights. Ctrl/⌘-click a link to open it (https links open in the browser, 📎 attachments open a Save dialog). Turn it off to edit plain Markdown source.',
   ],
   [
     'Rich copy & paste',

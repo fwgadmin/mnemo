@@ -7,7 +7,7 @@
  * its raw Markdown so it can be edited directly.
  */
 import { syntaxTree } from '@codemirror/language';
-import type { EditorState, Extension, Range } from '@codemirror/state';
+import { StateField, type EditorState, type Extension, type Range, type Transaction } from '@codemirror/state';
 import {
   Decoration,
   type DecorationSet,
@@ -21,6 +21,8 @@ import type { MarkdownConfig } from '@lezer/markdown';
 import type { SyntaxNodeRef } from '@lezer/common';
 import { parseAttachmentUrl } from '../../shared/attachments';
 import { parseMediaDisplayOptions } from './mediaMarkdown';
+import { parseMarkdownTable, type ParsedTable } from './markdownTable';
+import { markdownInlineToHtml } from './richClipboard';
 
 // ─── ==highlight== syntax (Obsidian) ─────────────────────────────────────────────
 
@@ -147,6 +149,81 @@ class ImageWidget extends WidgetType {
   }
 }
 
+/** Rendered GFM table; clicking a cell moves the cursor to that cell's Markdown (revealing the source). */
+class TableWidget extends WidgetType {
+  constructor(private readonly source: string, private readonly table: ParsedTable) {
+    super();
+  }
+  eq(o: TableWidget): boolean {
+    return o.source === this.source && o.table.header[0]?.from === this.table.header[0]?.from;
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-lp-table-wrap';
+    const table = document.createElement('table');
+    table.className = 'cm-lp-table';
+    const addRow = (parent: HTMLElement, cells: ParsedTable['header'], tag: 'th' | 'td') => {
+      const tr = document.createElement('tr');
+      const width = Math.max(this.table.aligns.length, cells.length);
+      for (let i = 0; i < width; i++) {
+        const cell = cells[i];
+        const el = document.createElement(tag);
+        const align = this.table.aligns[i];
+        if (align) el.style.textAlign = align;
+        // Sanitized by rehype-sanitize (same schema as rich copy).
+        el.innerHTML = cell ? markdownInlineToHtml(cell.text) : '';
+        const target = cell?.from ?? cells[cells.length - 1]?.from ?? 0;
+        el.addEventListener('mousedown', e => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          view.dispatch({ selection: { anchor: target }, scrollIntoView: true });
+          view.focus();
+        });
+        tr.appendChild(el);
+      }
+      parent.appendChild(tr);
+    };
+    const thead = document.createElement('thead');
+    addRow(thead, this.table.header, 'th');
+    const tbody = document.createElement('tbody');
+    for (const row of this.table.rows) addRow(tbody, row, 'td');
+    table.append(thead, tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+/** Block-level table widgets (multi-line replacements must come from a state field, not a view plugin). */
+export function buildTableDecorations(state: EditorState): DecorationSet {
+  const out: Range<Decoration>[] = [];
+  syntaxTree(state).iterate({
+    enter: node => {
+      if (node.name !== 'Table') return;
+      const from = state.doc.lineAt(node.from).from;
+      const to = state.doc.lineAt(node.to).to;
+      if (!touches(state, from, to)) {
+        const source = state.doc.sliceString(from, to);
+        const parsed = parseMarkdownTable(source, from);
+        if (parsed) out.push(Decoration.replace({ widget: new TableWidget(source, parsed), block: true }).range(from, to));
+      }
+      return false;
+    },
+  });
+  return Decoration.set(out, true);
+}
+
+const tableField = StateField.define<DecorationSet>({
+  create: state => buildTableDecorations(state),
+  update: (value, tr: Transaction) =>
+    tr.docChanged || tr.selection || syntaxTree(tr.startState) !== syntaxTree(tr.state)
+      ? buildTableDecorations(tr.state)
+      : value,
+  provide: f => [EditorView.decorations.from(f), EditorView.atomicRanges.of(view => view.state.field(f))],
+});
+
 // ─── Decoration builder ──────────────────────────────────────────────────────────
 
 const hide = Decoration.replace({});
@@ -213,6 +290,9 @@ export function buildLivePreviewDecorations(
       to,
       enter: node => {
         const name = node.name;
+
+        // Tables render as a block widget off the cursor (tableField) and as plain source while being edited.
+        if (name === 'Table') return false;
 
         const heading = /^ATXHeading(\d)$/.exec(name);
         if (heading) {
@@ -432,6 +512,21 @@ const livePreviewTheme = EditorView.baseTheme({
     borderRadius: '4px',
     border: '1px solid var(--mnemo-border)',
   },
+  '.cm-lp-table-wrap': { overflowX: 'auto', padding: '0.35em 0' },
+  '.cm-lp-table': { borderCollapse: 'collapse', fontSize: '0.95em' },
+  '.cm-lp-table th, .cm-lp-table td': {
+    border: '1px solid var(--mnemo-border-strong)',
+    padding: '0.25em 0.6em',
+    cursor: 'text',
+    verticalAlign: 'top',
+  },
+  '.cm-lp-table th': {
+    fontWeight: '600',
+    backgroundColor: 'color-mix(in srgb, var(--mnemo-editor-foreground) 6%, transparent)',
+  },
+  '.cm-lp-table code': { fontFamily: 'var(--mnemo-editor-mono-font-family)', fontSize: '0.9em' },
+  '.cm-lp-table mark': { backgroundColor: 'color-mix(in srgb, var(--mnemo-accent) 28%, transparent)', color: 'inherit' },
+  '.cm-lp-table a': { color: 'var(--mnemo-editor-link)' },
   '.cm-lp-image-center': { textAlign: 'center' },
   '.cm-lp-image-right': { textAlign: 'right' },
   '.cm-lp-image-left': { textAlign: 'left' },
@@ -439,5 +534,5 @@ const livePreviewTheme = EditorView.baseTheme({
 
 /** Live preview extension. `openLink` receives the raw link target on Ctrl/⌘-click. */
 export function livePreview(openLink: (href: string) => void): Extension {
-  return [livePreviewPlugin, livePreviewLinkClicks(openLink), livePreviewTheme];
+  return [livePreviewPlugin, tableField, livePreviewLinkClicks(openLink), livePreviewTheme];
 }
