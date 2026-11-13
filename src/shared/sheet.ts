@@ -28,8 +28,20 @@ export interface CellFormat {
   dp?: number;
 }
 
+export type SheetChartType = 'column' | 'bar' | 'line' | 'stacked';
+
+/** A chart of a cell range: first column = categories, other columns = series (row 1 = names when text). */
+export interface SheetChart {
+  id: string;
+  type: SheetChartType;
+  /** A1 range on the same sheet, e.g. "A1:C12". */
+  range: string;
+  title?: string;
+}
+
 export interface SheetData {
   name: string;
+  charts?: SheetChart[];
   /** A1 address → presentation (bold, colors, number format…). */
   formats?: Record<string, CellFormat>;
   /** A1 address → raw input. Empty strings are not stored. */
@@ -121,6 +133,10 @@ function cleanSheet(raw: unknown, index: number): SheetData {
     }
   }
   const sheet: SheetData = { name, cells };
+  if (Array.isArray(o['charts'])) {
+    const charts = (o['charts'] as unknown[]).map(cleanChart).filter((c): c is SheetChart => !!c).slice(0, 50);
+    if (charts.length) sheet.charts = charts;
+  }
   if (o['formats'] && typeof o['formats'] === 'object') {
     const formats: Record<string, CellFormat> = {};
     for (const [k, v] of Object.entries(o['formats'] as Record<string, unknown>)) {
@@ -179,6 +195,19 @@ export function cleanFormat(raw: unknown): CellFormat | null {
   }
   if (typeof o['dp'] === 'number' && Number.isInteger(o['dp']) && o['dp'] >= 0 && o['dp'] <= 10) f.dp = o['dp'];
   return Object.keys(f).length ? f : null;
+}
+
+const CHART_TYPES: readonly SheetChartType[] = ['column', 'bar', 'line', 'stacked'];
+
+export function cleanChart(raw: unknown): SheetChart | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const range = typeof o['range'] === 'string' ? o['range'].trim().toUpperCase() : '';
+  if (!parseRange(range)) return null;
+  const type = CHART_TYPES.includes(o['type'] as SheetChartType) ? (o['type'] as SheetChartType) : 'column';
+  const id = typeof o['id'] === 'string' && /^[a-z0-9-]{1,40}$/i.test(o['id']) ? o['id'] : `c${Math.random().toString(36).slice(2, 10)}`;
+  const title = typeof o['title'] === 'string' ? o['title'].slice(0, 120) : undefined;
+  return { id, type, range, ...(title ? { title } : {}) };
 }
 
 function uniquifySheetNames(sheets: SheetData[]): void {
