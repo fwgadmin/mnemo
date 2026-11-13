@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../shared/types';
 import type { AttachmentMeta } from '../shared/attachments';
+import type { SheetData, SheetExportPayload } from '../shared/sheet';
 import type {
   Note,
   NoteListItem,
@@ -22,6 +23,12 @@ import type {
 } from '../shared/types';
 
 export interface MnemoAPI {
+  sheets: {
+    /** Pick a CSV/TSV/XLSX file and return its sheets (null when cancelled). */
+    importFile(): Promise<SheetData[] | null>;
+    /** Save computed values (CSV, active sheet) or values + formulas (XLSX, all sheets); false when cancelled. */
+    exportFile(payload: SheetExportPayload): Promise<boolean>;
+  };
   attachments: {
     /** Store bytes in the active workspace; returns metadata and the `mnemo-asset://` URL to embed. */
     put(input: { bytes: ArrayBuffer; mime: string; name: string }): Promise<{ meta: AttachmentMeta; url: string }>;
@@ -125,6 +132,10 @@ export interface MnemoAPI {
 }
 
 const api: MnemoAPI = {
+  sheets: {
+    importFile: () => ipcRenderer.invoke(IPC.SHEET_IMPORT_FILE),
+    exportFile: (payload) => ipcRenderer.invoke(IPC.SHEET_EXPORT_FILE, payload),
+  },
   attachments: {
     put: (input) => ipcRenderer.invoke(IPC.ATTACHMENT_PUT, input),
     saveAs: (url, suggestedName) => ipcRenderer.invoke(IPC.ATTACHMENT_SAVE_AS, url, suggestedName),

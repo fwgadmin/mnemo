@@ -3,6 +3,7 @@
  * Node CLI bundle: MCP stdio, MCP HTTP (spawn), and note subcommands.
  * The `mnemo` shell wrapper (bin/mnemo.js) also launches the Electron GUI when not using these subcommands.
  */
+import { cmdSheet } from './cliSheet';
 import { recoverMisplacedDefaultWorkspace } from './workspaceLayoutRecovery';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1950,6 +1951,11 @@ async function main(): Promise<void> {
 
   if (cmd === 'workspace') {
     await cmdWorkspace(rest);
+    return;
+  }
+
+  if (cmd === 'sheet') {
+    await cmdSheet(rest, openStoreForNote);
     return;
   }
 

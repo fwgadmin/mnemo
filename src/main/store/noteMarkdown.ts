@@ -17,8 +17,7 @@ export function serializeNoteMarkdown(note: Note): string {
     `modified: ${quoted(note.modified)}`,
     `tenantId: ${quoted(note.tenantId)}`,
     `hideHeader: ${note.hideHeader}`,
-    '---',
-    '',
-    note.body,
+    // Sheet notes: the body is the spreadsheet document (JSON); kept in a fence so the file stays valid Markdown.
+    ...(note.kind === 'sheet' ? ['kind: "sheet"', '---', '', '```mnemo-sheet', note.body, '```'] : ['---', '', note.body]),
   ].join('\n');
 }

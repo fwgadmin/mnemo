@@ -3,7 +3,7 @@ import type { Client, InValue } from '@libsql/client';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const CURRENT_NOTE_SCHEMA_VERSION = 6;
+export const CURRENT_NOTE_SCHEMA_VERSION = 7;
 
 /** Cleanup remains disabled until the minimum supported released client understands tombstones. */
 export const NOTE_TOMBSTONE_RETENTION_POLICY = Object.freeze({
@@ -25,6 +25,7 @@ export const NOTE_STORE_MIGRATIONS: readonly NoteStoreMigration[] = [
   { version: 4, name: 'note-deletion-tombstones' },
   { version: 5, name: 'tenant-list-indexes' },
   { version: 6, name: 'attachments' },
+  { version: 7, name: 'note-kind' },
 ];
 
 /** Content-addressed attachment metadata + fixed-size chunks (metadata row is written last = commit marker). */
@@ -213,6 +214,10 @@ function applyLocalMigration(db: Database.Database, migration: NoteStoreMigratio
       db.exec('CREATE INDEX IF NOT EXISTS idx_notes_tenant_title ON notes(tenant_id, title COLLATE NOCASE)');
     } else if (migration.version === 6) {
       for (const sql of ATTACHMENT_SCHEMA_STATEMENTS) db.exec(sql);
+    } else if (migration.version === 7) {
+      if (!localColumns(db, 'notes').has('kind')) {
+        db.exec("ALTER TABLE notes ADD COLUMN kind TEXT NOT NULL DEFAULT 'markdown'");
+      }
     }
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)')
       .run(migration.version, appliedAt);
@@ -274,6 +279,10 @@ async function applyRemoteMigration(client: Client, migration: NoteStoreMigratio
     );
   } else if (migration.version === 6) {
     statements.push(...ATTACHMENT_SCHEMA_STATEMENTS.map(sql => ({ sql })));
+  } else if (migration.version === 7) {
+    if (!(await remoteColumns(client, 'notes')).has('kind')) {
+      statements.push({ sql: "ALTER TABLE notes ADD COLUMN kind TEXT NOT NULL DEFAULT 'markdown'" });
+    }
   }
   statements.push({
     sql: 'INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)',

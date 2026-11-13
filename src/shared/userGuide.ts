@@ -122,6 +122,10 @@ export const DESKTOP_EDITOR_FEATURES_ROWS: string[][] = [
     'Settings → Markdown → Formatting toolbar (on by default): selecting text shows a toolbar for bold, italic, strikethrough, highlight, inline code, link, headings 1–3, quote, and bulleted / numbered / task lists. Every button and shortcut toggles, so applying it again removes the formatting.',
   ],
   [
+    'Spreadsheets',
+    'File → New Spreadsheet (or the command palette) creates a spreadsheet note: a grid with a formula bar, multiple sheets (tabs: + to add, double-click to rename, right-click to delete), ~400 Excel functions (=SUM(A1:A9), =VLOOKUP(…), =Sheet2!B4, =\'Q1 Totals\'!A1), Excel-style keyboard navigation, undo/redo, copy/paste (formulas shift like Excel; pastes from Excel/Sheets arrive as values), right-click to insert/delete rows and columns (formulas are rewritten), and draggable column widths. Import… reads CSV/TSV/XLSX; CSV exports the current sheet\'s values, XLSX exports every sheet with formulas. From the terminal: mnemo help sheet. MCP: create_sheet, read_sheet, update_sheet_cells.',
+  ],
+  [
     'Rich copy & paste',
     'Pasting formatted text from a browser, Google Docs, Word, or email converts it to Markdown (headings, lists, links, tables, ==highlights==). Code blocks and code-editor copies stay literal; use right-click → Paste as plain text to skip conversion. Copying a selection puts both Markdown and formatted HTML (with images) on the clipboard.',
   ],
@@ -162,6 +166,7 @@ export const CLI_HELP_TOPICS = [
   'workspace',
   'sync',
   'note',
+  'sheet',
   'mcp',
   'mcp-http',
   'config',
@@ -562,6 +567,7 @@ export function formatCliHelpTopicsIndex(): string {
   workspace    workspace-profiles.json, mnemo workspace …, tenants
   sync         mnemo sync push / pull, Settings buttons, merge rules
   note         Legacy mnemo note … only
+  sheet        Spreadsheet notes: mnemo sheet new / show / set / list
   mcp          MCP stdio: --workspace, resources, tools, prompts
   mcp-http     MCP over Streamable HTTP
   config       cli.json and JSON output defaults
@@ -587,6 +593,8 @@ export function formatCliHelpTopic(topic: string): string | null {
       return [sectionDataLocations(), sectionRemoteDb(), sectionSync()].join('\n');
     case 'note':
       return sectionNoteLegacy();
+    case 'sheet':
+      return sectionSheet();
     case 'mcp':
       return sectionMcpStdio();
     case 'mcp-http':
@@ -602,6 +610,20 @@ export function formatCliHelpTopic(topic: string): string | null {
     default:
       return null;
   }
+}
+
+function sectionSheet(): string {
+  return `Spreadsheet notes (kind "sheet")
+
+  mnemo sheet new --title "Budget" [-c Category] [--from file.csv|file.xlsx]
+  mnemo sheet show <ref|uuid> [--sheet NAME] [--range A1:D20] [--csv|--tsv|--json] [--formulas]
+  mnemo sheet set <ref|uuid> <A1> <value> [--sheet NAME]     value "=…" is a formula; "" clears the cell
+  mnemo sheet list
+
+Cells hold raw input; formulas (=SUM(A1:A3), =Sheet2!B4, ='Q1 Totals'!A1, IF, VLOOKUP, ROUND, … ~400 Excel
+functions) are computed when shown. Values print as the desktop grid displays them. Global flags --workspace,
+--db, --vault work as for note commands. In the desktop app: File → New Spreadsheet.
+`;
 }
 
 /** @deprecated Use formatCliHelpOverview() or formatCliHelpTopic(). */

@@ -2,6 +2,8 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } fr
 import Sidebar from './components/Sidebar';
 import Editor, { type EditorHandle } from './components/Editor';
 import MarkdownPreviewPanel from './components/MarkdownPreviewPanel';
+import SheetEditor from './components/SheetEditor';
+import { emptySheetDoc, serializeSheetDoc } from '../shared/sheet';
 import BacklinksPanel from './components/BacklinksPanel';
 import GraphView from './components/GraphView';
 import CommandPalette from './components/CommandPalette';
@@ -812,6 +814,7 @@ export default function App() {
           tenantId: 'default',
           links: [],
           hideHeader: false,
+          kind: 'markdown',
           filePath: abs,
         });
         if (effectiveLayoutRef.current === 'ide') {
@@ -997,6 +1000,23 @@ export default function App() {
     }
   }, [loadNotes, showNoteHeader]);
 
+  const handleCreateSheet = useCallback(async () => {
+    if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) return;
+    const note = await window.mnemo.notes.create({
+      title: 'Untitled spreadsheet',
+      body: serializeSheetDoc(emptySheetDoc()),
+      tags: [],
+      kind: 'sheet',
+    });
+    saveQueueRef.current!.seedRevision(note.id, note.modified);
+    await loadNotes();
+    if (showNoteHeader && !note.hideHeader) focusTitleForNoteIdRef.current = note.id;
+    setActiveNote(note);
+    if (effectiveLayoutRef.current === 'ide') {
+      setOpenTabIds((prev) => mruOpenTabIds(prev, note.id));
+    }
+  }, [loadNotes, showNoteHeader]);
+
   const handleCloseAllTabs = useCallback(async () => {
     if (editorRef.current?.isDirty() && !(await editorRef.current.flush())) return;
     setOpenTabIds([]);
@@ -1172,6 +1192,9 @@ export default function App() {
       switch (command) {
         case 'new-note':
           handleCreateNote();
+          break;
+        case 'new-sheet':
+          void handleCreateSheet();
           break;
         case 'save':
           setSaveSignal((s) => s + 1);
@@ -1638,6 +1661,7 @@ export default function App() {
             tenantId: 'default',
             links: [],
             hideHeader: false,
+            kind: 'markdown',
             filePath: abs,
           });
           return;
@@ -1735,6 +1759,17 @@ export default function App() {
                 )}
               </div>
             )}
+            {activeNote.kind === 'sheet' && !activeNote.filePath ? (
+              <SheetEditor
+                ref={editorRef}
+                note={activeNote}
+                onUpdate={handleUpdateNote}
+                onDirty={noteId => setSaveState({ noteId, status: 'dirty' })}
+                showHeader={showNoteHeader && !activeNote.hideHeader}
+                saveSignal={saveSignal}
+                reloadNonce={editorReloadNonce}
+              />
+            ) : (
             <Editor
               ref={editorRef}
               note={activeNote}
@@ -1754,6 +1789,7 @@ export default function App() {
               showSummaryMenuItems={showSummaryMenuItems}
               tenantId={activeNote.tenantId}
             />
+            )}
           </div>
           {!activeNote.filePath && <BacklinksPanel noteId={activeNote.id} onSelectNote={handleSelectNote} />}
         </>
@@ -1782,7 +1818,7 @@ export default function App() {
   const rightRail = (
     <>
       {rightPanel === 'markdown-help' && <MarkdownHelper onClose={() => setRightPanel('none')} />}
-      {rightPanel === 'markdown-preview' && activeNote && (
+      {rightPanel === 'markdown-preview' && activeNote && activeNote.kind !== 'sheet' && (
         <MarkdownPreviewPanel
           body={previewBody}
           onScrollToLine={(line) => editorRef.current?.scrollToLine(line)}

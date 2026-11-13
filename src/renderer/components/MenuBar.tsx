@@ -17,6 +17,7 @@ const MENUS: MenuDef[] = [
     label: 'File',
     items: [
       { label: 'New Note', cmd: 'new-note', shortcut: 'Ctrl+N' },
+      { label: 'New Spreadsheet', cmd: 'new-sheet' },
       { separator: true, label: '' },
       { label: 'Save', cmd: 'save', shortcut: 'Ctrl+S' },
       { label: 'Save As…', cmd: 'save-as', shortcut: 'Ctrl+Shift+S' },

@@ -11,7 +11,7 @@ function saved(input: SaveNoteInput, modified: string): SaveNoteResult {
     modified,
     tenantId: 'default',
     links: [],
-    hideHeader: false,
+    hideHeader: false, kind: 'markdown' as const,
   };
   return { status: 'saved', note, listItem: { ...note, snippet: note.body } };
 }

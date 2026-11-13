@@ -11,7 +11,7 @@ describe('saveNoteWithOutgoingLinks', () => {
     ];
     const note: Note = {
       id: 'source', ref: 1, title: 'Source', body: '[[Explicit]] and Inferred Topic', tags: [],
-      created: 'c', modified: 'r2', tenantId: 'default', links: ['explicit', 'inferred'], hideHeader: false,
+      created: 'c', modified: 'r2', tenantId: 'default', links: ['explicit', 'inferred'], hideHeader: false, kind: 'markdown',
     };
     const result: SaveNoteResult = {
       status: 'saved',
