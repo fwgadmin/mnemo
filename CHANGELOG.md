@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Security (HTTP MCP):** hono 4.13.16 and @hono/node-server 2.1.6 (the MCP SDK accepts the 2.x line) clear the remaining moderate advisories: path traversal and middleware bypass, double path decoding, and a WebSocket-upgrade crash. `npm audit` is now 4 low, 0 moderate/high/critical. These two releases are 11–12 days old, an explicit owner-approved exception to the two-week dependency-age rule.
 - **Spreadsheet charts:**
   - **Inserting:** use 📊 in the toolbar or right-click → Insert chart from selection.
   - **Types:** column, bar, line, or stacked (share). The first column gives the labels, the other columns give up to 8 series, and a text header row names them.
