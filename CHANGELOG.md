@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Linux app menu:** launching Mnemo from the app menu opens the app again. The `.deb` menu entry runs a bare `mnemo`, which the launcher sent to the CLI (recent notes) and exited; a bare `mnemo` with no terminal now opens the app, while typing `mnemo` in a terminal still shows recent notes.
+
 ## 2.2.1 — 2026-11-13
 
 - **Release:** `mnemo-note@2.2.1` on npm; tag **`v2.2.1`** on GitHub. Windows installers are still unsigned (see 2.2.0).
