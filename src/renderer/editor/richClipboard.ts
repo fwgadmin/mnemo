@@ -119,6 +119,21 @@ export interface MarkdownToHtmlOptions {
   inlineBudgetBytes?: number;
 }
 
+/** Render inline Markdown (one table cell, one line) to sanitized HTML, synchronously, without a wrapping <p>. */
+export function markdownInlineToHtml(markdown: string): string {
+  const html = String(
+    unified()
+      .use(remarkParse)
+      .use(remarkGfm)
+      .use(remarkHighlight)
+      .use(remarkRehype, { allowDangerousHtml: false })
+      .use(rehypeSanitize, htmlSchema)
+      .use(rehypeStringify)
+      .processSync(markdown),
+  );
+  return html.replace(/^<p>([\s\S]*)<\/p>\s*$/, '$1');
+}
+
 /** Render Markdown to sanitized HTML for the clipboard (wrapped with the Mnemo marker). */
 export async function markdownToClipboardHtml(markdown: string, options: MarkdownToHtmlOptions = {}): Promise<string> {
   const file = await unified()
