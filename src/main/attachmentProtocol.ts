@@ -16,7 +16,7 @@ export function registerAttachmentScheme(): void {
   protocol.registerSchemesAsPrivileged([
     {
       scheme: ATTACHMENT_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
     },
   ]);
 }
@@ -43,6 +43,16 @@ const SECURITY_HEADERS = {
 } as const;
 
 /**
+ * The renderer runs from `file://` (packaged) or the dev server, so `fetch()` of an asset is cross-origin and
+ * Electron ≥ 43 enforces CORS for it. Only this app's own windows can reach this session's protocol handler, so
+ * echoing the caller's origin grants exactly those pages read access (image copy, rich-copy inlining).
+ */
+function corsHeaders(request: Request): Record<string, string> {
+  const origin = request.headers.get('origin');
+  return origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {};
+}
+
+/**
  * Serve `mnemo-asset://asset/<sha256>.<ext>` from the active workspace's store.
  * Only GET, only well-formed hashes, only the active tenant; bytes are hash-verified by the store.
  */
@@ -56,7 +66,12 @@ export function handleAttachmentProtocol(getContext: () => Promise<WorkspaceStor
       const stored = await ctx.store.getAttachment(parsed.hash, ctx.tenantId);
       if (!stored) return new Response(null, { status: 404 });
       const { bytes, meta } = stored;
-      const base = { ...SECURITY_HEADERS, 'Content-Type': meta.mime, 'Accept-Ranges': 'bytes' };
+      const base = {
+        ...SECURITY_HEADERS,
+        ...corsHeaders(request),
+        'Content-Type': meta.mime,
+        'Accept-Ranges': 'bytes',
+      };
       const range = parseRange(request.headers.get('range'), bytes.byteLength);
       if (range) {
         const body = request.method === 'HEAD' ? null : Buffer.from(bytes.subarray(range.start, range.end + 1));
