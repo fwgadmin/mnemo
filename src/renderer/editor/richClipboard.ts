@@ -8,6 +8,7 @@ import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
+import remarkHighlight from './remarkHighlight';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
 import { MAX_ATTACHMENT_BYTES, parseAttachmentUrl } from '../../shared/attachments';
@@ -104,7 +105,7 @@ export function htmlToMarkdown(html: string): string {
 
 const htmlSchema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames ?? []), 'del'],
+  tagNames: [...(defaultSchema.tagNames ?? []), 'del', 'mark'],
   protocols: {
     ...defaultSchema.protocols,
     src: [...(defaultSchema.protocols?.src ?? []), 'data', 'mnemo-asset'],
@@ -123,6 +124,7 @@ export async function markdownToClipboardHtml(markdown: string, options: Markdow
   const file = await unified()
     .use(remarkParse)
     .use(remarkGfm)
+    .use(remarkHighlight)
     .use(remarkRehype, { allowDangerousHtml: false })
     .use(rehypeSanitize, htmlSchema)
     .use(rehypeStringify)

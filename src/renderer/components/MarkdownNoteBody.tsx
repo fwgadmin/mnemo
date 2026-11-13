@@ -1,6 +1,7 @@
 import { Children, isValidElement, useEffect, useId, useRef, type ReactNode } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkHighlight from '../editor/remarkHighlight';
 import rehypeSanitize from 'rehype-sanitize';
 import { defaultSchema } from 'rehype-sanitize';
 import mermaid from 'mermaid';
@@ -67,7 +68,7 @@ function MermaidBlock({ code }: { code: string }) {
 
 const sanitizeSchema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames ?? []), 'del'],
+  tagNames: [...(defaultSchema.tagNames ?? []), 'del', 'mark'],
   attributes: {
     ...defaultSchema.attributes,
     code: ['className', 'class'],
@@ -288,10 +289,11 @@ export default function MarkdownNoteBody({ body, className = '', onBodyChange }:
         [&_a]:text-mnemo-accent [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5
         [&_blockquote]:border-l-2 [&_blockquote]:border-mnemo-border [&_blockquote]:pl-3 [&_blockquote]:text-mnemo-muted
         [&_table]:w-full [&_table]:text-[11px] [&_th]:border [&_td]:border [&_th]:border-mnemo-border [&_td]:border-mnemo-border [&_th]:px-2 [&_td]:px-2 [&_th]:py-1 [&_td]:py-1
+        [&_mark]:rounded-sm [&_mark]:px-0.5 [&_mark]:text-inherit [&_mark]:bg-[color-mix(in_srgb,var(--mnemo-accent)_28%,transparent)]
         [&_.mermaid-svg_svg]:max-w-full ${className}`}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkHighlight]}
         rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
         urlTransform={markdownUrlTransform}
         components={{

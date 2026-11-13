@@ -132,6 +132,7 @@ export function sanitizePrefs(raw: unknown): MnemoUiPreferences {
   if (typeof o.showNoteRefs === 'boolean') out.showNoteRefs = o.showNoteRefs;
   if (typeof o.editorSpellcheck === 'boolean') out.editorSpellcheck = o.editorSpellcheck;
   if (typeof o.editorAutocomplete === 'boolean') out.editorAutocomplete = o.editorAutocomplete;
+  if (typeof o.editorLivePreview === 'boolean') out.editorLivePreview = o.editorLivePreview;
   if (typeof o.grouped === 'boolean') out.grouped = o.grouped;
   if (typeof o.categoryScopeSubtree === 'boolean') out.categoryScopeSubtree = o.categoryScopeSubtree;
   if (typeof o.autoColorCategories === 'boolean') out.autoColorCategories = o.autoColorCategories;

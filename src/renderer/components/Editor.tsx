@@ -45,6 +45,8 @@ import { clampFixedContextMenu } from '../fixedMenuPosition';
 import type { Note } from '../../shared/types';
 import MarkdownNoteBody from './MarkdownNoteBody';
 import { isEmbeddableFileType, markdownForMediaFiles } from '../editor/mediaMarkdown';
+import { livePreview, markdownHighlight } from '../editor/livePreview';
+import { parseAttachmentUrl } from '../../shared/attachments';
 import { htmlToMarkdown, isBlockMarkdown, shouldConvertHtmlPaste, writeRichMarkdownToClipboard } from '../editor/richClipboard';
 
 function readNoteBodyMode(): 'edit' | 'preview' {
@@ -282,6 +284,17 @@ async function editorPaste(view: EditorView, plainOnly = false): Promise<void> {
   insertPlainText(view, await clipboardReadText());
 }
 
+/** Ctrl/⌘-click target from live preview: web links open externally, attachments open a Save dialog. */
+function openLivePreviewLink(href: string): void {
+  if (parseAttachmentUrl(href)) {
+    void window.mnemo.attachments.saveAs(href).catch((err: unknown) => {
+      window.alert(err instanceof Error ? err.message : String(err));
+    });
+    return;
+  }
+  if (/^https:\/\//i.test(href)) window.open(href, '_blank', 'noopener');
+}
+
 /**
  * Single non-empty selection: put exact Markdown on the clipboard synchronously, then upgrade it to
  * Markdown + rendered HTML asynchronously. Anything else (empty / multiple selections) uses CodeMirror's default.
@@ -333,6 +346,8 @@ interface EditorProps {
   reloadNonce?: number;
   editorSpellcheck?: boolean;
   editorAutocomplete?: boolean;
+  /** Obsidian-style live preview: hide Markdown syntax away from the cursor (default true). */
+  editorLivePreview?: boolean;
   /** When false, context menu omits Copy/Paste as summary. */
   showSummaryMenuItems?: boolean;
   tenantId?: string;
@@ -352,6 +367,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     reloadNonce = 0,
     editorSpellcheck = true,
     editorAutocomplete = true,
+    editorLivePreview = true,
     showSummaryMenuItems = false,
     tenantId = 'default',
   },
@@ -376,6 +392,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const lineNumbersCompartment = useRef(new Compartment());
   const spellcheckCompartment = useRef(new Compartment());
   const autocompleteCompartment = useRef(new Compartment());
+  const livePreviewCompartment = useRef(new Compartment());
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const summarizingRef = useRef(false);
@@ -600,7 +617,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       },
     });
 
-    const markdownSupport = markdown({ base: markdownLanguage, codeLanguages: mnemoMarkdownCodeLanguages });
+    const markdownSupport = markdown({
+      base: markdownLanguage,
+      codeLanguages: mnemoMarkdownCodeLanguages,
+      extensions: [markdownHighlight],
+    });
 
     /** Fold gutter left of line numbers so folding sits outside the number column. */
     const gutterExtensions = showLineNumbers
@@ -675,6 +696,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         updateListener,
         clickHandler,
         wikilinkDecorations(),
+        livePreviewCompartment.current.of(editorLivePreview !== false ? livePreview(openLivePreviewLink) : []),
         EditorView.lineWrapping,
         EditorView.clipboardInputFilter.of((text) => normalizeLineSeparators(text)),
       ],
@@ -707,6 +729,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       ),
     });
   }, [editorSpellcheck]);
+
+  useEffect(() => {
+    const v = viewRef.current;
+    if (!v) return;
+    v.dispatch({
+      effects: livePreviewCompartment.current.reconfigure(
+        editorLivePreview !== false ? livePreview(openLivePreviewLink) : [],
+      ),
+    });
+  }, [editorLivePreview]);
 
   useEffect(() => {
     const v = viewRef.current;

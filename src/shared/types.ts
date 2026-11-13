@@ -229,6 +229,11 @@ export interface MnemoUiPreferences {
    */
   editorAutocomplete?: boolean;
   /**
+   * When true (default), the note editor uses Obsidian-style live preview: Markdown syntax is hidden away from the
+   * cursor, images render inline, and task boxes are clickable. False shows plain Markdown source.
+   */
+  editorLivePreview?: boolean;
+  /**
    * Optional absolute path to a project folder. Markdown files are imported into the vault (category `Workspace/…`)
    * and kept in sync via **File → Open Workspace Folder…** / **Sync workspace**.
    */
