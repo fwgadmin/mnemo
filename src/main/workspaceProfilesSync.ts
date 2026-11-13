@@ -1,9 +1,9 @@
 /**
  * Merge workspace-profiles.json with Turso app_kv (same pattern as ui-preferences).
- * Last-write-wins: compare disk mtime vs app_kv.updated_at.
+ * Newer side wins per field (disk mtime vs app_kv.updated_at), but a placeholder name (the id) never
+ * replaces a real one and profiles missing from one side are kept unless tombstoned.
  * Remote payload is workspace list + storage + optional deletion tombstones; activeWorkspaceId stays on disk per device (not synced).
- * When cloud is newer, the remote workspace list wins for inherit/remote profiles; local-only `sqlite`
- * workspaces are merged in. Deletion tombstones are union-merged so removed vaults stay removed across devices.
+ * Deletion tombstones are union-merged so removed vaults stay removed across devices.
  * After merge, we add profile rows for any tenant_id present in the DB but missing from profiles (repair).
  * If the active inherit workspace has no notes but another inherit workspace does (e.g. after profile sync skew),
  * switch active to the tenant with the most notes so the vault is not empty on load.
@@ -20,7 +20,8 @@ import {
   mergeDeletedWorkspaceIds,
   mergeWorkspacesWhenCloudNewer,
   parseWorkspaceProfilesKvPayload,
-  readWorkspaceProfilesFile,
+  readWorkspaceProfilesFileResult,
+  restoreWorkspaceNames,
   workspaceProfilesFilePath,
   workspaceProfilesRemotePayload,
   WORKSPACE_PROFILES_KV_KEY,
@@ -115,9 +116,11 @@ export async function readWorkspaceProfilesMerged(
   root: string,
 ): Promise<WorkspaceProfilesState> {
   const p = workspaceProfilesFilePath(root);
-  const exists = fs.existsSync(p);
+  const read = readWorkspaceProfilesFileResult(root);
 
-  if (!exists) {
+  if (read.status !== 'ok') {
+    // Missing or unreadable: the cloud copy (when there is one) is the best source. Never push local
+    // defaults to the cloud from here — that is what used to erase workspace names everywhere.
     if (store instanceof TursoNoteStore) {
       const entry = await store.getKvEntry(WORKSPACE_PROFILES_KV_KEY);
       if (entry) {
@@ -139,12 +142,13 @@ export async function readWorkspaceProfilesMerged(
         }
       }
     }
+    if (read.status === 'unreadable') return read.state;
     const d = defaultWorkspaceProfilesState();
-    writeWorkspaceProfilesFile(root, d);
+    writeWorkspaceProfilesFileDiskOnly(root, d);
     return finalizeWithTenantRepair(store, root, d);
   }
 
-  const diskState = readWorkspaceProfilesFile(root);
+  const diskState = read.state;
   const diskMtime = fs.statSync(p).mtimeMs;
 
   if (!(store instanceof TursoNoteStore)) {
@@ -181,7 +185,20 @@ export async function readWorkspaceProfilesMerged(
   }
 
   if (diskMtime > cloudUpdatedMs) {
-    await store.setKv(WORKSPACE_PROFILES_KV_KEY, JSON.stringify(workspaceProfilesRemotePayload(diskState)));
+    // Disk wins, but keep real names and profiles that only the cloud copy has (another device may
+    // have created or renamed them); tombstones from both sides still apply.
+    const mergedDeleted = mergeDeletedWorkspaceIds(diskState.deletedWorkspaceIds, cloudDeleted);
+    const diskIds = new Set(diskState.workspaces.map(w => w.id));
+    const unionW = [
+      ...restoreWorkspaceNames(diskState.workspaces, cloudWorkspaces),
+      ...cloudWorkspaces.filter(w => !diskIds.has(w.id)),
+    ];
+    const filtered = filterWorkspacesByDeletedIds(unionW, new Set(mergedDeleted));
+    const merged = combineLocalActiveWithWorkspaces(diskState.activeWorkspaceId, filtered);
+    const next: WorkspaceProfilesState = { ...merged, deletedWorkspaceIds: mergedDeleted };
+    if (JSON.stringify(next) !== JSON.stringify(diskState)) writeWorkspaceProfilesFileDiskOnly(root, next);
+    await store.setKv(WORKSPACE_PROFILES_KV_KEY, JSON.stringify(workspaceProfilesRemotePayload(next)));
+    return finalizeWithTenantRepair(store, root, next);
   }
   return finalizeWithTenantRepair(store, root, diskState);
 }
