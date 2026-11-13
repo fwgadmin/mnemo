@@ -228,6 +228,18 @@ export function restoreWorkspaceNames(
 }
 
 /**
+ * `primary` wins field-by-field; placeholder names are filled from `other`, and profiles only `other`
+ * has are appended. Callers filter tombstoned ids.
+ */
+export function mergeWorkspacesPreferring(
+  primary: WorkspaceProfileEntry[],
+  other: WorkspaceProfileEntry[],
+): WorkspaceProfileEntry[] {
+  const ids = new Set(primary.map((w) => w.id));
+  return [...restoreWorkspaceNames(primary, other), ...other.filter((w) => !ids.has(w.id))];
+}
+
+/**
  * When Turso app_kv is newer than disk: cloud entries win field-by-field, except that a placeholder
  * name (the id) never replaces a real one. Entries only on this device are kept; the caller filters
  * tombstoned ids.
@@ -407,14 +419,42 @@ export function writeWorkspaceProfilesFileDiskOnly(root: string, data: Workspace
 /** app_kv key — mirrored with workspace-profiles.json when using Turso (same DB as notes). */
 export const WORKSPACE_PROFILES_KV_KEY = 'workspace_profiles';
 
+/**
+ * Merge into the cloud copy instead of replacing it: a device whose local file was missing or stale
+ * must not erase names, profiles or deletion markers that only the cloud copy holds.
+ */
+async function mirrorMergedToKv(st: TursoNoteStore, data: WorkspaceProfilesState): Promise<void> {
+  let next = data;
+  try {
+    const entry = await st.getKvEntry(WORKSPACE_PROFILES_KV_KEY);
+    if (entry) {
+      const cloud = parseWorkspaceProfilesKvPayload(JSON.parse(entry.value) as unknown);
+      const deleted = mergeDeletedWorkspaceIds(data.deletedWorkspaceIds, cloud.deletedWorkspaceIds);
+      next = {
+        ...data,
+        workspaces: filterWorkspacesByDeletedIds(
+          mergeWorkspacesPreferring(data.workspaces, cloud.workspaces),
+          new Set(deleted),
+        ),
+        deletedWorkspaceIds: deleted,
+      };
+    }
+  } catch {
+    /* unreadable cloud copy: overwrite it with ours */
+  }
+  try {
+    await st.setKv(WORKSPACE_PROFILES_KV_KEY, JSON.stringify(workspaceProfilesRemotePayload(next)));
+  } catch {
+    /* offline: the next merged read pushes it */
+  }
+}
+
 function mirrorWorkspaceProfilesToKv(data: WorkspaceProfilesState): void {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getGlobalStore } = require('./storeResolver') as typeof import('./storeResolver');
     const st = getGlobalStore();
-    if (st instanceof TursoNoteStore) {
-      void st.setKv(WORKSPACE_PROFILES_KV_KEY, JSON.stringify(workspaceProfilesRemotePayload(data)));
-    }
+    if (st instanceof TursoNoteStore) void mirrorMergedToKv(st, data);
   } catch {
     /* ignore */
   }
