@@ -233,6 +233,8 @@ export interface MnemoUiPreferences {
    * cursor, images render inline, and task boxes are clickable. False shows plain Markdown source.
    */
   editorLivePreview?: boolean;
+  /** When true (default), show a floating formatting toolbar above a text selection in the note editor. */
+  editorFormatToolbar?: boolean;
   /**
    * Optional absolute path to a project folder. Markdown files are imported into the vault (category `Workspace/…`)
    * and kept in sync via **File → Open Workspace Folder…** / **Sync workspace**.

@@ -46,6 +46,8 @@ import type { Note } from '../../shared/types';
 import MarkdownNoteBody from './MarkdownNoteBody';
 import { isEmbeddableFileType, markdownForMediaFiles } from '../editor/mediaMarkdown';
 import { livePreview, markdownHighlight } from '../editor/livePreview';
+import { formatKeymap, formatToolbar } from '../editor/formatToolbar';
+import { inlineCommand } from '../editor/formatting';
 import { parseAttachmentUrl } from '../../shared/attachments';
 import { htmlToMarkdown, isBlockMarkdown, shouldConvertHtmlPaste, writeRichMarkdownToClipboard } from '../editor/richClipboard';
 
@@ -158,13 +160,6 @@ function mediaFilesFromTransfer(data: DataTransfer | null): File[] {
     .filter(item => item.kind === 'file')
     .map(item => item.getAsFile())
     .filter((file): file is File => !!file && isEmbeddableFileType(file.type));
-}
-
-function wrapSelectionMarkdown(view: EditorView, before: string, after: string): void {
-  const sel = view.state.selection.main;
-  const text = view.state.sliceDoc(sel.from, sel.to);
-  const insert = text ? `${before}${text}${after}` : `${before}${after}`;
-  view.dispatch({ changes: { from: sel.from, to: sel.to, insert } });
 }
 
 async function clipboardWriteText(text: string): Promise<void> {
@@ -348,6 +343,8 @@ interface EditorProps {
   editorAutocomplete?: boolean;
   /** Obsidian-style live preview: hide Markdown syntax away from the cursor (default true). */
   editorLivePreview?: boolean;
+  /** Floating formatting toolbar above a selection (default true). */
+  editorFormatToolbar?: boolean;
   /** When false, context menu omits Copy/Paste as summary. */
   showSummaryMenuItems?: boolean;
   tenantId?: string;
@@ -368,6 +365,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     editorSpellcheck = true,
     editorAutocomplete = true,
     editorLivePreview = true,
+    editorFormatToolbar = true,
     showSummaryMenuItems = false,
     tenantId = 'default',
   },
@@ -393,6 +391,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   const spellcheckCompartment = useRef(new Compartment());
   const autocompleteCompartment = useRef(new Compartment());
   const livePreviewCompartment = useRef(new Compartment());
+  const formatToolbarCompartment = useRef(new Compartment());
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const summarizingRef = useRef(false);
@@ -697,6 +696,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         clickHandler,
         wikilinkDecorations(),
         livePreviewCompartment.current.of(editorLivePreview !== false ? livePreview(openLivePreviewLink) : []),
+        formatToolbarCompartment.current.of(editorFormatToolbar !== false ? formatToolbar() : []),
+        formatKeymap,
         EditorView.lineWrapping,
         EditorView.clipboardInputFilter.of((text) => normalizeLineSeparators(text)),
       ],
@@ -739,6 +740,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       ),
     });
   }, [editorLivePreview]);
+
+  useEffect(() => {
+    const v = viewRef.current;
+    if (!v) return;
+    v.dispatch({
+      effects: formatToolbarCompartment.current.reconfigure(editorFormatToolbar !== false ? formatToolbar() : []),
+    });
+  }, [editorFormatToolbar]);
 
   useEffect(() => {
     const v = viewRef.current;
@@ -1114,7 +1123,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
               type="button"
               role="menuitem"
               className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
-              onClick={() => runWithView(v => wrapSelectionMarkdown(v, '**', '**'))}
+              onClick={() => runWithView(v => void inlineCommand('bold')(v))}
             >
               Bold
             </button>
@@ -1122,7 +1131,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
               type="button"
               role="menuitem"
               className="w-full px-3 py-1.5 text-left hover:bg-mnemo-hover"
-              onClick={() => runWithView(v => wrapSelectionMarkdown(v, '*', '*'))}
+              onClick={() => runWithView(v => void inlineCommand('italic')(v))}
             >
               Italic
             </button>
